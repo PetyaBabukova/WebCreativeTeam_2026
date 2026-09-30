@@ -1,0 +1,69 @@
+{
+  "skip": "Skip to content", "navigation": "Main navigation", "language": "Language",
+  "homeLabel": "Home", "aboutLabel": "About",
+  "home": { "title": "Refuse to go unnoticed | WebCreativeTeam", "description": "SEO, AI Search and digital strategy for sustainable online growth." },
+  "about": { "title": "About WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences." },
+  "landing": {
+    "menu": "Open menu",
+    "hero": {
+      "lines": ["REFUSE", "TO GO", "UNNOTICED"],
+      "description": "Where strategy, technology, and creativity converge, digital solutions are created that set brands apart and drive businesses forward",
+      "contact": "Let's work together",
+      "explore": "Explore services",
+      "scroll": "Scroll down",
+      "rotationPause": "Pause logo rotation"
+    },
+    "services": {
+      "eyebrow": "How we help",
+      "heading": "From search to",
+      "highlight": "real growth.",
+      "intro": "We bring data, creativity and technology together to build an online presence that delivers results.",
+      "all": "All services",
+      "items": [
+        { "title": "SEO optimization", "description": "Be found on Google." },
+        { "title": "AI Search and GEO", "description": "Be recommended by the new search engines." },
+        { "title": "Digital strategy", "description": "Turn visibility into business results." },
+        { "title": "More customers", "description": "Sustainable growth for your business." }
+      ]
+    },
+    "projects": {
+      "eyebrow": "Our projects",
+      "heading": "Real results. True",
+      "highlight": "stories.",
+      "all": "All projects",
+      "firstName": "Happy Colors",
+      "firstDescription": "Online catalog for knitted baby and children's toys",
+      "firstStats": [
+        { "value": "+320%", "label": "organic traffic" },
+        { "value": "+185%", "label": "orders" },
+        { "value": "+70%", "label": "keywords in the top 3" }
+      ],
+      "secondName": "B2B brand",
+      "secondDescription": "Strategy, SEO and content",
+      "secondStats": [
+        { "value": "+260%", "label": "organic traffic" },
+        { "value": "+150%", "label": "inquiries" },
+        { "value": "+120%", "label": "online revenue" }
+      ],
+      "view": "View project"
+    },
+    "contact": {
+      "heading": "Let's grow together?",
+      "description": "Let's turn your ambitions into real results. Get in touch with us today.",
+      "button": "Let's work together",
+      "reasons": [
+        "A clear strategy with real goals",
+        "Driven by data and proven methods",
+        "A partnership built for the future"
+      ]
+    },
+    "footer": {
+      "services": "Services",
+      "projects": "Projects",
+      "company": "Company",
+      "contact": "Let's work together",
+      "rights": "© 2026 WebCreativeTeam. All rights reserved."
+    }
+  },
+  "notFound": "Page not found", "backHome": "Back to home"
+}

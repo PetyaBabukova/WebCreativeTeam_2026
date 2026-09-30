@@ -1,0 +1,85 @@
+.site-page { overflow: clip; }
+.site-page--about { background: var(--color-background); }
+.site-header { position: absolute; z-index: 20; top: 0; right: 0; left: 0; color: var(--color-white); }
+.site-page--about .site-header { background: var(--color-deep); }
+.site-header__inner { display: flex; align-items: center; justify-content: space-between; min-height: 8rem; gap: 1.5rem; padding-top: clamp(2rem, 4.5vh, 4rem); }
+.site-header__brand { display: inline-flex; }
+.site-header__brand img { display: block; width: clamp(11.5rem, 22vw, 17.5rem); height: auto; }
+.site-menu { position: relative; }
+.site-menu summary { display: grid; place-items: center; width: 2.65rem; height: 2.65rem; border: 1px solid #ffffffb0; border-radius: 50%; list-style: none; cursor: pointer; }
+.site-menu summary::-webkit-details-marker { display: none; }
+.site-menu__bars { display: grid; gap: 4px; width: 16px; }
+.site-menu__bars span { height: 1px; background: currentColor; }
+.site-menu__panel { position: absolute; top: calc(100% + .75rem); right: 0; width: min(18rem, calc(100vw - 2.5rem)); padding: 1.25rem; border: 1px solid #a1c4ab75; border-radius: 1rem; background: #06251def; box-shadow: 0 16px 40px #0008; }
+.site-menu__panel nav { display: flex; flex-direction: column; gap: .6rem; }
+.site-menu__panel nav + nav { flex-direction: row; padding-top: 1rem; margin-top: 1rem; border-top: 1px solid #ffffff40; }
+.site-menu__panel a { display: block; padding: .35rem .5rem; border-radius: .3rem; }
+.site-menu__panel a:hover, .site-menu__panel a[aria-current="page"] { color: var(--color-lime); }
+
+.site-home { outline: none; }
+.hero { position: relative; isolation: isolate; min-height: 100svh; overflow: clip; background: var(--color-deep); color: var(--color-white); }
+.hero__stage { position: absolute; z-index: 0; inset: 0; pointer-events: none; }
+.hero__art { position: absolute; inset: 0; display: block; }
+.hero__background { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.hero__shade { position: absolute; z-index: 1; inset: 0; background: radial-gradient(ellipse 40rem 24rem at 85% 78%, #00110dcf, #00110d82 55%, transparent 100%), linear-gradient(0deg, #00110db8, transparent 43%), linear-gradient(90deg, #00110dc9 0%, #00160f8c 29%, #00160f38 52%, transparent 76%); }
+.hero__inner { position: relative; z-index: 1; display: flex; min-height: 100svh; padding-top: clamp(10rem, 18vh, 14rem); padding-bottom: max(5.5rem, 11vh); }
+/*
+  Desktop: two columns so the whole first scene fits the viewport without scrolling.
+  The headline fills the left column; the orb and the lede stack in the right column, their bottom aligned with the headline's.
+*/
+.hero__content { position: relative; z-index: 2; display: grid; flex: 1; flex-direction: column; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 1fr auto; column-gap: clamp(2rem, 4vw, 5rem); align-self: flex-start; width: 100%; }
+.hero h1 { grid-column: 1; grid-row: 1 / span 2; align-self: start; margin: clamp(3rem, 7vh, 5.5rem) 0 0; font-size: clamp(4.5rem, min(12vw, 20svh), 14.5rem); font-weight: 400; line-height: .94; letter-spacing: -.055em; text-shadow: 0 4px 26px #00130e6b; }
+.hero__headline-mask { display: block; overflow: hidden; padding-bottom: .06em; }
+.hero__headline-line { display: block; width: max-content; white-space: nowrap; }
+.hero__headline-line--0 { color: var(--color-primary); font-size: 1.15em; font-weight: 800; background: linear-gradient(95deg, #a3db64 6%, #68d58a 40%, var(--color-primary) 94%); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero__lede { grid-column: 2; grid-row: 2; align-self: end; justify-self: end; width: max-content; max-width: 100%; margin-top: 1.5rem; }
+.hero__description { position: relative; width: 0; min-width: 100%; margin: 0 0 1.25rem; padding-inline-start: 1rem; color: var(--color-white); font-size: clamp(1.05rem, 1.4vw, 1.3rem); line-height: 1.4; text-align: left; text-shadow: 0 2px 8px #00110d; }
+.hero__description::before { position: absolute; top: 0; bottom: 0; inset-inline-start: 0; width: 2px; background: var(--color-primary); content: ""; }
+.hero__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .8rem; }
+.hero__scroll { position: absolute; z-index: 2; bottom: 3.25rem; left: 0; display: inline-flex; align-items: center; gap: .75rem; color: #f6f5ed; font-size: .65rem; line-height: 1.15; letter-spacing: .14em; text-transform: uppercase; }
+.hero__scroll > span { display: grid; place-items: center; width: 1.55rem; height: 2.3rem; border: 1px solid #efa543; border-radius: 999px; font-size: 1rem; letter-spacing: 0; }
+.hero-orb { position: relative; z-index: 1; grid-column: 2; grid-row: 1; align-self: end; justify-self: center; width: min(19.2vw, 32.4svh, 25.2rem); aspect-ratio: 1; }
+.hero-orb__entrance, .hero-orb__tilt, .hero-orb__spin, .hero-orb img { display: block; width: 100%; height: 100%; }
+.hero-orb__tilt { transform-style: preserve-3d; will-change: transform; }
+.hero-orb img { height: auto; }
+.hero-orb__control { position: absolute; z-index: 2; right: 0; bottom: 0; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--color-white); border-radius: 50%; background: var(--color-deep); color: var(--color-white); box-shadow: 0 2px 8px #0009; cursor: pointer; }
+.hero-orb__control:hover, .hero-orb__control[aria-pressed="true"] { border-color: var(--color-primary); color: var(--color-primary); }
+.hero-orb__pause-icon { display: block; width: 9px; height: 11px; border-inline: 3px solid currentColor; }
+.hero-orb__play-icon { display: block; width: 0; height: 0; margin-left: 2px; border-top: 5.5px solid transparent; border-bottom: 5.5px solid transparent; border-left: 9px solid currentColor; }
+
+.site-footer { background: #00130e; color: var(--color-white); }
+.site-footer__grid { display: grid; grid-template-columns: 1.6fr .8fr 1.6fr; gap: 1.5rem; padding-block: 1.5rem 1.2rem; }
+.site-footer__brand img { display: block; width: min(100%, 14rem); height: auto; }
+.site-footer h2 { margin: 0 0 .45rem; font-size: .84rem; }
+.site-footer a { display: block; margin: .25rem 0; font-size: .78rem; color: #e9eee8; overflow-wrap: anywhere; }
+.site-footer a:hover { color: var(--color-lime); }
+.site-footer__bottom { padding-block: .8rem 1.4rem; border-top: 1px solid #a7bdac36; color: #b9c3ba; font-size: .75rem; }
+
+@media (max-width: 760px) {
+  .site-header__inner { min-height: 7rem; padding-top: 1.5rem; }
+  .hero__shade { background: radial-gradient(ellipse 90vw 36svh at 76% 79%, #00110dd9, #00110d80 55%, transparent 100%), linear-gradient(0deg, #00110db8, transparent 48%), linear-gradient(180deg, #00140f83 0%, #00140f36 36%, transparent 69%); }
+  .hero__inner { padding-top: clamp(8.5rem, 18svh, 11rem); padding-bottom: 6rem; }
+  .hero__content { display: flex; align-self: stretch; min-width: 0; }
+  /*
+    The longest headline line spans the full content width: font-size = content width / that line's width in em.
+    --hero-fit is measured from the current copy (Sofia Sans, weights and letter-spacing included) with ~1% safety margin;
+    re-measure it whenever the headline copy changes. The e2e test "mobile headline fills the content width" guards it.
+  */
+  .hero h1 { --hero-fit: 4.33; width: 100%; margin: 0; font-size: calc((100vw - 2 * var(--gutter)) / var(--hero-fit)); line-height: .9; }
+  :lang(en) .hero h1 { --hero-fit: 4.74; }
+  .hero__headline-line { white-space: nowrap; }
+  .hero__headline-mask, .hero__headline-line { width: 100%; max-width: 100%; }
+  .hero-orb { align-self: center; width: min(52vw, 23svh); margin: 1.25rem 0; translate: none; }
+  .hero__lede { width: min(100%, 27rem); margin-top: 0; }
+  .hero__actions { align-items: flex-start; flex-direction: column; }
+  .hero__actions .button { width: auto; max-width: 100%; }
+  .hero__scroll { bottom: 2.2rem; }
+  .site-footer__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .site-footer__brand { grid-column: 1 / -1; }
+}
+
+@media (max-width: 520px) {
+  .site-header__brand img { width: 12rem; }
+  .hero__actions { gap: .6rem; }
+  .hero__actions .button { padding-inline: 1rem; font-size: .8rem; }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "webcreativeteam-2026",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.14.0 <23",
+    "npm": ">=10.9.2 <11"
+  },
+  "packageManager": "npm@10.9.2",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development tsx watch --exclude .next --exclude dist --exclude coverage --exclude test-results server/index.ts",
+    "build": "next build && tsc -p tsconfig.server.json",
+    "start": "cross-env NODE_ENV=production node dist/server/index.js",
+    "typecheck": "next typegen && tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --config vitest.frontend.config.ts && vitest run --config vitest.backend.config.ts",
+    "test:coverage": "vitest run --coverage --config vitest.frontend.config.ts && vitest run --coverage --config vitest.backend.config.ts",
+    "test:e2e:install": "playwright install chromium",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "cross-env": "10.1.0",
+    "express": "5.2.1",
+    "motion": "13.4.6",
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@next/eslint-plugin-next": "16.3.6",
+    "@playwright/test": "1.63.0",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/express": "5.0.6",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/supertest": "7.2.1",
+    "@vitest/coverage-v8": "5.0.2",
+    "eslint": "10.11.0",
+    "jsdom": "29.1.1",
+    "supertest": "7.3.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "vitest": "5.0.2"
+  }
+}
