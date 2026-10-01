@@ -46,6 +46,36 @@ test("hero uses the mobile image and keeps the background static", async ({ page
   await expect(page.locator(".hero__actions")).toHaveCount(0);
 });
 
+test("scroll arrow is centered beneath the description and orb with visible space", async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 600, height: 900 }, { width: 1536, height: 730 }, { width: 2560, height: 1300 }]) {
+    await page.setViewportSize(viewport);
+    for (const locale of locales) {
+      await page.goto(pageUrl("home", locale));
+      await expect(page.locator(".hero__lede")).toHaveCSS("opacity", "1", { timeout: 5000 });
+      const layout = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        const center = (rect: DOMRect) => rect.left + rect.width / 2;
+        const arrow = box(".hero__arrow");
+        const description = box(".hero__description");
+        const orb = box(".hero-orb");
+        const polygon = box(".hero__arrow polygon");
+        return {
+          arrowCenter: center(arrow), descriptionCenter: center(description), orbCenter: center(orb),
+          orbToTextGap: description.top - orb.bottom,
+          textToArrowGap: polygon.top - description.bottom,
+          horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
+      const label = `${locale} at ${viewport.width}x${viewport.height}`;
+      expect(Math.abs(layout.arrowCenter - layout.descriptionCenter), label).toBeLessThanOrEqual(2);
+      expect(Math.abs(layout.arrowCenter - layout.orbCenter), label).toBeLessThanOrEqual(2);
+      expect(layout.orbToTextGap, label).toBeGreaterThanOrEqual(40);
+      expect(Math.abs(layout.orbToTextGap - layout.textToArrowGap), label).toBeLessThanOrEqual(5);
+      expect(layout.horizontalOverflow, label).toBe(false);
+    }
+  }
+});
+
 test("the scroll arrow turns from pointing left to pointing down while scrolling, and back", async ({ page }) => {
   await page.setViewportSize({ width: 1536, height: 730 });
   await page.goto(pageUrl("home", "bg"));
@@ -143,6 +173,7 @@ test("header CTA sits left of the menu and links to the contact footer", async (
       expect(appearance.borderStyle).toBe("solid");
       expect(appearance.color).toBe(appearance.borderColor);
       expect(appearance.color).toBe(appearance.expectedColor);
+      await expect(page.locator(".hero__arrow polygon")).toHaveCSS("fill", appearance.expectedColor);
       expect(appearance.radius).toBeCloseTo(.6, 1);
       expect(appearance.paddingBlock).toBeCloseTo(.4, 1);
       expect(appearance.paddingInline).toBeCloseTo(1, 1);
@@ -153,8 +184,26 @@ test("header CTA sits left of the menu and links to the contact footer", async (
       });
       expect(menuColor.color).toBe(appearance.expectedColor);
       expect(menuColor.borderColor).toBe(appearance.expectedColor);
+      const hoverColor = await cta.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--color-lime)";
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      });
       await cta.hover();
       await expect(cta).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(cta).toHaveCSS("color", hoverColor);
+      await expect(cta).toHaveCSS("border-color", hoverColor);
+      const summary = page.locator(".site-menu summary");
+      await summary.hover();
+      await expect(summary).toHaveCSS("color", hoverColor);
+      await expect(summary).toHaveCSS("border-color", hoverColor);
+      await expect(page.locator(".site-menu__bars span").first()).toHaveCSS("background-color", hoverColor);
+      await page.mouse.move(width / 2, 450);
+      await expect(cta).toHaveCSS("color", appearance.expectedColor);
+      await expect(summary).toHaveCSS("color", appearance.expectedColor);
       const layout = await page.evaluate(() => {
         const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
         const header = document.querySelector(".site-header__inner")!;
@@ -188,6 +237,8 @@ test("orange menu icon turns into an X when opened with the keyboard", async ({ 
   expect(menuColors.color).toBe(menuColors.expectedColor);
   expect(menuColors.borderColor).toBe(menuColors.expectedColor);
   await expect(strokes.first()).toHaveCSS("transition-duration", "0.3s");
+  await expect(summary).toHaveCSS("padding-top", "0px");
+  await expect(summary).toHaveCSS("padding-left", "0px");
   await summary.focus();
   await summary.press("Enter");
   await expect(menu).toHaveAttribute("open", "");
@@ -199,6 +250,45 @@ test("orange menu icon turns into an X when opened with the keyboard", async ({ 
   await summary.press("Space");
   await expect(menu).not.toHaveAttribute("open");
   await expect.poll(strokeTransforms).toEqual([{ angle: 0, verticalOffset: 0 }, { angle: 0, verticalOffset: 0 }]);
+});
+
+test("touch input does not leave the controls in the green hover state", async ({ browser }) => {
+  const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await page.goto(pageUrl("home", "bg"));
+  const orange = await page.locator(".hero__arrow polygon").evaluate((element) => getComputedStyle(element).fill);
+  expect(await page.evaluate(() => matchMedia("(hover: hover)").matches)).toBe(false);
+  const summary = page.locator(".site-menu summary");
+  await summary.tap();
+  await expect(page.locator(".site-menu")).toHaveAttribute("open", "");
+  await expect(summary).toHaveCSS("color", orange);
+  await expect(page.locator(".site-header__cta")).toHaveCSS("color", orange);
+  await context.close();
+});
+
+test("header CTA and menu stay visible while the logo scrolls away", async ({ page }) => {
+  for (const width of [390, 1536]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(pageUrl("home", "bg"));
+    const actions = page.locator(".site-header__actions");
+    const cta = page.locator(".site-header__cta");
+    const summary = page.locator(".site-menu summary");
+    await expect(actions).toHaveCSS("position", "fixed");
+    const initialTop = (await actions.boundingBox())!.y;
+    await page.evaluate(() => {
+      const spacer = document.createElement("div");
+      spacer.style.height = "200vh";
+      document.body.append(spacer);
+      window.scrollTo(0, innerHeight);
+    });
+    await expect.poll(async () => (await actions.boundingBox())!.y).toBeCloseTo(initialTop, 0);
+    await expect(cta).toBeInViewport();
+    await expect(summary).toBeInViewport();
+    await expect(page.locator(".site-header__brand")).not.toBeInViewport();
+    await summary.click();
+    await expect(page.locator(".site-menu")).toHaveAttribute("open", "");
+    await expect(page.locator(".site-menu__panel")).toBeVisible();
+  }
 });
 
 test("Motion completes the hero entrance after mount", async ({ page }) => {

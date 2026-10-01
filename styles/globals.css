@@ -30,8 +30,10 @@ button, input { font: inherit; }
 .button--orange:hover { background: #ff942f; }
 .button--glass { border-color: #e4f5d8a8; background: #03241b91; color: var(--color-white); }
 .button--glass:hover { background: #0c5e43d9; }
-.button--outline { border-color: var(--color-primary); color: #dd5500; }
-.button--outline:hover { background: #fff3e9; }
+.button--outline { padding: .4em 1em; border: 1px solid var(--color-primary); border-radius: .6em; background: none; color: var(--color-primary); transition: color .2s ease, border-color .2s ease; }
+@media (hover: hover) {
+  .button--outline:hover { border-color: var(--color-lime); color: var(--color-lime); }
+}
 .skip-link { position: absolute; z-index: 100; top: .75rem; left: .75rem; padding: .7rem 1rem; background: var(--color-white); color: var(--color-ink); border-radius: .35rem; transform: translateY(-160%); }
 .skip-link:focus { transform: none; }
 .standard-page { min-height: 55vh; padding-block: clamp(9rem, 15vw, 14rem) 6rem; }

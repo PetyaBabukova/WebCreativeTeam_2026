@@ -16,9 +16,9 @@ function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
         <Image src={appConfig.brandLogoPath} alt="WebCreativeTeam" width={280} height={77} priority unoptimized />
       </Link>
       <div className="site-header__actions">
-        <a className="button site-header__cta" href="#footer-contact">{copy.landing.hero.contact}</a>
+        <a className="button button--outline site-header__cta" href="#footer-contact">{copy.landing.hero.contact}</a>
         <details className="site-menu">
-          <summary aria-label={copy.landing.menu}><span aria-hidden="true" className="site-menu__bars"><span /><span /></span></summary>
+          <summary className="button--outline" aria-label={copy.landing.menu}><span aria-hidden="true" className="site-menu__bars"><span /><span /></span></summary>
           <div className="site-menu__panel">
             <nav aria-label={copy.navigation}>
               <Link href={pageUrl("home", locale)} aria-current={page === "home" ? "page" : undefined}>{copy.homeLabel}</Link>
