@@ -6,11 +6,16 @@
 .site-header__brand { display: inline-flex; flex-shrink: 0; }
 .site-header__brand img { display: block; width: clamp(11.5rem, 22vw, 17.5rem); height: auto; }
 .site-header__actions { display: flex; align-items: center; gap: .75rem; }
+.site-header__cta { padding: .4em 1em; border: 1px solid var(--color-primary); border-radius: .6em; background: none; color: var(--color-primary); }
 .site-menu { position: relative; }
-.site-menu summary { display: grid; place-items: center; width: 2.65rem; height: 2.65rem; border: 1px solid #ffffffb0; border-radius: 50%; list-style: none; cursor: pointer; }
+.site-menu summary { display: grid; place-items: center; width: 2.65rem; height: 2.65rem; border: 1px solid var(--color-primary); border-radius: 50%; background: none; color: var(--color-primary); list-style: none; cursor: pointer; }
 .site-menu summary::-webkit-details-marker { display: none; }
-.site-menu__bars { display: grid; gap: 4px; width: 16px; }
-.site-menu__bars span { height: 1px; background: currentColor; }
+.site-menu__bars { position: relative; display: block; width: 16px; height: 5px; }
+.site-menu__bars span { position: absolute; left: 0; width: 100%; height: 1px; background: currentColor; transition: transform .3s cubic-bezier(.75, 0, .25, 1); }
+.site-menu__bars span:first-child { top: 0; }
+.site-menu__bars span:last-child { top: 4px; }
+.site-menu[open] .site-menu__bars span:first-child { transform: translateY(2px) rotate(45deg); }
+.site-menu[open] .site-menu__bars span:last-child { transform: translateY(-2px) rotate(-45deg); }
 .site-menu__panel { position: absolute; top: calc(100% + .75rem); right: 0; width: min(18rem, calc(100vw - 2.5rem)); padding: 1.25rem; border: 1px solid #a1c4ab75; border-radius: 1rem; background: #06251def; box-shadow: 0 16px 40px #0008; }
 .site-menu__panel nav { display: flex; flex-direction: column; gap: .6rem; }
 .site-menu__panel nav + nav { flex-direction: row; padding-top: 1rem; margin-top: 1rem; border-top: 1px solid #ffffff40; }
@@ -83,12 +88,12 @@
   .site-header__inner { gap: .75rem; }
   .site-header__brand img { width: 9rem; }
   .site-header__actions { gap: .5rem; }
-  .site-header__cta { min-height: 2.25rem; padding: .45rem .8rem; font-size: .72rem; }
+  .site-header__cta { font-size: .72rem; }
 }
 
 @media (max-width: 379px) {
   .site-header__brand img { width: 8.5rem; }
-  .site-header__cta { padding-inline: .65rem; font-size: .68rem; }
+  .site-header__cta { font-size: .68rem; }
 }
 
 /* Below this width the header cannot hold the logo, the CTA and the menu; the CTA stays reachable from the footer contact. */

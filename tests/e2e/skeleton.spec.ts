@@ -109,21 +109,96 @@ test("paused orb responds more strongly to hover and relaxes when resumed", asyn
 });
 
 test("header CTA sits left of the menu and links to the contact footer", async ({ page }) => {
-  for (const width of [1536, 390, 360]) {
-    await page.setViewportSize({ width, height: 800 });
-    await page.goto(pageUrl("home", "bg"));
-    const cta = page.locator(".site-header").getByRole("link", { name: "Да работим заедно" });
-    await expect(cta).toBeVisible();
-    await expect(cta).toHaveAttribute("href", "#footer-contact");
-    const layout = await page.evaluate(() => {
-      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
-      const header = document.querySelector(".site-header__inner")!;
-      return { brandRight: box(".site-header__brand").right, ctaLeft: box(".site-header__cta").left, ctaRight: box(".site-header__cta").right, menuLeft: box(".site-menu").left, overflow: header.scrollWidth > header.clientWidth };
-    });
-    expect(layout.ctaRight, `${width}px`).toBeLessThanOrEqual(layout.menuLeft);
-    expect(layout.brandRight, `${width}px`).toBeLessThanOrEqual(layout.ctaLeft);
-    expect(layout.overflow, `${width}px`).toBe(false);
+  for (const locale of locales) {
+    for (const width of [1536, 390, 360]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(pageUrl("home", locale));
+      const cta = page.locator(".site-header__cta");
+      await expect(cta).toBeVisible();
+      await expect(cta).toHaveAttribute("href", "#footer-contact");
+      const appearance = await cta.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const probe = document.createElement("span");
+        probe.style.color = "var(--color-primary)";
+        document.body.append(probe);
+        const expectedColor = getComputedStyle(probe).color;
+        probe.remove();
+        return {
+          background: style.backgroundColor,
+          backgroundImage: style.backgroundImage,
+          borderColor: style.borderColor,
+          borderWidth: style.borderWidth,
+          borderStyle: style.borderStyle,
+          color: style.color,
+          expectedColor,
+          radius: parseFloat(style.borderTopLeftRadius) / parseFloat(style.fontSize),
+          paddingBlock: parseFloat(style.paddingTop) / parseFloat(style.fontSize),
+          paddingInline: parseFloat(style.paddingLeft) / parseFloat(style.fontSize),
+          height: element.getBoundingClientRect().height,
+        };
+      });
+      expect(appearance.background).toBe("rgba(0, 0, 0, 0)");
+      expect(appearance.backgroundImage).toBe("none");
+      expect(appearance.borderWidth).toBe("1px");
+      expect(appearance.borderStyle).toBe("solid");
+      expect(appearance.color).toBe(appearance.borderColor);
+      expect(appearance.color).toBe(appearance.expectedColor);
+      expect(appearance.radius).toBeCloseTo(.6, 1);
+      expect(appearance.paddingBlock).toBeCloseTo(.4, 1);
+      expect(appearance.paddingInline).toBeCloseTo(1, 1);
+      expect(appearance.height).toBeGreaterThanOrEqual(44);
+      const menuColor = await page.locator(".site-menu summary").evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { color: style.color, borderColor: style.borderColor };
+      });
+      expect(menuColor.color).toBe(appearance.expectedColor);
+      expect(menuColor.borderColor).toBe(appearance.expectedColor);
+      await cta.hover();
+      await expect(cta).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const layout = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        const header = document.querySelector(".site-header__inner")!;
+        return { brandRight: box(".site-header__brand").right, ctaLeft: box(".site-header__cta").left, ctaRight: box(".site-header__cta").right, menuLeft: box(".site-menu").left, overflow: header.scrollWidth > header.clientWidth };
+      });
+      expect(layout.ctaRight, `${locale} at ${width}px`).toBeLessThanOrEqual(layout.menuLeft);
+      expect(layout.brandRight, `${locale} at ${width}px`).toBeLessThanOrEqual(layout.ctaLeft);
+      expect(layout.overflow, `${locale} at ${width}px`).toBe(false);
+    }
+    await page.setViewportSize({ width: 359, height: 800 });
+    await page.goto(pageUrl("home", locale));
+    await expect(page.locator(".site-header__cta")).toBeHidden();
   }
+});
+
+test("orange menu icon turns into an X when opened with the keyboard", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(pageUrl("home", "bg"));
+  const menu = page.locator(".site-menu");
+  const summary = menu.locator("summary");
+  const strokes = menu.locator(".site-menu__bars span");
+  await expect(strokes).toHaveCount(2);
+  const menuColors = await summary.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-primary)";
+    document.body.append(probe);
+    const expectedColor = getComputedStyle(probe).color;
+    probe.remove();
+    return { color: getComputedStyle(element).color, borderColor: getComputedStyle(element).borderColor, expectedColor };
+  });
+  expect(menuColors.color).toBe(menuColors.expectedColor);
+  expect(menuColors.borderColor).toBe(menuColors.expectedColor);
+  await expect(strokes.first()).toHaveCSS("transition-duration", "0.3s");
+  await summary.focus();
+  await summary.press("Enter");
+  await expect(menu).toHaveAttribute("open", "");
+  const strokeTransforms = () => strokes.evaluateAll((elements) => elements.map((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return { angle: Math.round(Math.atan2(matrix.b, matrix.a) * 180 / Math.PI), verticalOffset: Math.round(matrix.f) };
+  }));
+  await expect.poll(strokeTransforms).toEqual([{ angle: 45, verticalOffset: 2 }, { angle: -45, verticalOffset: -2 }]);
+  await summary.press("Space");
+  await expect(menu).not.toHaveAttribute("open");
+  await expect.poll(strokeTransforms).toEqual([{ angle: 0, verticalOffset: 0 }, { angle: 0, verticalOffset: 0 }]);
 });
 
 test("Motion completes the hero entrance after mount", async ({ page }) => {
