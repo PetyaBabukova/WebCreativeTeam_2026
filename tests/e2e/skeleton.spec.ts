@@ -32,17 +32,54 @@ test("hero uses the mobile image and keeps the background static", async ({ page
   await page.goto(pageUrl("home", "bg"));
   const source = await page.locator(".hero__background").evaluate((image: HTMLImageElement) => image.currentSrc);
   expect(source).toContain("Hero_Background_Mobile_1440x2560");
-  await expect(page.locator(".hero__stage")).toHaveCSS("position", "absolute");
+  await expect(page.locator(".hero__stage")).toHaveCSS("position", "fixed");
   await expect(page.locator(".hero-orb")).toHaveCount(1);
   const mobileOrder = await page.evaluate(() => {
     const heading = document.querySelector(".hero h1")!.getBoundingClientRect();
     const orb = document.querySelector(".hero-orb")!.getBoundingClientRect();
     const lede = document.querySelector(".hero__lede")!.getBoundingClientRect();
-    const actions = Array.from(document.querySelectorAll(".hero__actions .button")).map((button) => button.getBoundingClientRect());
-    return orb.top >= heading.bottom && lede.top >= orb.bottom && actions[1].top >= actions[0].bottom;
+    const arrow = document.querySelector(".hero__arrow")!.getBoundingClientRect();
+    return orb.top >= heading.bottom && lede.top >= orb.bottom && arrow.top >= lede.top;
   });
   expect(mobileOrder).toBe(true);
   await expect(page.locator("#services, #projects, #contact")).toHaveCount(0);
+  await expect(page.locator(".hero__actions")).toHaveCount(0);
+});
+
+test("the scroll arrow turns from pointing left to pointing down while scrolling, and back", async ({ page }) => {
+  await page.setViewportSize({ width: 1536, height: 730 });
+  await page.goto(pageUrl("home", "bg"));
+  await page.evaluate(() => { const spacer = document.createElement("div"); spacer.style.height = "200vh"; document.body.append(spacer); });
+  const arrowAngle = () => page.locator(".hero__arrow").evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return Math.round(Math.atan2(matrix.b, matrix.a) * 180 / Math.PI);
+  });
+  // The SVG is drawn pointing down-left: 45deg points left, -45deg points down.
+  expect(await arrowAngle()).toBe(45);
+  await page.evaluate(() => window.scrollTo(0, innerHeight * .2));
+  await expect.poll(arrowAngle).toBe(0);
+  await page.evaluate(() => window.scrollTo(0, innerHeight));
+  await expect.poll(arrowAngle).toBe(-45);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(arrowAngle).toBe(45);
+});
+
+test("header CTA sits left of the menu and links to the contact footer", async ({ page }) => {
+  for (const width of [1536, 390, 360]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(pageUrl("home", "bg"));
+    const cta = page.locator(".site-header").getByRole("link", { name: "Да работим заедно" });
+    await expect(cta).toBeVisible();
+    await expect(cta).toHaveAttribute("href", "#footer-contact");
+    const layout = await page.evaluate(() => {
+      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const header = document.querySelector(".site-header__inner")!;
+      return { brandRight: box(".site-header__brand").right, ctaLeft: box(".site-header__cta").left, ctaRight: box(".site-header__cta").right, menuLeft: box(".site-menu").left, overflow: header.scrollWidth > header.clientWidth };
+    });
+    expect(layout.ctaRight, `${width}px`).toBeLessThanOrEqual(layout.menuLeft);
+    expect(layout.brandRight, `${width}px`).toBeLessThanOrEqual(layout.ctaLeft);
+    expect(layout.overflow, `${width}px`).toBe(false);
+  }
 });
 
 test("Motion completes the hero entrance after mount", async ({ page }) => {
@@ -166,7 +203,8 @@ test("headline and CTAs remain within the hero on common viewports", async ({ pa
 });
 
 test("desktop first scene is fully visible without scrolling and the headline clears the right column", async ({ page }) => {
-  for (const viewport of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 2560, height: 1440 }]) {
+  // 1536x730 is the user's laptop (1920x1080 at 125% scaling, minus browser chrome); 2560x1300 their external monitor.
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1536, height: 730 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 2560, height: 1300 }]) {
     await page.setViewportSize(viewport);
     for (const locale of locales) {
       await page.goto(pageUrl("home", locale));
@@ -177,11 +215,16 @@ test("desktop first scene is fully visible without scrolling and the headline cl
           const range = document.createRange(); range.selectNodeContents(line);
           return range.getBoundingClientRect().right;
         }));
-        return { headlineRight, heading: box(".hero h1").bottom, orb: box(".hero-orb"), lede: box(".hero__lede"), viewportHeight: innerHeight };
+        const headlineSize = parseFloat(getComputedStyle(document.querySelector(".hero h1")!).fontSize);
+        return { headlineRight, headlineSize, heading: box(".hero h1").bottom, orb: box(".hero-orb"), lede: box(".hero__lede"), arrow: box(".hero__arrow"), viewportHeight: innerHeight };
       });
       const label = `${locale} at ${viewport.width}x${viewport.height}`;
-      for (const bottom of [layout.heading, layout.orb.bottom, layout.lede.bottom]) expect(bottom, label).toBeLessThanOrEqual(layout.viewportHeight);
-      expect(layout.headlineRight, label).toBeLessThan(Math.min(layout.orb.left, layout.lede.left));
+      for (const bottom of [layout.heading, layout.orb.bottom, layout.lede.bottom, layout.arrow.bottom]) expect(bottom, label).toBeLessThanOrEqual(layout.viewportHeight);
+      const columnGap = Math.min(layout.orb.left, layout.lede.left) - layout.headlineRight;
+      expect(columnGap, label).toBeGreaterThan(0);
+      // The right column follows the headline at a gap proportional to its size, not pinned to the far edge.
+      expect(columnGap / layout.headlineSize, label).toBeLessThanOrEqual(1.35);
+      expect(layout.lede.top - layout.orb.bottom, label).toBeGreaterThanOrEqual(40);
     }
   }
 });

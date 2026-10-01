@@ -8,13 +8,13 @@ Create a cinematic but restrained first scene for the home page. It should feel 
 
 ## Static composition
 
-1. The supplied hero background is fully static. It does not translate, scale, fade, parallax, or change source while the hero is visible.
+1. The supplied hero background is fully static. It does not translate, scale, fade, parallax, or change source while the hero is visible. **User decision, 30 September 2026:** the background and its shade are fixed to the viewport (`position: fixed`); the hero content and later sections scroll over it. The footer is positioned above it. The “Scroll down” cue is removed.
 2. The horizontal WebCreativeTeam logo stays in the upper-left corner without an entrance effect.
 3. The header retains generous top spacing. **User decision, 30 September 2026:** the air between the horizontal logo and the headline is reduced by 20% from the previous layout (headline top margin `clamp(3rem, 7vh, 5.5rem)`).
 4. The headline uses the left side of the viewport and may occupy most of its height. Its text stays real HTML and must never be clipped for Bulgarian or English.
 5. The circular logo is positioned on the right on desktop. Its rendered width is **40% smaller** than the previous circular-logo implementation. The exact responsive size is established from that baseline rather than a fixed pixel value.
-6. Description and CTAs remain real HTML, accessible before JavaScript loads.
-7. **User decision, 30 September 2026 — desktop first scene fits the viewport.** Headline, circular logo, description and CTAs are all visible without scrolling. Desktop uses a two-column grid: the headline spans the left column; the circular logo and, beneath it, the description and CTAs stack in the right column, with their bottom aligned to the headline's bottom. The headline size is `clamp(4.5rem, min(12vw, 20svh), 14.5rem)`, so its longest line (EN "UNNOTICED") never reaches the right column up to ultra-wide screens. An e2e test checks 1280×720, 1440×900, 1920×1080 and 2560×1440 in both locales.
+6. The description remains real HTML, accessible before JavaScript loads. **User decision, 30 September 2026:** the two hero CTAs are removed. Below the description sits an orange (`--color-primary`), decorative (`aria-hidden`) scroll arrow drawn in the supplied thin-stroke style, `clamp(5.5rem, 7.2vw, 8rem)` wide (doubled at the user's request). It points left at the top of the page and turns to point down over the first 40% of a viewport height of scroll (Motion `useScroll` + `useTransform`); scrolling back reverses it.
+7. **User decision, 30 September 2026 — desktop first scene fits the viewport.** Headline, circular logo, description and scroll arrow are all visible without scrolling. Desktop uses a two-column grid: the headline spans the left column; the circular logo and, beneath it, the description and arrow stack in the right column, with their bottom aligned to the headline's bottom. The headline size is `clamp(4.5rem, min(12vw, 20svh), 14.5rem)`, so its longest line (EN "UNNOTICED") never reaches the right column up to ultra-wide screens. An e2e test checks 1280×720, 1440×900, 1920×1080 and 2560×1440 in both locales. **Revision, 30 September 2026:** the gap between the headline and the right column is `1.3 × headline font size` (the proportion approved on the user's 2560 px monitor), shrinking to a 2rem minimum when a long headline needs the room; the right column is no longer pinned to the far right edge, so laptops (1536×864 at 125% scaling) keep the same composition. The circular logo has `clamp(1.25rem, 4vh, 3rem)` extra space below it. The description column is `clamp(22rem, 28vw, 27rem)` wide.
 
 ## Desktop entrance sequence
 
@@ -25,7 +25,7 @@ The page must never look as if it is slow to load. The background and horizontal
 | 0 | Background and horizontal logo | Immediately visible and static | first paint |
 | 1 | Circular logo | Clearly visible reveal with upward travel and scale to final size, then continuous rotation | starts at 350 ms; reveal lasts 1.2 s |
 | 2 | Headline | Lines rise through masks in sequence | starts after the orb; 250 ms stagger; each line lasts 900 ms |
-| 3 | Description and CTAs | One visible fade-and-rise group after the headline | starts at about 1.7 s; reveal lasts 700 ms |
+| 3 | Description and scroll arrow | One visible fade-and-rise group after the headline | starts at about 1.7 s; reveal lasts 700 ms |
 
 The horizontal logo has no motion. It is the stable visual anchor for the scene. The primary sequence completes in about 2.4 seconds.
 
@@ -51,20 +51,20 @@ The hero background becomes the visual field behind later sections. Future conte
 
 ## Mobile and motion behaviour
 
-- Mobile receives the same Motion entrance sequence in content-first order: horizontal logo, then the headline, circular logo, description and CTAs.
+- Mobile receives the same Motion entrance sequence in content-first order: horizontal logo, then the headline, circular logo, description and scroll arrow.
 - The headline uses the full available viewport width, constrained only by a responsive horizontal page padding. It does not inherit the narrower desktop text column.
 - On mobile the headline fills the content width: `font-size = (100vw - 2 × gutter) / --hero-fit`, where `--hero-fit` is the longest line's width in em for each locale (BG 4.33, EN 4.74, measured with ~1% margin). Lines never wrap. The value must be re-measured when the headline copy changes; an e2e test at 320, 390 and 430 px enforces ≥95% fill without overflow.
 - The circular logo remains visible directly below the mobile headline. It is decorative and must not overlap or reduce the readable width of the heading, description or CTAs.
 - On mobile, its maximum rendered width is the smaller of 44vw and 18svh. It has at least 1rem vertical spacing from the headline and following copy.
-- On mobile, the two CTAs stack vertically, align to the start of the copy block, and retain their intrinsic content width. They do not stretch to the full block width.
+- **Header CTA (user decision, 30 September 2026):** a “Да работим заедно” / “Let's work together” button sits in the header, directly left of the menu icon, on every page, linking to `#footer-contact`. From 520 px down, the header logo is 9rem and the CTA compact; from 379 px down, 8.5rem and more compact; below 360 px the CTA is hidden because the logo, CTA and menu cannot fit (contact stays reachable in the footer).
 - **User decision, 30 September 2026:** the full entrance, orb rotation and pointer tilt run for every visitor, including when the operating system reports `prefers-reduced-motion: reduce`. Windows “Animation effects” can be disabled for performance, which had prevented visitors, including the user, from seeing this scene.
-- The ongoing rotation has a 28×28 CSS px keyboard-accessible pause/resume button (reduced from 40 px at the user's request; still above the WCAG 2.5.8 AA 24 px minimum), placed at the lower-right of the orb on desktop and mobile, with a visible focus indicator and contrast against the image. The button uses a fixed localized accessible name (“Пауза на въртенето” / “Pause logo rotation”); `aria-pressed=true` means pause is active. Its icon switches between pause and play. Pausing preserves the exact current angle; leaving and returning to the viewport does too.
+- The ongoing rotation has a subdued grey (semi-transparent white on a translucent dark fill, brighter on hover/focus/pressed) 28×28 CSS px keyboard-accessible pause/resume button (reduced from 40 px at the user's request; still above the WCAG 2.5.8 AA 24 px minimum), placed at the lower-right of the orb on desktop and mobile, with a visible focus indicator and contrast against the image. The button uses a fixed localized accessible name (“Пауза на въртенето” / “Pause logo rotation”); `aria-pressed=true` means pause is active. Its icon switches between pause and play. Pausing preserves the exact current angle; leaving and returning to the viewport does too.
 - No essential content depends on animation, hover, pointer movement or JavaScript.
 
 ## Technical approach — Motion-only entrance, revision 2
 
 - Remove every current hero CSS keyframe, CSS `animation` declaration and CSS animation delay. They are the failed mechanism and must not remain as a fallback or run in parallel with Motion.
-- `motion` owns the entire entrance: the circular logo reveal and continuous rotation, each headline line, and the description-and-CTA group. No second animation system is introduced.
+- `motion` owns the entire entrance: the circular logo reveal and continuous rotation, each headline line, and the description-and-arrow group, and the scroll-linked arrow rotation. No second animation system is introduced.
 - The background stays a real, static, priority-loaded `<img>`. It is never animated or used as an animation gate.
 - Remove the bootstrap script, `data-hero-motion*` attributes, image-decode waiting, timer fallbacks, global CSS starting-state rules and imperative `useAnimate` timeline. They make two sources of truth and can silently skip the visible sequence.
 - Motion owns initial and final states through declarative variants on one client boundary. The parent controls `delayChildren` and stagger; children receive their own `hidden` and `visible` variants. There is no CSS animation or CSS motion state.

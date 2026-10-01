@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { MotionConfig, motion, useAnimationFrame, useMotionValue, useSpring, useTransform } from "motion/react";
+import { MotionConfig, motion, useAnimationFrame, useMotionValue, useScroll, useSpring, useTransform } from "motion/react";
 import heroOrb from "@/2026_Redesign/Assets/Hero logo 1.webp";
 
 // Degrees per millisecond: one full turn every 24 seconds.
@@ -10,16 +10,16 @@ const rotationSpeed = 360 / 24000;
 
 const entranceEase = [.33, 1, .68, 1] as const;
 
+// The scroll arrow turns from pointing left to pointing down over the first 40% of a viewport height of scroll.
+const arrowTurnViewportShare = .4;
+
 type HeroMotionProps = {
   lines: string[];
   description: string;
-  contactLabel: string;
-  exploreLabel: string;
-  contactHref: string;
   rotationPauseLabel: string;
 };
 
-export default function HeroMotion({ lines, description, contactLabel, exploreLabel, contactHref, rotationPauseLabel }: HeroMotionProps) {
+export default function HeroMotion({ lines, description, rotationPauseLabel }: HeroMotionProps) {
   return <MotionConfig reducedMotion="never">
     <div className="hero__content">
       <h1 id="hero-title">
@@ -40,13 +40,23 @@ export default function HeroMotion({ lines, description, contactLabel, exploreLa
         transition={{ delay: 1.85, duration: .55, ease: entranceEase }}
       >
         <p className="hero__description">{description}</p>
-        <div className="hero__actions">
-          <a className="button button--orange" href={contactHref}>{contactLabel}<span aria-hidden="true">→</span></a>
-          <a className="button button--glass" href={contactHref}>{exploreLabel}<span aria-hidden="true">→</span></a>
-        </div>
+        <ScrollArrow />
       </motion.div>
     </div>
   </MotionConfig>;
+}
+
+function ScrollArrow() {
+  const { scrollY } = useScroll();
+  // The SVG is drawn pointing down-left: +45deg turns it to point left, -45deg to point down.
+  const rotate = useTransform(scrollY, (y) => {
+    if (typeof window === "undefined") return 45;
+    return 45 - 90 * Math.min(1, Math.max(0, y / (window.innerHeight * arrowTurnViewportShare)));
+  });
+
+  return <motion.svg className="hero__arrow" viewBox="0 0 100 100" aria-hidden="true" focusable="false" style={{ rotate }}>
+    <path d="M84 16 18 82M18 30v52h52" />
+  </motion.svg>;
 }
 
 function HeroOrb({ rotationPauseLabel }: { rotationPauseLabel: string }) {

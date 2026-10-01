@@ -15,18 +15,21 @@ function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
       <Link href={pageUrl("home", locale)} className="site-header__brand">
         <Image src={appConfig.brandLogoPath} alt="WebCreativeTeam" width={280} height={77} priority unoptimized />
       </Link>
-      <details className="site-menu">
-        <summary aria-label={copy.landing.menu}><span aria-hidden="true" className="site-menu__bars"><span /><span /><span /></span></summary>
-        <div className="site-menu__panel">
-          <nav aria-label={copy.navigation}>
-            <Link href={pageUrl("home", locale)} aria-current={page === "home" ? "page" : undefined}>{copy.homeLabel}</Link>
-            <Link href={pageUrl("about", locale)} aria-current={page === "about" ? "page" : undefined}>{copy.aboutLabel}</Link>
-          </nav>
-          <nav aria-label={copy.language} className="site-menu__languages">
-            {locales.map((language) => <Link key={language} href={pageUrl(page, language)} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</Link>)}
-          </nav>
-        </div>
-      </details>
+      <div className="site-header__actions">
+        <a className="button button--orange site-header__cta" href="#footer-contact">{copy.landing.hero.contact}</a>
+        <details className="site-menu">
+          <summary aria-label={copy.landing.menu}><span aria-hidden="true" className="site-menu__bars"><span /><span /><span /></span></summary>
+          <div className="site-menu__panel">
+            <nav aria-label={copy.navigation}>
+              <Link href={pageUrl("home", locale)} aria-current={page === "home" ? "page" : undefined}>{copy.homeLabel}</Link>
+              <Link href={pageUrl("about", locale)} aria-current={page === "about" ? "page" : undefined}>{copy.aboutLabel}</Link>
+            </nav>
+            <nav aria-label={copy.language} className="site-menu__languages">
+              {locales.map((language) => <Link key={language} href={pageUrl(page, language)} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</Link>)}
+            </nav>
+          </div>
+        </details>
+      </div>
     </div>
   </header>;
 }
@@ -46,12 +49,8 @@ function HomePage({ locale }: { locale: Locale }) {
         <HeroMotion
           lines={copy.hero.lines}
           description={copy.hero.description}
-          contactLabel={copy.hero.contact}
-          exploreLabel={copy.hero.explore}
-          contactHref="#footer-contact"
           rotationPauseLabel={copy.hero.rotationPause}
         />
-        <a href="#footer-contact" className="hero__scroll"><span aria-hidden="true">↓</span>{copy.hero.scroll}</a>
       </div>
     </section>
   </main>;
