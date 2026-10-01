@@ -49,6 +49,22 @@ test("hero uses the mobile image and keeps the background static", async ({ page
 test("the scroll arrow turns from pointing left to pointing down while scrolling, and back", async ({ page }) => {
   await page.setViewportSize({ width: 1536, height: 730 });
   await page.goto(pageUrl("home", "bg"));
+  const arrowAppearance = await page.locator(".hero__arrow").evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--color-primary)";
+    document.body.append(probe);
+    const expectedColor = getComputedStyle(probe).color;
+    probe.remove();
+    return {
+      fill: getComputedStyle(element.querySelector("polygon")!).fill,
+      expectedColor,
+      viewBox: element.getAttribute("viewBox"),
+      polygonCount: element.querySelectorAll("polygon").length,
+    };
+  });
+  expect(arrowAppearance.fill).toBe(arrowAppearance.expectedColor);
+  expect(arrowAppearance.viewBox).toBe("0 0 774.96 774.68");
+  expect(arrowAppearance.polygonCount).toBe(1);
   await page.evaluate(() => { const spacer = document.createElement("div"); spacer.style.height = "200vh"; document.body.append(spacer); });
   const arrowAngle = () => page.locator(".hero__arrow").evaluate((element) => {
     const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
@@ -62,6 +78,34 @@ test("the scroll arrow turns from pointing left to pointing down while scrolling
   await expect.poll(arrowAngle).toBe(-45);
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(arrowAngle).toBe(45);
+});
+
+test("paused orb responds more strongly to hover and relaxes when resumed", async ({ page }) => {
+  await page.goto(pageUrl("home", "en"));
+  await expect(page.locator(".hero-orb__entrance")).toHaveCSS("opacity", "1", { timeout: 4000 });
+  await expect.poll(() => orbAngle(page)).toBeGreaterThan(2);
+  const entrance = page.locator(".hero-orb__entrance");
+  const bounds = await entrance.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.move(bounds!.x + bounds!.width * .7, bounds!.y + bounds!.height * .35);
+  const tiltStrength = () => page.locator(".hero-orb__tilt").evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return Math.abs(matrix.m13) + Math.abs(matrix.m23);
+  });
+  await expect.poll(tiltStrength).toBeGreaterThan(.08);
+  const rotatingTilt = await tiltStrength();
+  const control = page.getByRole("button", { name: "Pause logo rotation" });
+  await control.focus();
+  await control.press("Enter");
+  await expect(control).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(tiltStrength).toBeGreaterThan(rotatingTilt * 1.7);
+  await page.mouse.move(0, 0);
+  await expect.poll(tiltStrength).toBeLessThan(.01);
+  await page.mouse.move(bounds!.x + bounds!.width * .7, bounds!.y + bounds!.height * .35);
+  await expect.poll(tiltStrength).toBeGreaterThan(rotatingTilt * 1.7);
+  await control.press("Space");
+  await expect(control).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(tiltStrength).toBeLessThan(rotatingTilt * 1.2);
 });
 
 test("header CTA sits left of the menu and links to the contact footer", async ({ page }) => {

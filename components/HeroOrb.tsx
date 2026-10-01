@@ -54,8 +54,8 @@ function ScrollArrow() {
     return 45 - 90 * Math.min(1, Math.max(0, y / (window.innerHeight * arrowTurnViewportShare)));
   });
 
-  return <motion.svg className="hero__arrow" viewBox="0 0 100 100" aria-hidden="true" focusable="false" style={{ rotate }}>
-    <path d="M84 16 18 82M18 30v52h52" />
+  return <motion.svg className="hero__arrow" viewBox="0 0 774.96 774.68" aria-hidden="true" focusable="false" style={{ rotate }}>
+    <polygon points="0.29,774.68 774.96,774.68 774.96,723.03 85.86,723.03 763.42,45.47 726.91,8.95 51.93,683.93 51.93,0 0.29,0 0.29,735.57 0,735.86 0.29,736.15" />
   </motion.svg>;
 }
 
@@ -66,9 +66,12 @@ function HeroOrb({ rotationPauseLabel }: { rotationPauseLabel: string }) {
   const orbRef = useRef<HTMLDivElement>(null);
   const pointerX = useMotionValue(0);
   const pointerY = useMotionValue(0);
+  const tiltRange = useMotionValue(7);
   const rotation = useMotionValue(0);
-  const rotateX = useSpring(useTransform(pointerY, [-.5, .5], [7, -7]), { stiffness: 100, damping: 18 });
-  const rotateY = useSpring(useTransform(pointerX, [-.5, .5], [-7, 7]), { stiffness: 100, damping: 18 });
+  const rotateX = useSpring(useTransform(() => -pointerY.get() * 2 * tiltRange.get()), { stiffness: 100, damping: 18 });
+  const rotateY = useSpring(useTransform(() => pointerX.get() * 2 * tiltRange.get()), { stiffness: 100, damping: 18 });
+
+  useEffect(() => { tiltRange.set(rotationPaused ? 17 : 7); }, [rotationPaused, tiltRange]);
 
   useEffect(() => {
     const target = orbRef.current;
@@ -97,17 +100,17 @@ function HeroOrb({ rotationPauseLabel }: { rotationPauseLabel: string }) {
         scale: { duration: 1.25, ease: entranceEase },
       }}
       onAnimationComplete={() => setHasRisen(true)}
+      onPointerMove={(event) => {
+        if (!inViewport || !hasRisen || event.pointerType !== "mouse") return;
+        const bounds = event.currentTarget.getBoundingClientRect();
+        pointerX.set((event.clientX - bounds.left) / bounds.width - .5);
+        pointerY.set((event.clientY - bounds.top) / bounds.height - .5);
+      }}
+      onPointerLeave={() => { pointerX.set(0); pointerY.set(0); }}
     >
       <motion.div
         className="hero-orb__tilt"
         style={{ rotateX, rotateY, transformPerspective: 900 }}
-        onPointerMove={(event) => {
-          if (!inViewport || !hasRisen || event.pointerType !== "mouse") return;
-          const bounds = event.currentTarget.getBoundingClientRect();
-          pointerX.set((event.clientX - bounds.left) / bounds.width - .5);
-          pointerY.set((event.clientY - bounds.top) / bounds.height - .5);
-        }}
-        onPointerLeave={() => { pointerX.set(0); pointerY.set(0); }}
       >
         <motion.div
           className="hero-orb__spin"

@@ -23,8 +23,9 @@ describe("public pages", () => {
     render(<Page />);
     const control = screen.getByRole("button", { name: label });
     const tilt = document.querySelector<HTMLElement>(".hero-orb__tilt")!;
+    const pointerSurface = document.querySelector<HTMLElement>(".hero-orb__entrance")!;
     const initialTransform = tilt.style.transform;
-    fireEvent.pointerMove(tilt, { pointerType: "mouse", clientX: 40, clientY: 40 });
+    fireEvent.pointerMove(pointerSurface, { pointerType: "mouse", clientX: 40, clientY: 40 });
     expect(tilt.style.transform).toBe(initialTransform);
     expect(control).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(control);

@@ -40,7 +40,7 @@
 .hero__lede { grid-column: 3; grid-row: 2; align-self: end; justify-self: start; width: clamp(22rem, 28vw, 27rem); max-width: 100%; margin-top: 1.5rem; }
 .hero__description { position: relative; margin: 0 0 1.5rem; padding-inline-start: 1rem; color: var(--color-white); font-size: clamp(1.05rem, 1.4vw, 1.3rem); line-height: 1.4; text-align: left; text-shadow: 0 2px 8px #00110d; }
 .hero__description::before { position: absolute; top: 0; bottom: 0; inset-inline-start: 0; width: 2px; background: var(--color-primary); content: ""; }
-.hero__arrow { display: block; width: clamp(5.5rem, 7.2vw, 8rem); height: auto; margin-inline-start: 1rem; overflow: visible; fill: none; stroke: var(--color-primary); stroke-width: 6; stroke-linejoin: miter; }
+.hero__arrow { display: block; width: clamp(5.5rem, 7.2vw, 8rem); height: auto; margin-inline-start: 1rem; overflow: visible; fill: var(--color-primary); }
 .hero-orb { position: relative; z-index: 1; grid-column: 3; grid-row: 1; align-self: end; justify-self: center; width: min(19.2vw, 32.4svh, 25.2rem); aspect-ratio: 1; margin-bottom: clamp(1.25rem, 4vh, 3rem); }
 .hero-orb__entrance, .hero-orb__tilt, .hero-orb__spin, .hero-orb img { display: block; width: 100%; height: 100%; }
 .hero-orb__tilt { transform-style: preserve-3d; will-change: transform; }
