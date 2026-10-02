@@ -44,7 +44,7 @@
 .hero__headline-line--0 { color: var(--color-primary); font-size: 1.15em; font-weight: 800; background: var(--gradient-brand); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .hero__lede { display: flex; flex-direction: column; grid-column: 3; grid-row: 2; align-self: end; justify-self: center; width: clamp(22rem, 28vw, 27rem); max-width: 100%; }
 .hero__description { position: relative; margin: 0; padding-inline-start: 1rem; color: var(--color-white); font-size: clamp(1.05rem, 1.4vw, 1.3rem); line-height: 1.4; text-align: left; text-shadow: 0 2px 8px #00110d; }
-.hero__description::before { position: absolute; top: 0; bottom: 0; inset-inline-start: 0; width: 2px; background: var(--color-primary); content: ""; }
+.hero__description::before, .intro__lead::before { position: absolute; top: 0; bottom: 0; inset-inline-start: 0; width: 3px; background: var(--color-primary); content: ""; }
 /* The rotated arrow's painted tip sits above its box, so its margin includes that overhang. */
 .hero__arrow { display: block; width: clamp(5.5rem, 7.2vw, 8rem); height: auto; margin: calc(var(--hero-stack-gap) + clamp(1.15rem, 1.51vw, 1.7rem)) auto 0; overflow: visible; fill: var(--color-primary); }
 .hero-orb { position: relative; z-index: 1; grid-column: 3; grid-row: 1; align-self: end; justify-self: center; width: min(19.2vw, 32.4svh, 25.2rem); aspect-ratio: 1; margin-bottom: var(--hero-stack-gap); }
@@ -56,14 +56,14 @@
 .hero-orb__pause-icon { display: block; width: 9px; height: 11px; border-inline: 3px solid currentColor; }
 .hero-orb__play-icon { display: block; width: 0; height: 0; margin-left: 2px; border-top: 5.5px solid transparent; border-bottom: 5.5px solid transparent; border-left: 9px solid currentColor; }
 
-.intro { position: relative; z-index: 1; color: var(--color-white); }
+.intro { position: relative; z-index: 1; margin-top: -4rem; color: var(--color-white); }
 .intro__inner { --intro-card-gap: clamp(3.5rem, 5vw, 5.5rem); display: grid; align-content: center; min-height: 100svh; gap: clamp(2.75rem, 5vh, 4rem); padding-block: clamp(5rem, 9vh, 7rem); padding-inline: clamp(0rem, 2.5vw, 3rem); }
 .intro__header { display: grid; grid-template-columns: minmax(0, 2.1fr) minmax(18rem, .95fr); align-items: end; gap: clamp(2rem, 4vw, 4.5rem); }
 .intro__title { margin: 0; font-size: clamp(3.4rem, 5.8vw, 6.3rem); font-weight: 300; line-height: .93; letter-spacing: -.045em; text-shadow: 0 4px 24px #00110dbb; }
 .intro__title-line { display: block; }
 .intro__title-line--0 { font-size: clamp(2rem, 3.6vw, 4.25rem); white-space: nowrap; }
-.intro__title-line--1 { width: max-content; max-width: 100%; font-weight: 800; background: var(--gradient-brand-compact); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: none; }
-.intro__lead { max-width: 31rem; margin: 0; font-size: clamp(1.08rem, 1.35vw, 1.4rem); font-weight: 300; line-height: 1.3; text-shadow: 0 2px 8px #00110d; }
+.intro__title-line--1 { width: max-content; max-width: 100%; padding-inline-end: .15em; padding-bottom: .07em; font-weight: 800; background: var(--gradient-brand-compact); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: none; }
+.intro__lead { position: relative; max-width: 31rem; margin: 0; padding-inline-start: 1rem; font-size: clamp(1.08rem, 1.35vw, 1.4rem); font-weight: 300; line-height: 1.3; text-shadow: 0 2px 8px #00110d; }
 .intro__cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--intro-card-gap); padding: 0; margin: 0; list-style: none; }
 .intro__card { position: relative; display: grid; grid-template-rows: 2.7rem minmax(3.4rem, auto) minmax(4.5rem, auto) .125rem 1fr; align-content: start; min-width: 0; min-height: 26rem; gap: 1.4rem; padding: clamp(1.5rem, 2.2vw, 2.5rem); border: 1px solid #94c986b0; border-radius: 1.5rem 4.5rem 1.5rem 1.5rem; background: linear-gradient(115deg, #001a16d9, #133729a8 70%, #232d1fb8); box-shadow: 0 14px 36px #00110d40; }
 .intro__card:not(:last-child)::after { position: absolute; top: 50%; left: 100%; width: var(--intro-card-gap); color: var(--color-white); content: "×"; font-size: clamp(2.5rem, 3vw, 3.5rem); font-weight: 300; line-height: 1; text-align: center; text-shadow: 0 2px 10px #00110d; transform: translateY(-50%); }
@@ -117,6 +117,7 @@
   .hero__headline-mask, .hero__headline-line { width: 100%; max-width: 100%; }
   .hero-orb { align-self: center; width: min(52vw, 23svh); margin: 1.25rem 0 var(--hero-stack-gap); translate: none; }
   .hero__lede { align-self: center; width: min(100%, 27rem); margin-top: 0; }
+  .intro { margin-top: -5rem; }
   .intro__inner { gap: 2.5rem; padding-block: 8rem 6rem; padding-inline: 0; }
   .intro__title { font-size: clamp(2.4rem, 8vw, 4.5rem); }
   .intro__title-line--0 { font-size: clamp(1.25rem, 5vw, 2.8rem); }

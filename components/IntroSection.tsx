@@ -26,18 +26,20 @@ export default function IntroSection({ copy }: { copy: IntroCopy }) {
   useEffect(() => {
     const section = sectionRef.current;
     if (!section || typeof IntersectionObserver === "undefined") return;
+    const title = section.querySelector(".intro__title");
+    if (!title) return;
     let observer: IntersectionObserver | undefined;
     let frame = 0;
     const prepare = () => {
       // Keep restored or already visible content readable instead of hiding it after hydration.
-      if (window.scrollY > 0 || section.getBoundingClientRect().top < window.innerHeight) return;
+      if (window.scrollY > 0 || title.getBoundingClientRect().top < window.innerHeight) return;
       setPhase("pending");
       observer = new IntersectionObserver(([entry]) => {
         if (!entry.isIntersecting) return;
         setPhase("shown");
         observer?.disconnect();
       }, { rootMargin: "0px 0px -20% 0px" });
-      observer.observe(section);
+      observer.observe(title);
     };
     const afterLoad = () => { frame = requestAnimationFrame(() => { frame = requestAnimationFrame(prepare); }); };
     if (document.readyState === "complete") afterLoad();
