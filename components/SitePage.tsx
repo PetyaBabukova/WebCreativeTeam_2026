@@ -54,7 +54,7 @@ function HomePage({ locale }: { locale: Locale }) {
         />
       </div>
     </section>
-    <IntroSection copy={copy.intro} locale={locale} />
+    <IntroSection copy={copy.intro} />
   </main>;
 }
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { MotionConfig, motion } from "motion/react";
-import type { Locale } from "@/lib/routing";
 
 type IntroCopy = {
   lines: string[];
@@ -20,7 +19,7 @@ function IntroIcon({ index }: { index: number }) {
   </svg>;
 }
 
-export default function IntroSection({ copy, locale }: { copy: IntroCopy; locale: Locale }) {
+export default function IntroSection({ copy }: { copy: IntroCopy }) {
   const sectionRef = useRef<HTMLElement>(null);
   const [phase, setPhase] = useState<"shown" | "pending">("shown");
 
@@ -67,7 +66,7 @@ export default function IntroSection({ copy, locale }: { copy: IntroCopy; locale
         </div>
         <ul className="intro__cards" role="list">
           {copy.items.map((item, index) => <motion.li className="intro__card" key={item.title} {...reveal(.18 + index * .12)}>
-            <span className="intro__marker" aria-hidden="true">{locale === "bg" ? <IntroIcon index={index} /> : `${String(index + 1).padStart(2, "0")} —`}</span>
+            <span className="intro__marker" aria-hidden="true"><IntroIcon index={index} /></span>
             <h3 className="intro__card-title">{item.title}</h3>
             <p className="intro__card-proposition">{item.proposition}</p>
             <span className="intro__card-rule" aria-hidden="true" />

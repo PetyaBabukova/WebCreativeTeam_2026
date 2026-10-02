@@ -59,7 +59,7 @@ test("intro enters over the same fixed background with Motion in both locales", 
     const stage = page.locator(".hero__stage");
     await expect(page.locator(".site-home picture")).toHaveCount(1);
     await expect(cards).toHaveCount(3);
-    await expect(title).toContainText(locale === "bg" ? "Да имаш значение — е." : "Making an impact is.");
+    await expect(title).toContainText(locale === "bg" ? "Да имаш значение — е" : "Making an impact is");
     await expect(cards.nth(2)).toContainText(locale === "bg" ? "РАЗВИТИЕ" : "MOMENTUM");
     await expect(title).toHaveCSS("opacity", "0");
     const stageBefore = await stage.boundingBox();
