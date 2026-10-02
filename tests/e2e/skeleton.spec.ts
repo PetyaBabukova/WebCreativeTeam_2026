@@ -23,6 +23,8 @@ test("SSR serves both locales without JavaScript", async ({ browser }) => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.locator(".hero__headline-line--0")).toHaveCSS("opacity", "1");
     await expect(page.locator(".hero__lede")).toHaveCSS("opacity", "1");
+    await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
+    await expect(page.locator(".intro__cards li")).toHaveCount(3);
   }
   await context.close();
 });
@@ -31,7 +33,7 @@ test("hero uses the mobile image and keeps the background static", async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(pageUrl("home", "bg"));
   const source = await page.locator(".hero__background").evaluate((image: HTMLImageElement) => image.currentSrc);
-  expect(source).toContain("Hero_Background_Mobile_1440x2560");
+  expect(source).toContain("background-mobile");
   await expect(page.locator(".hero__stage")).toHaveCSS("position", "fixed");
   await expect(page.locator(".hero-orb")).toHaveCount(1);
   const mobileOrder = await page.evaluate(() => {
@@ -44,6 +46,66 @@ test("hero uses the mobile image and keeps the background static", async ({ page
   expect(mobileOrder).toBe(true);
   await expect(page.locator("#services, #projects, #contact")).toHaveCount(0);
   await expect(page.locator(".hero__actions")).toHaveCount(0);
+});
+
+test("intro enters over the same fixed background with Motion in both locales", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1672, height: 940 });
+  for (const locale of locales) {
+    await page.goto(pageUrl("home", locale));
+    const intro = page.locator(".intro");
+    const title = page.locator(".intro__title");
+    const cards = page.locator(".intro__card");
+    const stage = page.locator(".hero__stage");
+    await expect(page.locator(".site-home picture")).toHaveCount(1);
+    await expect(cards).toHaveCount(3);
+    await expect(title).toContainText(locale === "bg" ? "Да имаш значение — е." : "Making an impact is.");
+    await expect(cards.nth(2)).toContainText(locale === "bg" ? "РАЗВИТИЕ" : "MOMENTUM");
+    await expect(title).toHaveCSS("opacity", "0");
+    const stageBefore = await stage.boundingBox();
+    await intro.scrollIntoViewIfNeeded();
+    await expect(title).toHaveCSS("opacity", "1", { timeout: 5000 });
+    await expect(cards.last()).toHaveCSS("opacity", "1", { timeout: 5000 });
+    const stageAfter = await stage.boundingBox();
+    expect(stageAfter?.y).toBeCloseTo(stageBefore!.y, 0);
+    const introPaintsAboveStage = await title.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return Boolean(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest(".intro"));
+    });
+    expect(introPaintsAboveStage).toBe(true);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const footerPaintsAboveStage = await page.locator(".site-footer").evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return Boolean(document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height / 2, innerHeight - box.top - 1))?.closest(".site-footer"));
+    });
+    expect(footerPaintsAboveStage).toBe(true);
+  }
+});
+
+test("intro cards remain readable without horizontal overflow", async ({ page }) => {
+  for (const width of [320, 390, 761, 1024, 1150, 1200, 1280, 1672]) {
+    await page.setViewportSize({ width, height: 940 });
+    for (const locale of locales) {
+      await page.goto(pageUrl("home", locale));
+      const layout = await page.evaluate(() => ({
+        overflow: document.documentElement.scrollWidth > innerWidth,
+        titles: [...document.querySelectorAll<HTMLElement>(".intro__card-title")].map((title) => title.scrollWidth - title.clientWidth),
+        columns: getComputedStyle(document.querySelector(".intro__cards")!).gridTemplateColumns.split(" ").length,
+      }));
+      expect(layout.overflow, `${locale} at ${width}px horizontal overflow`).toBe(false);
+      expect(Math.max(...layout.titles), `${locale} at ${width}px card title overflow`).toBeLessThanOrEqual(1);
+      expect(layout.columns, `${locale} at ${width}px card columns`).toBe(width < 1200 ? 1 : 3);
+    }
+  }
+});
+
+test("intro stays visible on a restored deep link", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${pageUrl("home", "bg")}#intro`);
+  await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
+  await page.reload();
+  await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 });
 
 test("scroll arrow is centered beneath the description and orb with visible space", async ({ page }) => {

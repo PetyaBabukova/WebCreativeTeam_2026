@@ -68,7 +68,10 @@ web_modules/
 # dotenv environment variable files
 .env
 .env.*
-!.env.example
+
+# Local design references and project notes
+/doc/
+/2026_Redesign/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -145,3 +148,4 @@ vite.config.ts.timestamp-*
 # Browser test artifacts
 playwright-report/
 test-results/
+.tmp/

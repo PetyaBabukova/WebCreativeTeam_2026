@@ -11,6 +11,15 @@
       "contact": "Let's work together",
       "rotationPause": "Pause logo rotation"
     },
+    "intro": {
+      "lines": ["Being online", "isn't the goal.", "Making an impact is."],
+      "description": "Successful brands don't treat marketing, technology, and design as separate disciplines. They bring them together into one connected system, where every part strengthens the others.",
+      "items": [
+        { "title": "VISIBILITY", "proposition": "The right audience. The right moment.", "description": "Strategic visibility across search, AI-powered discovery, and the digital channels that matter." },
+        { "title": "EXPERIENCE", "proposition": "A presence that leaves a mark.", "description": "Brand and web experiences with a clear identity, a distinctive presence, and a compelling reason to be chosen." },
+        { "title": "MOMENTUM", "proposition": "Technology that moves business forward.", "description": "Automation, optimisation, and digital solutions that accelerate processes and create a foundation for sustainable growth." }
+      ]
+    },
     "services": {
       "eyebrow": "How we help",
       "heading": "From search to",

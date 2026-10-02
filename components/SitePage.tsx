@@ -1,11 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
-import heroBackgroundDesktop from "@/2026_Redesign/Assets/Hero_Background_Desktop_3840x2160.webp";
-import heroBackgroundMobile from "@/2026_Redesign/Assets/Hero_Background_Mobile_1440x2560.webp";
+import heroBackgroundDesktop from "@/assets/hero/background-desktop.webp";
+import heroBackgroundMobile from "@/assets/hero/background-mobile.webp";
 import { appConfig } from "@/lib/config";
 import { messages } from "@/lib/messages";
 import { locales, pageUrl, type Locale, type Page } from "@/lib/routing";
 import HeroMotion from "./HeroOrb";
+import IntroSection from "./IntroSection";
 import "./SitePage.css";
 
 function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
@@ -37,14 +38,14 @@ function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
 function HomePage({ locale }: { locale: Locale }) {
   const copy = messages[locale].landing;
   return <main id="main" className="site-home" tabIndex={-1}>
+    <div className="hero__stage" aria-hidden="true">
+      <picture className="hero__art">
+        <source media="(max-width: 760px)" srcSet={heroBackgroundMobile.src} type="image/webp" />
+        <img src={heroBackgroundDesktop.src} alt="" fetchPriority="high" className="hero__background" />
+      </picture>
+      <div className="hero__shade" />
+    </div>
     <section className="hero" aria-labelledby="hero-title">
-      <div className="hero__stage" aria-hidden="true">
-        <picture className="hero__art">
-          <source media="(max-width: 760px)" srcSet={heroBackgroundMobile.src} type="image/webp" />
-          <img src={heroBackgroundDesktop.src} alt="" fetchPriority="high" className="hero__background" />
-        </picture>
-        <div className="hero__shade" />
-      </div>
       <div className="container hero__inner">
         <HeroMotion
           lines={copy.hero.lines}
@@ -53,6 +54,7 @@ function HomePage({ locale }: { locale: Locale }) {
         />
       </div>
     </section>
+    <IntroSection copy={copy.intro} locale={locale} />
   </main>;
 }
 

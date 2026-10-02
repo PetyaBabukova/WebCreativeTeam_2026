@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { MotionConfig, motion, useAnimationFrame, useMotionValue, useScroll, useSpring, useTransform } from "motion/react";
-import heroOrb from "@/2026_Redesign/Assets/Hero logo 1.webp";
+import heroOrb from "@/assets/hero/orb.webp";
 
 // Degrees per millisecond: one full turn every 24 seconds.
 const rotationSpeed = 360 / 24000;
