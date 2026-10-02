@@ -25,6 +25,8 @@ test("SSR serves both locales without JavaScript", async ({ browser }) => {
     await expect(page.locator(".hero__lede")).toHaveCSS("opacity", "1");
     await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
     await expect(page.locator(".intro__cards li")).toHaveCount(3);
+    await expect(page.locator("#services h2")).toHaveText(locale === "bg" ? "Нашите услуги" : "Our Services");
+    await expect(page.locator(".services__card")).toHaveCount(3);
   }
   await context.close();
 });
@@ -44,7 +46,8 @@ test("hero uses the mobile image and keeps the background static", async ({ page
     return orb.top >= heading.bottom && lede.top >= orb.bottom && arrow.top >= lede.top;
   });
   expect(mobileOrder).toBe(true);
-  await expect(page.locator("#services, #projects, #contact")).toHaveCount(0);
+  await expect(page.locator("#services")).toHaveCount(1);
+  await expect(page.locator("#projects, #contact")).toHaveCount(0);
   await expect(page.locator(".hero__actions")).toHaveCount(0);
 });
 
@@ -106,6 +109,64 @@ test("intro stays visible on a restored deep link", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+});
+
+test("services title and shared arrow yield to the first card and return on reverse scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await page.goto(pageUrl("home", "bg"));
+  const section = page.locator("#services");
+  const title = section.locator("h2");
+  const stage = section.locator(".services__heading-stage");
+  const arrow = section.locator(".services__arrow");
+  await page.locator(".services__card").first().evaluate((card) => window.scrollBy(0, card.getBoundingClientRect().top - innerHeight));
+  const clearOfHeader = await page.evaluate(() => document.querySelector(".services__heading-inner h2")!.getBoundingClientRect().top >= document.querySelector(".site-header__actions")!.getBoundingClientRect().bottom);
+  expect(clearOfHeader).toBe(true);
+  await expect(stage).toHaveCSS("opacity", "1");
+  const arrowAngle = () => arrow.evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return Math.round(Math.atan2(matrix.b, matrix.a) * 180 / Math.PI);
+  });
+  await expect.poll(arrowAngle).toBe(45);
+  await page.locator(".services__card").first().evaluate((card) => window.scrollBy(0, card.getBoundingClientRect().top - innerHeight * .25));
+  await expect(stage).toHaveCSS("opacity", "0");
+  await expect.poll(arrowAngle).toBe(-45);
+  await page.locator(".services__card").first().evaluate((card) => window.scrollBy(0, card.getBoundingClientRect().top - innerHeight));
+  await expect(stage).toHaveCSS("opacity", "1");
+  await expect.poll(arrowAngle).toBe(45);
+  await expect(title).toHaveText("Нашите услуги");
+});
+
+test("services follows intro more closely and shows the revised card copy", async ({ page }) => {
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await page.goto(pageUrl("home", "bg"));
+  await page.evaluate(() => document.fonts.ready);
+  const gap = await page.evaluate(() => {
+    const introBottom = Math.max(...[...document.querySelectorAll(".intro__card")].map((card) => card.getBoundingClientRect().bottom));
+    return document.querySelector(".services__heading-inner h2")!.getBoundingClientRect().top - introBottom;
+  });
+  expect(gap).toBeGreaterThan(0);
+  expect(gap).toBeLessThan(360);
+  const card = page.locator(".services__card").first();
+  await expect(card.locator(".services__eyebrow")).toHaveText("Спри да губиш време");
+  await expect(card.locator(".services__feature")).toContainText(["Бизнес процеси", "AI асистенти", "AI интеграции"]);
+  await expect(card.locator(".services__learn-more")).toHaveText("Автоматизирай");
+});
+
+test("services artwork stays above readable text on narrow screens", async ({ page }) => {
+  for (const locale of locales) {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto(pageUrl("home", locale));
+    const card = page.locator(".services__card").first();
+    const layout = await card.evaluate((element) => {
+      const image = element.querySelector(".services__image")!.getBoundingClientRect();
+      const content = element.querySelector(".services__card-content")!.getBoundingClientRect();
+      return { imageBottom: image.bottom, contentTop: content.top, overflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    expect(layout.contentTop).toBeGreaterThanOrEqual(layout.imageBottom - 1);
+    expect(layout.overflow).toBe(false);
+    await expect(card.locator(".services__feature")).toHaveCount(3);
+    await expect(card.locator(".services__feature svg")).toHaveCount(6);
+  }
 });
 
 test("scroll arrow is centered beneath the description and orb with visible space", async ({ page }) => {

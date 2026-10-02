@@ -7,6 +7,7 @@ import { messages } from "@/lib/messages";
 import { locales, pageUrl, type Locale, type Page } from "@/lib/routing";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
+import ServicesSection from "./ServicesSection";
 import "./SitePage.css";
 
 function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
@@ -55,6 +56,7 @@ function HomePage({ locale }: { locale: Locale }) {
       </div>
     </section>
     <IntroSection copy={copy.intro} />
+    <ServicesSection copy={copy.services} />
   </main>;
 }
 

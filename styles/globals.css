@@ -16,10 +16,11 @@
   --container: 108rem;
   --gutter: clamp(1rem, 3vw, 3rem);
   --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --site-sticky-top: clamp(7.5rem, 11vh, 9rem);
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: auto; }
+html { scroll-behavior: auto; scroll-padding-top: var(--site-sticky-top); }
 body { margin: 0; background: var(--color-background); color: var(--color-ink); font-family: var(--font-sofia-sans), Arial, Helvetica, sans-serif; line-height: 1.45; }
 img { max-width: 100%; }
 a { color: inherit; text-decoration: none; }

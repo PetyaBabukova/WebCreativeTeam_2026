@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { MotionConfig, motion, useAnimationFrame, useMotionValue, useScroll, useSpring, useTransform } from "motion/react";
+import { MotionConfig, motion, useAnimationFrame, useMotionValue, useScroll, useSpring, useTransform, type MotionValue } from "motion/react";
 import heroOrb from "@/assets/hero/orb.webp";
 
 // Degrees per millisecond: one full turn every 24 seconds.
@@ -40,21 +40,29 @@ export default function HeroMotion({ lines, description, rotationPauseLabel }: H
         transition={{ delay: 1.85, duration: .55, ease: entranceEase }}
       >
         <p className="hero__description">{description}</p>
-        <ScrollArrow />
+        <HeroScrollArrow />
       </motion.div>
     </div>
   </MotionConfig>;
 }
 
-function ScrollArrow() {
+function HeroScrollArrow() {
   const { scrollY } = useScroll();
+  const viewportHeight = useMotionValue(900);
+  useEffect(() => {
+    const update = () => viewportHeight.set(window.innerHeight);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [viewportHeight]);
   // The SVG is drawn pointing down-left: +45deg turns it to point left, -45deg to point down.
-  const rotate = useTransform(scrollY, (y) => {
-    if (typeof window === "undefined") return 45;
-    return 45 - 90 * Math.min(1, Math.max(0, y / (window.innerHeight * arrowTurnViewportShare)));
-  });
+  const rotate = useTransform(() => 45 - 90 * Math.min(1, Math.max(0, scrollY.get() / (viewportHeight.get() * arrowTurnViewportShare))));
 
-  return <motion.svg className="hero__arrow" viewBox="0 0 774.96 774.68" aria-hidden="true" focusable="false" style={{ rotate }}>
+  return <ScrollArrow className="hero__arrow" rotate={rotate} />;
+}
+
+export function ScrollArrow({ className, rotate }: { className: string; rotate: MotionValue<number> }) {
+  return <motion.svg className={className} viewBox="0 0 774.96 774.68" aria-hidden="true" focusable="false" style={{ rotate }}>
     <polygon points="0.29,774.68 774.96,774.68 774.96,723.03 85.86,723.03 763.42,45.47 726.91,8.95 51.93,683.93 51.93,0 0.29,0 0.29,735.57 0,735.86 0.29,736.15" />
   </motion.svg>;
 }

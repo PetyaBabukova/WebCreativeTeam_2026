@@ -21,16 +21,32 @@
       ]
     },
     "services": {
-      "eyebrow": "How we help",
-      "heading": "From search to",
-      "highlight": "real growth.",
-      "intro": "We bring data, creativity and technology together to build an online presence that delivers results.",
-      "all": "All services",
+      "heading": "Our Services",
       "items": [
-        { "title": "SEO optimization", "description": "Be found on Google." },
-        { "title": "AI Search and GEO", "description": "Be recommended by the new search engines." },
-        { "title": "Digital strategy", "description": "Turn visibility into business results." },
-        { "title": "More customers", "description": "Sustainable growth for your business." }
+        {
+          "eyebrow": "Stop wasting time",
+          "title": "AI",
+          "highlight": "automation",
+          "features": ["Business processes", "AI assistants", "AI integrations"],
+          "description": "AI automation turns repetitive tasks into connected, intelligent processes — reducing manual work, improving efficiency, and freeing up more time for real business growth.",
+          "learnMore": "Automate"
+        },
+        {
+          "eyebrow": "Be where they’re searching",
+          "title": "SEO & GEO",
+          "highlight": "impact",
+          "features": ["SEO Optimisation", "Technical SEO", "AI Search & GEO"],
+          "description": "Being online isn’t enough. You need to be found, understood, and chosen — across search engines and AI-powered search.",
+          "learnMore": "Improve your visibility"
+        },
+        {
+          "eyebrow": "MAKE NOISE WITH PURPOSE",
+          "title": "DIGITAL MARKETING",
+          "highlight": "momentum",
+          "features": ["Strategy", "Performance", "Social Media"],
+          "description": "Great marketing does more than attract attention. It connects strategy, content, and data to turn interest into action — and action into sustainable growth.",
+          "learnMore": "Build momentum"
+        }
       ]
     },
     "projects": {
