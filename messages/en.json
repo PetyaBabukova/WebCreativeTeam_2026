@@ -46,6 +46,14 @@
           "features": ["Strategy", "Performance", "Social Media"],
           "description": "Great marketing does more than attract attention. It connects strategy, content, and data to turn interest into action — and action into sustainable growth.",
           "learnMore": "Build momentum"
+        },
+        {
+          "eyebrow": "DON’T LOOK LIKE EVERYONE ELSE",
+          "title": "Branding",
+          "highlight": "with character",
+          "features": ["Logo", "Identity", "Digital Brand"],
+          "description": "We create a distinctive visual identity that tells your story and makes your brand stand out in the digital world.",
+          "learnMore": "Build your brand"
         }
       ]
     },

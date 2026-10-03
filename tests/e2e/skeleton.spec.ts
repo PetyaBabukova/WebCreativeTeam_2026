@@ -26,7 +26,7 @@ test("SSR serves both locales without JavaScript", async ({ browser }) => {
     await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
     await expect(page.locator(".intro__cards li")).toHaveCount(3);
     await expect(page.locator("#services h2")).toHaveText(locale === "bg" ? "Нашите услуги" : "Our Services");
-    await expect(page.locator(".services__card")).toHaveCount(3);
+    await expect(page.locator(".services__card")).toHaveCount(4);
   }
   await context.close();
 });

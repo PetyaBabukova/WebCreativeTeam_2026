@@ -6,6 +6,7 @@ import { MotionConfig, motion, useMotionValue, useScroll, useTransform } from "m
 import aiAutomationImage from "@/assets/services/ai-automation.webp";
 import seoGeoImage from "@/assets/services/seo-and-geo.webp";
 import digitalMarketingImage from "@/assets/services/digital-marketing.webp";
+import brandingImage from "@/assets/services/branding.webp";
 import { ScrollArrow } from "./HeroOrb";
 
 type Service = {
@@ -17,12 +18,13 @@ type Service = {
   learnMore: string;
 };
 type ServicesCopy = { heading: string; items: Service[] };
-type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people";
+type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "logo" | "layers" | "screen";
 
 const serviceVisuals = [
   { id: "ai", image: aiAutomationImage, icons: ["gear", "robot", "network"] as IconKind[] },
   { id: "seo-geo", image: seoGeoImage, icons: ["search", "database", "network"] as IconKind[] },
   { id: "digital-marketing", image: digitalMarketingImage, icons: ["target", "chart", "people"] as IconKind[] },
+  { id: "branding", image: brandingImage, icons: ["logo", "layers", "screen"] as IconKind[] },
 ];
 
 function FeatureIcon({ kind }: { kind: IconKind }) {
@@ -35,7 +37,10 @@ function FeatureIcon({ kind }: { kind: IconKind }) {
             : kind === "database" ? <><ellipse cx="16" cy="7" rx="11" ry="4" /><path d="M5 7v18c0 2.2 4.9 4 11 4s11-1.8 11-4V7M5 16c0 2.2 4.9 4 11 4s11-1.8 11-4" /></>
               : kind === "target" ? <><circle cx="15" cy="17" r="11" /><circle cx="15" cy="17" r="6" /><circle cx="15" cy="17" r="1.5" /><path d="m15 17 12-12m-5 0h5v5" /></>
                 : kind === "chart" ? <><path d="M3 27h26M6 23v-6h4v6m2 0V12h4v11m2 0V8h4v15m2 0V4h4v19" /><path d="m5 14 6-5 5 2 9-7" /></>
-                  : <><circle cx="16" cy="9" r="4" /><circle cx="5" cy="12" r="3" /><circle cx="27" cy="12" r="3" /><path d="M9 26v-3a7 7 0 0 1 14 0v3H9ZM1 26v-4a5 5 0 0 1 6-5m24 9v-4a5 5 0 0 0-6-5" /></>}
+                  : kind === "people" ? <><circle cx="16" cy="9" r="4" /><circle cx="5" cy="12" r="3" /><circle cx="27" cy="12" r="3" /><path d="M9 26v-3a7 7 0 0 1 14 0v3H9ZM1 26v-4a5 5 0 0 1 6-5m24 9v-4a5 5 0 0 0-6-5" /></>
+                    : kind === "logo" ? <><circle cx="16" cy="6" r="3" /><circle cx="5" cy="25" r="3" /><circle cx="27" cy="25" r="3" /><path d="M16 9v6M5 22v-5l11-4 11 4v5" /></>
+                      : kind === "layers" ? <><path d="m16 3 13 7-13 7L3 10l13-7Zm-13 13 13 7 13-7M3 22l13 7 13-7" /></>
+                        : <><rect x="3" y="4" width="26" height="19" rx="2" /><path d="M12 29h8m-4-6v6" /></>}
   </svg>;
 }
 
