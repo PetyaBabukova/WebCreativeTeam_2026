@@ -36,6 +36,7 @@ function SiteHeader(props: HeaderProps) {
           serviceLinks: copy.serviceLinks,
           blog: copy.blogLabel,
           about: copy.aboutLabel,
+          faq: copy.faqLabel,
           contact: copy.contactLabel,
         }} />
       </div>

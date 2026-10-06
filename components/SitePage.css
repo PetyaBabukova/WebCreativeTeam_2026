@@ -1,7 +1,7 @@
 .site-page { overflow: clip; }
-.site-page--about, .site-page--blog, .site-page--service { background: var(--color-background); }
+.site-page--about, .site-page--blog, .site-page--faq, .site-page--service { background: var(--color-background); }
 .site-header { position: absolute; z-index: 20; top: 0; right: 0; left: 0; color: var(--color-white); }
-.site-page--about .site-header, .site-page--blog .site-header, .site-page--service .site-header { background: var(--color-deep); }
+.site-page--about .site-header, .site-page--blog .site-header, .site-page--faq .site-header, .site-page--service .site-header { background: var(--color-deep); }
 .site-header__inner { display: flex; align-items: center; justify-content: space-between; min-height: 8rem; gap: 1.5rem; padding-top: clamp(2rem, 4.5vh, 4rem); }
 .site-header__brand { display: inline-flex; flex-shrink: 0; }
 .site-header__brand img { display: block; width: clamp(11.5rem, 22vw, 17.5rem); height: auto; }

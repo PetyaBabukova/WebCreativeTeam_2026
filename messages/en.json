@@ -1,10 +1,11 @@
 {
   "skip": "Skip to content", "navigation": "Main navigation", "language": "Language",
-  "homeLabel": "Home", "aboutLabel": "About", "servicesLabel": "Services", "blogLabel": "Blog", "contactLabel": "Contact",
+  "homeLabel": "Home", "aboutLabel": "About", "servicesLabel": "Services", "blogLabel": "Blog", "faqLabel": "FAQs", "contactLabel": "Contact",
   "servicesToggle": "Services submenu", "serviceLinks": ["AI Automation", "SEO & GEO", "Digital Marketing", "Branding", "Web Solutions"],
   "home": { "title": "Refuse to go unnoticed | WebCreativeTeam", "description": "SEO, AI Search and digital strategy for sustainable online growth." },
   "about": { "title": "About WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences." },
   "blog": { "title": "Blog", "description": "" },
+  "faq": { "title": "FAQs", "description": "" },
   "landing": {
     "menu": "Open menu",
     "hero": {

@@ -53,7 +53,7 @@ test("Blog is third in the menu and its language switch keeps the page", async (
     await page.goto(pageUrl("home", locale));
     await page.locator(".site-menu > summary").click();
     const links = page.locator(".site-menu__panel > nav:first-child > a, .site-menu__panel > nav:first-child > .site-menu__services > a");
-    await expect(links).toHaveCount(5);
+    await expect(links).toHaveCount(6);
     await expect(links.nth(2)).toHaveAttribute("href", pageUrl("blog", locale));
     await links.nth(2).click();
     await expect(page).toHaveURL(new RegExp(pageUrl("blog", locale) + "$"));
@@ -66,6 +66,28 @@ test("Blog is third in the menu and its language switch keeps the page", async (
     await page.locator(".site-menu > summary").click();
     await expect(page.locator(`.site-menu__languages a[lang="${locale === "bg" ? "en" : "bg"}"]`)).toHaveAttribute("href", pageUrl("blog", locale === "bg" ? "en" : "bg"));
   }
+});
+
+test("FAQs follows Blog, keeps the locale, and /faq opens the BG placeholder", async ({ page }) => {
+  for (const locale of locales) {
+    await page.goto(pageUrl("home", locale));
+    await page.locator(".site-menu > summary").click();
+    const links = page.locator(".site-menu__panel > nav:first-child > a, .site-menu__panel > nav:first-child > .site-menu__services > a");
+    await expect(links.nth(3)).toHaveAttribute("href", pageUrl("faq", locale));
+    await expect(links.nth(4)).toHaveAttribute("href", pageUrl("about", locale));
+    await links.nth(3).click();
+    await expect(page).toHaveURL(new RegExp(pageUrl("faq", locale) + "$"));
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(locale === "bg" ? "Въпроси" : "FAQs");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(pageUrl("faq", locale) + "$"));
+    for (const language of locales) {
+      await expect(page.locator(`link[rel="alternate"][hreflang="${language}"]`)).toHaveAttribute("href", new RegExp(pageUrl("faq", language) + "$"));
+    }
+    await page.locator(".site-menu > summary").click();
+    await expect(page.locator(`.site-menu__languages a[lang="${locale === "bg" ? "en" : "bg"}"]`)).toHaveAttribute("href", pageUrl("faq", locale === "bg" ? "en" : "bg"));
+  }
+  await page.goto("/faq");
+  await expect(page).toHaveURL(new RegExp(pageUrl("faq", "bg") + "$"));
 });
 
 test("service submenu opens on mouse hover and closes when the pointer leaves", async ({ page }) => {

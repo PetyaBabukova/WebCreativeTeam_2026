@@ -67,6 +67,7 @@ describe("public pages", () => {
     expect(isLocale("fr")).toBe(false); expect(isLocale("BG")).toBe(false);
     expect(canonicalRedirects).toEqual([
       { source: "/", destination: "/bg", permanent: false },
+      { source: "/faq", destination: "/faq/bg", permanent: false },
       { source: "/bg/about", destination: "/about/bg", permanent: true },
       { source: "/en/about", destination: "/about/en", permanent: true },
     ]);

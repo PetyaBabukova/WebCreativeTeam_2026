@@ -14,6 +14,7 @@ type NavigationCopy = {
   serviceLinks: string[];
   blog: string;
   about: string;
+  faq: string;
   contact: string;
 };
 
@@ -99,6 +100,7 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
           </details>
         </div>
         <Link href={pageUrl("blog", locale)} aria-current={page === "blog" ? "page" : undefined} onClick={closeMenus}>{copy.blog}</Link>
+        <Link href={pageUrl("faq", locale)} aria-current={page === "faq" ? "page" : undefined} onClick={closeMenus}>{copy.faq}</Link>
         <Link href={pageUrl("about", locale)} aria-current={page === "about" ? "page" : undefined} onClick={closeMenus}>{copy.about}</Link>
         <Link href="#footer-contact" onClick={closeMenus}>{copy.contact}</Link>
       </nav>

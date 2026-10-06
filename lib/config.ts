@@ -10,6 +10,7 @@ export const appConfig = {
     root: "/",
     about: "/about",
     blog: "/blog",
+    faq: "/faq",
     services: "/services",
     health: "/healthz",
     api: "/api",
