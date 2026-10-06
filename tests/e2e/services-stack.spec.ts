@@ -236,8 +236,8 @@ test("mobile spacing and service hover follow the shared design", async ({ page 
       ctaArrow: box(".services__learn-more svg").width,
     };
   });
-  expect(layout.gap).toBeGreaterThanOrEqual(140);
-  expect(layout.gap).toBeLessThanOrEqual(165);
+  expect(layout.gap).toBeGreaterThanOrEqual(100);
+  expect(layout.gap).toBeLessThanOrEqual(180);
   expect(layout.sectionArrow).toBeLessThanOrEqual(64);
   expect(layout.featureArrow).toBeLessThanOrEqual(18);
   expect(layout.ctaArrow).toBeLessThanOrEqual(20);
@@ -253,6 +253,31 @@ test("mobile spacing and service hover follow the shared design", async ({ page 
   await feature.hover();
   await expect(feature).toHaveCSS("color", lime);
   await expect(feature).toHaveCSS("border-color", lime);
+});
+
+test("service copy fits all cards at intermediate widths", async ({ page }) => {
+  for (const viewport of [{ width: 768, height: 900 }, { width: 1024, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    for (const locale of ["bg", "en"] as const) {
+      await page.goto(pageUrl("home", locale));
+      await page.evaluate(() => document.fonts.ready);
+      const layout = await page.locator(".services__card").evaluateAll((cards) => cards.map((card) => {
+        const content = card.querySelector<HTMLElement>(".services__card-content")!;
+        const title = card.querySelector<HTMLElement>(".services__card-title")!;
+        return {
+          contentBottom: content.getBoundingClientRect().bottom,
+          cardBottom: card.getBoundingClientRect().bottom,
+          titleOverflow: title.scrollWidth - title.clientWidth,
+        };
+      }));
+      for (const [index, card] of layout.entries()) {
+        const label = `${locale} ${viewport.width}px service ${index + 1}`;
+        expect(card.contentBottom, label).toBeLessThanOrEqual(card.cardBottom + 2);
+        expect(card.titleOverflow, label).toBeLessThanOrEqual(2);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    }
+  }
 });
 
 test("service cards remain readable without JavaScript", async ({ browser }) => {

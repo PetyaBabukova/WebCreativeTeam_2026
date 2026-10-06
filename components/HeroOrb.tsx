@@ -124,7 +124,7 @@ function HeroOrb({ rotationPauseLabel }: { rotationPauseLabel: string }) {
           className="hero-orb__spin"
           style={{ rotate: rotation }}
         >
-          <Image src={heroOrb} alt="" width={1254} height={1254} priority sizes="(max-width: 760px) min(44vw, 18svh), (max-width: 1440px) 19.2vw, 25.2rem" />
+          <Image src={heroOrb} alt="" width={1254} height={1254} priority sizes="(width <= 47.5rem) min(52vw, 23svh), (width <= 128rem) min(17vw, 29svh), 25.2rem" />
         </motion.div>
       </motion.div>
     </motion.div>

@@ -88,7 +88,7 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
     if (event.target !== event.currentTarget) return;
     setHash(currentSharedHash());
     if (servicesRef.current) {
-      servicesRef.current.open = Boolean(menuRef.current?.open && window.matchMedia("(max-width: 760px)").matches);
+      servicesRef.current.open = Boolean(menuRef.current?.open && window.matchMedia("(width <= 47.5rem)").matches);
     }
   }
 

@@ -38,7 +38,7 @@ export default function IntroSection({ copy }: { copy: IntroCopy }) {
         if (!entry.isIntersecting) return;
         setPhase("shown");
         observer?.disconnect();
-      }, { rootMargin: "0px 0px -20% 0px" });
+      }, { rootMargin: "0% 0% -20% 0%" });
       observer.observe(title);
     };
     const afterLoad = () => { frame = requestAnimationFrame(() => { frame = requestAnimationFrame(prepare); }); };

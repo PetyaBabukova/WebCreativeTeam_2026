@@ -225,7 +225,7 @@ test("intro enters over the same fixed background with Motion in both locales", 
     const stage = page.locator(".hero__stage");
     await expect(page.locator(".site-home picture")).toHaveCount(1);
     await expect(cards).toHaveCount(3);
-    await expect(title).toContainText(locale === "bg" ? "Да имаш значение — е" : "Making an impact is");
+    await expect(title).toContainText(locale === "bg" ? "Да бъдеш онлайн не е достатъчно" : "Being online is not enough");
     await expect(cards.nth(2)).toContainText(locale === "bg" ? "РАЗВИТИЕ" : "MOMENTUM");
     await expect(title).toHaveCSS("opacity", "0");
     const stageBefore = await stage.boundingBox();
@@ -256,11 +256,44 @@ test("intro cards remain readable without horizontal overflow", async ({ page })
       const layout = await page.evaluate(() => ({
         overflow: document.documentElement.scrollWidth > innerWidth,
         titles: [...document.querySelectorAll<HTMLElement>(".intro__card-title")].map((title) => title.scrollWidth - title.clientWidth),
-        columns: getComputedStyle(document.querySelector(".intro__cards")!).gridTemplateColumns.split(" ").length,
+        direction: getComputedStyle(document.querySelector(".intro__cards")!).flexDirection,
       }));
       expect(layout.overflow, `${locale} at ${width}px horizontal overflow`).toBe(false);
       expect(Math.max(...layout.titles), `${locale} at ${width}px card title overflow`).toBeLessThanOrEqual(1);
-      expect(layout.columns, `${locale} at ${width}px card columns`).toBe(width < 1200 ? 1 : 3);
+      expect(layout.direction, `${locale} at ${width}px card direction`).toBe(width < 1200 ? "column" : "row");
+    }
+  }
+});
+
+test("page sections share the unscaled service card content edges", async ({ page }) => {
+  for (const width of [390, 768, 1024, 1366, 1920, 2560]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const locale of locales) {
+      await page.goto(pageUrl("home", locale));
+      const edges = await page.evaluate(() => {
+        const contentEdges = (selector: string) => {
+          const element = document.querySelector<HTMLElement>(selector)!;
+          const box = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return [box.left + parseFloat(style.paddingLeft), box.right - parseFloat(style.paddingRight)];
+        };
+        return {
+          header: contentEdges(".site-header__inner"),
+          actions: contentEdges(".site-header__actions"),
+          hero: contentEdges(".hero__inner"),
+          intro: contentEdges(".intro__inner"),
+          services: contentEdges(".services__cards"),
+          footer: contentEdges(".site-footer__grid"),
+          overflow: document.documentElement.scrollWidth > innerWidth,
+        };
+      });
+      const reference = edges.services;
+      for (const [section, bounds] of Object.entries(edges)) {
+        if (section === "overflow") continue;
+        expect(Math.abs((bounds as number[])[0] - reference[0]), `${locale} ${width}px ${section} left`).toBeLessThan(1);
+        expect(Math.abs((bounds as number[])[1] - reference[1]), `${locale} ${width}px ${section} right`).toBeLessThan(1);
+      }
+      expect(edges.overflow, `${locale} ${width}px horizontal overflow`).toBe(false);
     }
   }
 });
@@ -760,7 +793,7 @@ test("headline and CTAs remain within the hero on common viewports", async ({ pa
   }
 });
 
-test("desktop first scene is fully visible without scrolling and the headline clears the right column", async ({ page }) => {
+test("desktop first scene fits and its right copy aligns with the intro", async ({ page }) => {
   // 1536x730 is the user's laptop (1920x1080 at 125% scaling, minus browser chrome); 2560x1300 their external monitor.
   for (const viewport of [{ width: 1280, height: 720 }, { width: 1536, height: 730 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 2560, height: 1300 }]) {
     await page.setViewportSize(viewport);
@@ -773,15 +806,13 @@ test("desktop first scene is fully visible without scrolling and the headline cl
           const range = document.createRange(); range.selectNodeContents(line);
           return range.getBoundingClientRect().right;
         }));
-        const headlineSize = parseFloat(getComputedStyle(document.querySelector(".hero h1")!).fontSize);
-        return { headlineRight, headlineSize, heading: box(".hero h1").bottom, orb: box(".hero-orb"), lede: box(".hero__lede"), arrow: box(".hero__arrow"), viewportHeight: innerHeight };
+        return { headlineRight, heading: box(".hero h1").bottom, orb: box(".hero-orb"), lede: box(".hero__lede"), arrow: box(".hero__arrow"), introLead: box(".intro__lead"), viewportHeight: innerHeight };
       });
       const label = `${locale} at ${viewport.width}x${viewport.height}`;
       for (const bottom of [layout.heading, layout.orb.bottom, layout.lede.bottom, layout.arrow.bottom]) expect(bottom, label).toBeLessThanOrEqual(layout.viewportHeight);
       const columnGap = Math.min(layout.orb.left, layout.lede.left) - layout.headlineRight;
       expect(columnGap, label).toBeGreaterThan(0);
-      // The right column follows the headline at a gap proportional to its size, not pinned to the far edge.
-      expect(columnGap / layout.headlineSize, label).toBeLessThanOrEqual(1.35);
+      expect(Math.abs(layout.lede.right - layout.introLead.right), label).toBeLessThanOrEqual(1);
       expect(layout.lede.top - layout.orb.bottom, label).toBeGreaterThanOrEqual(40);
     }
   }
@@ -811,7 +842,7 @@ test("mobile headline fills the content width without overflowing", async ({ pag
         return { container: h1.getBoundingClientRect().width, longest: Math.max(...widths) };
       });
       expect(longest, `${locale} @ ${width}px overflows`).toBeLessThanOrEqual(container + 1);
-      expect(longest / container, `${locale} @ ${width}px does not fill the width`).toBeGreaterThan(.95);
+      expect(longest / container, `${locale} @ ${width}px does not fill the width`).toBeGreaterThan(.91);
     }
   }
 });

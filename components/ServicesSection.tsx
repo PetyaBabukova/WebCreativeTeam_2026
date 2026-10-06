@@ -30,6 +30,9 @@ const serviceVisuals = [
   { id: "web-design", image: webDesignImage, icons: ["screen", "refresh", "gear"] as IconKind[] },
 ];
 
+const rootFontSize = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+const isCompactViewport = () => window.matchMedia?.("(width <= 47.5rem)").matches ?? window.innerWidth <= 47.5 * rootFontSize();
+
 function FeatureIcon({ kind }: { kind: IconKind }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   return <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false" {...common}>
@@ -90,10 +93,10 @@ function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
     const measure = () => {
       height = card.offsetHeight;
       nextHeight = next?.offsetHeight ?? 0;
-      card.style.setProperty("--service-card-height", `${height}px`);
+      card.style.setProperty("--service-card-height", `${height / rootFontSize()}rem`);
       stickyTop = parseFloat(getComputedStyle(card).top) || 0;
       viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-      finalScale = window.innerWidth <= 760 ? .83 : .80;
+      finalScale = isCompactViewport() ? .83 : .80;
       update();
     };
     measure();
@@ -120,7 +123,7 @@ function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
     ref={(node) => { cardRefs.current[index] = node; if (index === 0) firstCardRef.current = node; }}
   >
     <div className="services__image">
-      <Image src={visual.image} alt="" fill sizes="(max-width: 760px) 100vw, (max-width: 1200px) 94vw, 92vw" />
+      <Image src={visual.image} alt="" fill sizes="(max-width: 48rem) 94vw, (max-width: 56.25rem) 90vw, (max-width: 128rem) 84vw, 108rem" />
     </div>
     <div className="services__card-content">
       <p className="services__eyebrow">{item.eyebrow}</p>
@@ -155,13 +158,23 @@ export default function ServicesSection({ copy }: { copy: ServicesCopy }) {
     const update = () => {
       const heading = document.querySelector(".services__heading-stage");
       const stickyTop = heading ? parseFloat(getComputedStyle(heading).top) || 0 : 0;
-      const available = window.innerHeight - stickyTop;
-      setStack((current) => available < (current === "sticky" ? 300 : 324) ? "flow" : "sticky");
+      const available = (window.visualViewport?.height ?? window.innerHeight) - stickyTop;
+      const tallestCard = Math.max(0, ...cardRefs.current.map((card) => card?.offsetHeight ?? 0));
+      const rem = rootFontSize();
+      setStack((current) => {
+        const minimumSpace = (current === "sticky" ? 18.75 : 20.25) * rem;
+        const heightReserve = current === "sticky" ? 0 : 1.5 * rem;
+        const desktopCardNeedsFlow = !isCompactViewport() && tallestCard > available - heightReserve;
+        return available < minimumSpace || desktopCardNeedsFlow ? "flow" : "sticky";
+      });
     };
     update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    cardRefs.current.forEach((card) => { if (card) observer?.observe(card); });
     window.addEventListener("resize", update);
     window.visualViewport?.addEventListener("resize", update);
     return () => {
+      observer?.disconnect();
       window.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("resize", update);
     };

@@ -26,7 +26,7 @@ function SiteHeader(props: HeaderProps) {
       <Link href={pageUrl("home", locale)} className="site-header__brand">
         <Image src={appConfig.brandLogoPath} alt="WebCreativeTeam" width={280} height={77} priority unoptimized />
       </Link>
-      <div className="site-header__actions">
+      <div className="container site-header__actions">
         <Link className="button button--outline site-header__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
         <SiteNavigation {...props} copy={{
           menu: copy.landing.menu,
@@ -51,7 +51,7 @@ function HomePage({ locale }: { locale: Locale }) {
   return <main id="main" className="site-home" tabIndex={-1}>
     <div className="hero__stage" aria-hidden="true">
       <picture className="hero__art">
-        <source media="(max-width: 760px)" srcSet={heroBackgroundMobile.src} type="image/webp" />
+        <source media="(width <= 47.5rem)" srcSet={heroBackgroundMobile.src} type="image/webp" />
         <img src={heroBackgroundDesktop.src} alt="" fetchPriority="high" className="hero__background" />
       </picture>
       <div className="hero__shade" />
