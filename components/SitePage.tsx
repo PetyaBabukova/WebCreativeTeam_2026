@@ -86,9 +86,9 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
   const legal = { unavailable: footer.legalUnavailable, close: footer.close };
   return <footer className="site-footer">
     <div className="container site-footer__callout">
-      <div className="site-footer__callout-copy"><p>{footer.idea}</p><p>{footer.promise}</p></div>
-      <Link className="button button--outline site-footer__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
+      <div className="site-footer__callout-copy"><p>{footer.idea} <span>{footer.promise}</span></p></div>
     </div>
+    <div className="site-footer__surface">
     <div className="site-footer__main">
       <div className="container site-footer__grid">
         <div className="site-footer__brand"><Link href={pageUrl("home", locale)} aria-label="WebCreativeTeam"><Image src={appConfig.brandLogoPath} alt="" width={430} height={119} unoptimized /></Link></div>
@@ -111,10 +111,9 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
             {socialNames.map((name) => {
               const url = appConfig.socialProfiles[name];
               const icon = <SocialIcon name={name} />;
-              return url ? <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={socialLabels[name]} className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</a> : <span key={name} aria-hidden="true" className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</span>;
+              return url ? <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={socialLabels[name]} className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</a> : <button key={name} type="button" disabled aria-label={socialLabels[name]} className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</button>;
             })}
           </div>
-          <p className="site-footer__unavailable">{footer.socialUnavailable}</p>
           <Link className="button button--outline site-footer__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
         </section>
       </div>
@@ -127,6 +126,7 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
         <FooterLegalButton label={footer.terms} title={footer.terms} {...legal} />
       </div>
       <nav className="site-footer__languages" aria-label={copy.language}>{locales.map((language) => <a key={language} href={localeSwitchUrl(route, language)} lang={language} hrefLang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</a>)}</nav>
+    </div>
     </div>
   </footer>;
 }

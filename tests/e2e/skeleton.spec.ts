@@ -433,7 +433,20 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
     await expect(navigation.getByRole("link")).toHaveCount(10);
     await expect(navigation.getByRole("link", { name: locale === "bg" ? "Контакти" : "Contact" })).toHaveAttribute("href", pageUrl("contacts", locale));
     await expect(footer.locator(".site-footer__social-icons a")).toHaveCount(0);
-    await expect(footer.locator(".site-footer__email-row button")).toBeDisabled();
+    await expect(footer.locator(".site-footer__social-icons button")).toHaveCount(5);
+    const email = footer.getByRole("textbox", { name: locale === "bg" ? "Твоят имейл" : "Your email" });
+    const subscribe = footer.locator(".site-footer__email-row button");
+    await expect(email).toBeEnabled();
+    await expect(subscribe).toBeDisabled();
+    await email.fill("reader@example.com");
+    const newsConsent = footer.getByRole("checkbox", { name: locale === "bg" ? "Съгласявам се да получавам новини и полезно съдържание." : "I agree to receive news and useful content." });
+    const privacyConsent = footer.getByRole("checkbox", { name: locale === "bg" ? "Приемам Политиката за поверителност" : "I accept the Privacy Policy" });
+    await newsConsent.check();
+    await privacyConsent.check();
+    await expect(newsConsent).toBeChecked();
+    await expect(privacyConsent).toBeChecked();
+    await expect(footer).not.toContainText(locale === "bg" ? "Абонаментът все още не е достъпен." : "Newsletter signup is not available yet.");
+    await expect(footer).not.toContainText(locale === "bg" ? "Профилите скоро ще бъдат достъпни." : "Our profiles will be available soon.");
     const privacy = footer.locator(".site-footer__bottom-links button").first();
     await privacy.focus();
     await privacy.press("Enter");
@@ -446,10 +459,30 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
       await page.setViewportSize({ width, height: 900 });
       const grid = await footer.locator(".site-footer__grid").boundingBox();
       const social = await footer.locator(".site-footer__social").boundingBox();
+      const newsletterForm = await footer.locator(".site-footer__newsletter-form").boundingBox();
       expect(grid && social && social.x + social.width <= grid.x + grid.width + 1).toBe(true);
+      expect(newsletterForm && newsletterForm.width <= 401).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     await expect(page.getByRole("link", { name: appConfig.contactEmail })).toHaveAttribute("href", `mailto:${appConfig.contactEmail}`);
+  }
+});
+
+test("home footer reveals the fixed background and keeps the callout on one line", async ({ page }) => {
+  for (const locale of locales) {
+    for (const width of [320, 390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(pageUrl("home", locale));
+      await page.evaluate(async () => { await document.fonts.ready; });
+      const footer = page.locator(".site-footer");
+      await expect(footer).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(footer.locator(".site-footer__surface")).toHaveCSS("background-color", "rgb(3, 26, 20)");
+      await expect(footer.locator(".site-footer__callout")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(page.locator(".hero__stage")).toHaveCSS("position", "fixed");
+      const fits = await footer.locator(".site-footer__callout-copy p").evaluate((element) => element.scrollWidth <= element.clientWidth);
+      expect(fits).toBe(true);
+      await expect(footer.locator(".site-footer__callout .site-footer__cta")).toHaveCount(0);
+    }
   }
 });
 

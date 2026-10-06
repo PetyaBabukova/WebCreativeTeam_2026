@@ -11,7 +11,7 @@
     "menu": "Open menu",
     "hero": {
       "lines": ["REFUSE", "TO GO", "UNNOTICED"],
-      "description": "Strategy, technology and creativity come together in solutions that make brands stand out.",
+      "description": "Strategy, technology and creativity come together in solutions that make brands stand out and move businesses forward",
       "contact": "Get started with us",
       "rotationPause": "Pause logo rotation"
     },
@@ -101,19 +101,17 @@
       ]
     },
     "footer": {
-      "idea": "HAVE AN IDEA?",
-      "promise": "LET’S MAKE IT REAL.",
+      "idea": "Have an idea?",
+      "promise": "Let’s make it real.",
       "navigation": "Footer navigation",
       "newsletterTitle": "Subscribe to our newsletter",
       "newsletterDescription": "Get ideas, recent projects, and updates on technology and news from WebCreativeTeam.",
       "email": "Your email",
       "subscribe": "Subscribe",
-      "newsletterUnavailable": "Newsletter signup is not available yet.",
       "consentNews": "I agree to receive news and useful content.",
       "consentPrivacy": "I accept the",
       "privacyPolicy": "Privacy Policy",
       "follow": "Follow us",
-      "socialUnavailable": "Our profiles will be available soon.",
       "privacy": "Privacy",
       "cookies": "Cookies",
       "terms": "Terms and Conditions",

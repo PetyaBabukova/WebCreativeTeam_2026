@@ -73,10 +73,15 @@ describe("public pages", () => {
     const expected = [pageUrl("home", locale), ...serviceSlugs.map((slug) => serviceUrl(slug, locale)), pageUrl("blog", locale), pageUrl("faq", locale), pageUrl("about", locale), pageUrl("contacts", locale)];
     expect(within(navigation).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(expected);
     expect(within(document.querySelector(".site-header") as HTMLElement).getByRole("link", { name: copy.landing.hero.contact }).getAttribute("href")).toBe(pageUrl("contacts", locale));
-    expect(within(footer).getAllByRole("link", { name: copy.landing.hero.contact })).toHaveLength(2);
+    expect(within(footer).getAllByRole("link", { name: copy.landing.hero.contact })).toHaveLength(1);
     expect(within(footer).getByRole("link", { name: locale === "bg" ? "EN" : "BG" })).toHaveAttribute("href", pageUrl("contacts", locale === "bg" ? "en" : "bg"));
     expect(within(footer).getByRole("button", { name: copy.landing.footer.subscribe })).toBeDisabled();
-    expect(within(footer).getByRole("checkbox", { name: `${copy.landing.footer.consentPrivacy} ${copy.landing.footer.privacyPolicy}` })).toBeDisabled();
+    expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).toBeEnabled();
+    expect(within(footer).getByRole("checkbox", { name: `${copy.landing.footer.consentPrivacy} ${copy.landing.footer.privacyPolicy}` })).toBeEnabled();
+    expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).not.toHaveAttribute("name");
+    expect(within(footer).getAllByRole("button", { name: /^(LinkedIn|Facebook|Instagram|YouTube|TikTok)$/ })).toHaveLength(5);
+    expect(footer).not.toHaveTextContent(locale === "bg" ? "Профилите скоро ще бъдат достъпни." : "Our profiles will be available soon.");
+    expect(footer).not.toHaveTextContent(locale === "bg" ? "Абонаментът все още не е достъпен." : "Newsletter signup is not available yet.");
   });
   it.each([
     [BgHome, bgHomeMetadata, "bg", "home", "/bg"],
