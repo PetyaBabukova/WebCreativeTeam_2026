@@ -86,12 +86,12 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
   const legal = { unavailable: footer.legalUnavailable, close: footer.close };
   return <footer className="site-footer">
     <div className="container site-footer__callout">
-      <div className="site-footer__callout-copy"><p>{footer.idea} <span>{footer.promise}</span></p></div>
+      <div className="site-footer__callout-copy"><p><span>{footer.idea} {footer.promise}</span></p></div>
     </div>
     <div className="site-footer__surface">
     <div className="site-footer__main">
       <div className="container site-footer__grid">
-        <div className="site-footer__brand"><Link href={pageUrl("home", locale)} aria-label="WebCreativeTeam"><Image src={appConfig.brandLogoPath} alt="" width={430} height={119} unoptimized /></Link></div>
+        <div className="site-footer__brand"><Link href={`${pageUrl("home", locale)}#main`} aria-label="WebCreativeTeam"><Image src={appConfig.brandLogoPath} alt="" width={430} height={119} unoptimized /></Link></div>
         <nav className="site-footer__navigation" aria-label={footer.navigation}>
           <Link href={pageUrl("home", locale)}>{copy.homeLabel}</Link>
           {serviceSlugs.map((slug, index) => <Link key={slug} href={serviceUrl(slug, locale)}>{copy.serviceLinks[index]}</Link>)}
@@ -111,7 +111,8 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
             {socialNames.map((name) => {
               const url = appConfig.socialProfiles[name];
               const icon = <SocialIcon name={name} />;
-              return url ? <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={socialLabels[name]} className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</a> : <button key={name} type="button" disabled aria-label={socialLabels[name]} className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</button>;
+              const className = `button site-footer__social-icon site-footer__social-icon--${name}`;
+              return url ? <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={socialLabels[name]} className={className}>{icon}</a> : <button key={name} type="button" disabled aria-label={socialLabels[name]} className={className}>{icon}</button>;
             })}
           </div>
           <Link className="button button--outline site-footer__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>

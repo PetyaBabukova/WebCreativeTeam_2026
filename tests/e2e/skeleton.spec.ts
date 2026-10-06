@@ -432,6 +432,7 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
     const navigation = footer.getByRole("navigation", { name: locale === "bg" ? "Навигация във футъра" : "Footer navigation" });
     await expect(navigation.getByRole("link")).toHaveCount(10);
     await expect(navigation.getByRole("link", { name: locale === "bg" ? "Контакти" : "Contact" })).toHaveAttribute("href", pageUrl("contacts", locale));
+    await expect(footer.locator(".site-footer__brand a")).toHaveAttribute("href", `${pageUrl("home", locale)}#main`);
     await expect(footer.locator(".site-footer__social-icons a")).toHaveCount(0);
     await expect(footer.locator(".site-footer__social-icons button")).toHaveCount(5);
     const email = footer.getByRole("textbox", { name: locale === "bg" ? "Твоят имейл" : "Your email" });
@@ -468,7 +469,7 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
   }
 });
 
-test("home footer reveals the fixed background and keeps the callout on one line", async ({ page }) => {
+test("home footer reveals the fixed background and lets the larger callout fit", async ({ page }) => {
   for (const locale of locales) {
     for (const width of [320, 390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
