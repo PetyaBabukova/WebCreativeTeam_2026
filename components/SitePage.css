@@ -48,7 +48,7 @@
   The gap track may shrink to 2rem when a long headline (EN) needs the room.
 */
 .hero__content { --hero-headline-size: clamp(4.5rem, min(10.4vw, 18svh), 14.5rem); --hero-orb-size: min(17vw, 29svh, 25.2rem); --hero-stack-gap: 3rem; position: relative; z-index: 2; display: grid; flex: 1; flex-direction: column; grid-template-columns: max-content minmax(2rem, calc(var(--hero-headline-size) * 1.3)) auto; grid-template-rows: 1fr auto; justify-content: start; align-self: flex-start; width: 100%; }
-.hero h1 { grid-column: 1; grid-row: 1 / span 2; align-self: start; margin: clamp(3rem, 7vh, 5.5rem) 0 0; font-size: var(--hero-headline-size); font-weight: 400; line-height: .94; letter-spacing: -.055em; text-shadow: 0 0.25rem 1.625rem #00130e6b; }
+.hero__headline { grid-column: 1; grid-row: 1 / span 2; align-self: start; margin: clamp(3rem, 7vh, 5.5rem) 0 0; font-size: var(--hero-headline-size); font-weight: 400; line-height: .94; letter-spacing: -.055em; text-shadow: 0 0.25rem 1.625rem #00130e6b; }
 .hero__headline-mask { display: block; overflow: hidden; padding-bottom: .06em; }
 .hero__headline-line { display: block; width: max-content; white-space: nowrap; }
 .hero__headline-line--0 { color: var(--color-primary); font-size: 1.15em; font-weight: 800; background: var(--gradient-brand); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -238,8 +238,8 @@
     --hero-fit is measured from the current copy (Sofia Sans, weights and letter-spacing included) with ~1% safety margin;
     re-measure it whenever the headline copy changes. The e2e test "mobile headline fills the content width" guards it.
   */
-  .hero h1 { --hero-fit: 4.33; width: 100%; margin: 0; font-size: calc((100vw - 2 * var(--gutter) - 1.25rem) / var(--hero-fit)); line-height: .9; }
-  :lang(en) .hero h1 { --hero-fit: 4.74; }
+  .hero__headline { --hero-fit: 4.33; width: 100%; margin: 0; font-size: calc((100vw - 2 * var(--gutter) - 1.25rem) / var(--hero-fit)); line-height: .9; }
+  :lang(en) .hero__headline { --hero-fit: 4.74; }
   .hero__headline-line { white-space: nowrap; }
   .hero__headline-mask, .hero__headline-line { width: 100%; max-width: 100%; }
   .hero-orb { align-self: center; width: min(52vw, 23svh); margin: 1.25rem 0 var(--hero-stack-gap); translate: none; }

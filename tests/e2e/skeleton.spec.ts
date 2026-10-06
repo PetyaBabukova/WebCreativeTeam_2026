@@ -202,7 +202,7 @@ test("hero uses the mobile image and keeps the background static", async ({ page
   await expect(page.locator(".hero__stage")).toHaveCSS("position", "fixed");
   await expect(page.locator(".hero-orb")).toHaveCount(1);
   const mobileOrder = await page.evaluate(() => {
-    const heading = document.querySelector(".hero h1")!.getBoundingClientRect();
+    const heading = document.querySelector(".hero__headline")!.getBoundingClientRect();
     const orb = document.querySelector(".hero-orb")!.getBoundingClientRect();
     const lede = document.querySelector(".hero__lede")!.getBoundingClientRect();
     const arrow = document.querySelector(".hero__arrow")!.getBoundingClientRect();
@@ -784,7 +784,7 @@ test("headline and CTAs remain within the hero on common viewports", async ({ pa
       await page.goto(pageUrl("home", locale));
       const withinHero = await page.evaluate(() => {
         const hero = document.querySelector(".hero")!.getBoundingClientRect();
-        const heading = document.querySelector(".hero h1")!.getBoundingClientRect();
+        const heading = document.querySelector(".hero__headline")!.getBoundingClientRect();
         const lede = document.querySelector(".hero__lede")!.getBoundingClientRect();
         return heading.left >= hero.left && heading.right <= hero.right && lede.left >= hero.left && lede.right <= hero.right && lede.bottom <= hero.bottom;
       });
@@ -806,7 +806,7 @@ test("desktop first scene fits and its right copy aligns with the intro", async 
           const range = document.createRange(); range.selectNodeContents(line);
           return range.getBoundingClientRect().right;
         }));
-        return { headlineRight, heading: box(".hero h1").bottom, orb: box(".hero-orb"), lede: box(".hero__lede"), arrow: box(".hero__arrow"), introLead: box(".intro__lead"), viewportHeight: innerHeight };
+        return { headlineRight, heading: box(".hero__headline").bottom, orb: box(".hero-orb"), lede: box(".hero__lede"), arrow: box(".hero__arrow"), introLead: box(".intro__lead"), viewportHeight: innerHeight };
       });
       const label = `${locale} at ${viewport.width}x${viewport.height}`;
       for (const bottom of [layout.heading, layout.orb.bottom, layout.lede.bottom, layout.arrow.bottom]) expect(bottom, label).toBeLessThanOrEqual(layout.viewportHeight);
@@ -834,12 +834,12 @@ test("mobile headline fills the content width without overflowing", async ({ pag
       await page.goto(pageUrl("home", locale));
       await expect(page.locator(".hero__lede")).toHaveCSS("opacity", "1", { timeout: 5000 });
       const { container, longest } = await page.evaluate(() => {
-        const h1 = document.querySelector<HTMLElement>(".hero h1")!;
-        const widths = [...h1.querySelectorAll<HTMLElement>(".hero__headline-line")].map((line) => {
+        const headline = document.querySelector<HTMLElement>(".hero__headline")!;
+        const widths = [...headline.querySelectorAll<HTMLElement>(".hero__headline-line")].map((line) => {
           const range = document.createRange(); range.selectNodeContents(line);
           return range.getBoundingClientRect().width;
         });
-        return { container: h1.getBoundingClientRect().width, longest: Math.max(...widths) };
+        return { container: headline.getBoundingClientRect().width, longest: Math.max(...widths) };
       });
       expect(longest, `${locale} @ ${width}px overflows`).toBeLessThanOrEqual(container + 1);
       expect(longest / container, `${locale} @ ${width}px does not fill the width`).toBeGreaterThan(.91);

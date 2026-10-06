@@ -96,12 +96,25 @@ describe("public pages", () => {
     [EnContacts, enContactsMetadata, "en", "contacts", "/contacts/en"],
   ] as const)("renders localized content and public metadata %#", async (Page, metadata, locale, page, url) => {
     render(<Page />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? messages[locale].landing.hero.lines.join(" ") : messages[locale][page].title);
+    const homeSeo = locale === "bg" ? {
+      heading: "Стратегия, технологии и креативност се срещат в решения, които отличават брандовете и превръщат идеите в резултати",
+      title: "Дигитална агенция за успешен бизнес | WebCreativeTeam",
+      description: "Съчетаваме AI, SEO, маркетинг, брандинг и уеб решения в цялостни дигитални услуги, създадени да подкрепят развитието на вашата компания.",
+    } : {
+      heading: "Strategy, technology and creativity come together in solutions that make brands stand out and turn ideas into results",
+      title: "Digital Agency for Business Success | WebCreativeTeam",
+      description: "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth.",
+    };
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : messages[locale][page].title);
     const language = within(document.querySelector(".site-header") as HTMLElement).getByRole("navigation", { name: messages[locale].language, hidden: true });
     expect(within(language).getByRole("link", { name: locale.toUpperCase(), hidden: true })).toHaveAttribute("href", url);
     const alternate = locale === "bg" ? "en" : "bg";
     expect(within(language).getByRole("link", { name: alternate.toUpperCase(), hidden: true })).toHaveAttribute("href", url.replace(/(bg|en)$/, alternate));
     const result = await metadata();
+    if (page === "home") {
+      expect(result.title).toBe(homeSeo.title);
+      expect(result.description).toBe(homeSeo.description);
+    }
     expect(result.alternates?.canonical).toBe(url);
     expect(result.robots).toEqual({ index: false, follow: false });
     expect(result.alternates?.languages).toEqual({ bg: pageUrl(page, "bg"), en: pageUrl(page, "en") });

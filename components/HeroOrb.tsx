@@ -22,7 +22,7 @@ type HeroMotionProps = {
 export default function HeroMotion({ lines, description, rotationPauseLabel }: HeroMotionProps) {
   return <MotionConfig reducedMotion="never">
     <div className="hero__content">
-      <h1 id="hero-title">
+      <p className="hero__headline">
         {lines.map((line, index) => <span className="hero__headline-mask" key={line}>
           <motion.span
             className={`hero__headline-line hero__headline-line--${index}`}
@@ -31,7 +31,7 @@ export default function HeroMotion({ lines, description, rotationPauseLabel }: H
             transition={{ delay: 1.15 + index * .2, duration: .75, ease: entranceEase }}
           >{line}{index < lines.length - 1 ? " " : null}</motion.span>
         </span>)}
-      </h1>
+      </p>
       <HeroOrb rotationPauseLabel={rotationPauseLabel} />
       <motion.div
         className="hero__lede"
@@ -39,7 +39,7 @@ export default function HeroMotion({ lines, description, rotationPauseLabel }: H
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1.85, duration: .55, ease: entranceEase }}
       >
-        <p className="hero__description">{description}</p>
+        <h1 id="hero-title" className="hero__description">{description}</h1>
         <HeroScrollArrow />
       </motion.div>
     </div>

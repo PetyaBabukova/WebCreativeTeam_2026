@@ -2,7 +2,7 @@
   "skip": "Към съдържанието", "navigation": "Основна навигация", "language": "Език",
   "homeLabel": "Начало", "aboutLabel": "За нас", "servicesLabel": "Услуги", "blogLabel": "Блог", "faqLabel": "Въпроси", "contactLabel": "Контакти",
   "servicesToggle": "Подменю Услуги", "serviceLinks": ["AI автоматизация", "SEO & GEO", "Дигитален маркетинг", "Брандинг", "Уеб решения"],
-  "home": { "title": "Откажи да бъдеш невидим | WebCreativeTeam", "description": "SEO, AI Search и дигитална стратегия за устойчив онлайн растеж." },
+  "home": { "title": "Дигитална агенция за успешен бизнес", "description": "Съчетаваме AI, SEO, маркетинг, брандинг и уеб решения в цялостни дигитални услуги, създадени да подкрепят развитието на вашата компания." },
   "about": { "title": "За WebCreativeTeam", "description": "Свързваме творческото мислене с внимателно изградени дигитални решения." },
   "blog": { "title": "Блог", "description": "" },
   "faq": { "title": "Въпроси", "description": "" },
