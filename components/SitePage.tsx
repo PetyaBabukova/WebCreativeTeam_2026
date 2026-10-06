@@ -4,7 +4,9 @@ import heroBackgroundDesktop from "@/assets/hero/background-desktop.webp";
 import heroBackgroundMobile from "@/assets/hero/background-mobile.webp";
 import { appConfig } from "@/lib/config";
 import { messages } from "@/lib/messages";
-import { pageUrl, serviceSlugs, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
+import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
+import FooterLegalButton from "./FooterLegalButton";
+import FooterNewsletter from "./FooterNewsletter";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
@@ -25,7 +27,7 @@ function SiteHeader(props: HeaderProps) {
         <Image src={appConfig.brandLogoPath} alt="WebCreativeTeam" width={280} height={77} priority unoptimized />
       </Link>
       <div className="site-header__actions">
-        <a className="button button--outline site-header__cta" href="#footer-contact">{copy.landing.hero.contact}</a>
+        <Link className="button button--outline site-header__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
         <SiteNavigation {...props} copy={{
           menu: copy.landing.menu,
           navigation: copy.navigation,
@@ -68,15 +70,64 @@ function HomePage({ locale }: { locale: Locale }) {
   </main>;
 }
 
-function SiteFooter({ locale }: { locale: Locale }) {
-  const copy = messages[locale].landing;
-  return <footer id="footer-contact" className="site-footer">
-    <div className="container site-footer__grid">
-      <div className="site-footer__brand"><Image src={appConfig.brandLogoPath} alt="WebCreativeTeam" width={230} height={63} unoptimized /></div>
-      <div><h2>{copy.footer.company}</h2><Link href={pageUrl("about", locale)}>{messages[locale].aboutLabel}</Link></div>
-      <div><h2>{copy.footer.contact}</h2><a href={`mailto:${appConfig.contactEmail}`}>{appConfig.contactEmail}</a></div>
+const socialNames = ["linkedin", "facebook", "instagram", "youtube", "tiktok"] as const;
+const socialLabels = { linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok" } as const;
+
+function SocialIcon({ name }: { name: (typeof socialNames)[number] }) {
+  if (name === "instagram") return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" /></svg>;
+  if (name === "youtube") return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="5" fill="currentColor" /><path d="m10 8 6 4-6 4z" fill="white" /></svg>;
+  if (name === "tiktok") return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M15 2h3c.2 2.2 1.5 3.4 4 3.6v3.2a9 9 0 0 1-4-1.2v7.1a7 7 0 1 1-7-7h.6v3.4a3.6 3.6 0 1 0 3.4 3.6V2Z" /></svg>;
+  return <span aria-hidden="true" className="site-footer__social-glyph">{name === "linkedin" ? "in" : "f"}</span>;
+}
+
+function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
+  const copy = messages[locale];
+  const footer = copy.landing.footer;
+  const legal = { unavailable: footer.legalUnavailable, close: footer.close };
+  return <footer className="site-footer">
+    <div className="container site-footer__callout">
+      <div className="site-footer__callout-copy"><p>{footer.idea}</p><p>{footer.promise}</p></div>
+      <Link className="button button--outline site-footer__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
     </div>
-    <div className="container site-footer__bottom">{copy.footer.rights}</div>
+    <div className="site-footer__main">
+      <div className="container site-footer__grid">
+        <div className="site-footer__brand"><Link href={pageUrl("home", locale)} aria-label="WebCreativeTeam"><Image src={appConfig.brandLogoPath} alt="" width={430} height={119} unoptimized /></Link></div>
+        <nav className="site-footer__navigation" aria-label={footer.navigation}>
+          <Link href={pageUrl("home", locale)}>{copy.homeLabel}</Link>
+          {serviceSlugs.map((slug, index) => <Link key={slug} href={serviceUrl(slug, locale)}>{copy.serviceLinks[index]}</Link>)}
+          <Link href={pageUrl("blog", locale)}>{copy.blogLabel}</Link>
+          <Link href={pageUrl("faq", locale)}>{copy.faqLabel}</Link>
+          <Link href={pageUrl("about", locale)}>{copy.aboutLabel}</Link>
+          <Link href={pageUrl("contacts", locale)}>{copy.contactLabel}</Link>
+        </nav>
+        <section className="site-footer__newsletter" aria-labelledby={`newsletter-${locale}`}>
+          <h2 id={`newsletter-${locale}`}>{footer.newsletterTitle}</h2>
+          <p>{footer.newsletterDescription}</p>
+          <FooterNewsletter locale={locale} copy={footer} />
+        </section>
+        <section className="site-footer__social" aria-labelledby={`social-${locale}`}>
+          <h2 id={`social-${locale}`}>{footer.follow}</h2>
+          <div className="site-footer__social-icons">
+            {socialNames.map((name) => {
+              const url = appConfig.socialProfiles[name];
+              const icon = <SocialIcon name={name} />;
+              return url ? <a key={name} href={url} target="_blank" rel="noopener noreferrer" aria-label={socialLabels[name]} className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</a> : <span key={name} aria-hidden="true" className={`site-footer__social-icon site-footer__social-icon--${name}`}>{icon}</span>;
+            })}
+          </div>
+          <p className="site-footer__unavailable">{footer.socialUnavailable}</p>
+          <Link className="button button--outline site-footer__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
+        </section>
+      </div>
+    </div>
+    <div className="container site-footer__bottom">
+      <p>{footer.rights}</p>
+      <div className="site-footer__bottom-links">
+        <FooterLegalButton label={footer.privacy} title={footer.privacyPolicy} {...legal} />
+        <FooterLegalButton label={footer.cookies} title={footer.cookies} {...legal} />
+        <FooterLegalButton label={footer.terms} title={footer.terms} {...legal} />
+      </div>
+      <nav className="site-footer__languages" aria-label={copy.language}>{locales.map((language) => <a key={language} href={localeSwitchUrl(route, language)} lang={language} hrefLang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</a>)}</nav>
+    </div>
   </footer>;
 }
 
@@ -87,8 +138,9 @@ export default function SitePage({ locale, page }: { locale: Locale; page: Page 
     {page === "home" ? <HomePage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
+      {page === "contacts" && <a href={`mailto:${appConfig.contactEmail}`}>{appConfig.contactEmail}</a>}
     </main>}
-    <SiteFooter locale={locale} />
+    <SiteFooter locale={locale} route={{ page }} />
   </div>;
 }
 
@@ -97,6 +149,6 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
   return <div className="site-page site-page--service">
     <SiteHeader locale={locale} page="service" serviceSlug={slug} />
     <main id="main" className="container standard-page" tabIndex={-1}><h1>{title}</h1></main>
-    <SiteFooter locale={locale} />
+    <SiteFooter locale={locale} route={{ page: "service", serviceSlug: slug }} />
   </div>;
 }

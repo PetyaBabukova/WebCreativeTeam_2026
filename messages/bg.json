@@ -6,6 +6,7 @@
   "about": { "title": "За WebCreativeTeam", "description": "Свързваме творческото мислене с внимателно изградени дигитални решения." },
   "blog": { "title": "Блог", "description": "" },
   "faq": { "title": "Въпроси", "description": "" },
+  "contacts": { "title": "Контакти", "description": "" },
   "landing": {
     "menu": "Отвори менюто",
     "hero": {
@@ -100,10 +101,24 @@
       ]
     },
     "footer": {
-      "services": "Услуги",
-      "projects": "Проекти",
-      "company": "Компания",
-      "contact": "Да работим заедно",
+      "idea": "ИМАШ ИДЕЯ?",
+      "promise": "ДА Я ПРЕВЪРНЕМ В НЕЩО РЕАЛНО.",
+      "navigation": "Навигация във футъра",
+      "newsletterTitle": "Абонирай се за новини",
+      "newsletterDescription": "Получавай идеи, последни проекти и актуални технологии и новини от WebCreativeTeam.",
+      "email": "Твоят имейл",
+      "subscribe": "Абонирай се",
+      "newsletterUnavailable": "Абонаментът все още не е достъпен.",
+      "consentNews": "Съгласявам се да получавам новини и полезно съдържание.",
+      "consentPrivacy": "Приемам",
+      "privacyPolicy": "Политиката за поверителност",
+      "follow": "Последвай ни",
+      "socialUnavailable": "Профилите скоро ще бъдат достъпни.",
+      "privacy": "Поверителност",
+      "cookies": "Бисквитки",
+      "terms": "Общи условия",
+      "legalUnavailable": "Съдържанието се подготвя.",
+      "close": "Затвори",
       "rights": "© 2026 WebCreativeTeam. Всички права запазени."
     }
   },

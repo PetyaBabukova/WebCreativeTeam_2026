@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { locales, pageUrl, sectionUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
+import { appConfig } from "@/lib/config";
+import { locales, localeSwitchUrl, pageUrl, sectionUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
 
 type NavigationCopy = {
   menu: string;
@@ -23,11 +24,28 @@ type NavigationProps = { locale: Locale; copy: NavigationCopy } & (
   | { page: "service"; serviceSlug: ServiceSlug }
 );
 
-const sharedAnchors = new Set(["services", "footer-contact"]);
+const sharedAnchors = new Set(["services"]);
 
 function currentSharedHash(): string {
   const anchor = window.location.hash.slice(1);
   return sharedAnchors.has(anchor) ? `#${anchor}` : "";
+}
+
+function useLocalePreference(locale: Locale) {
+  useEffect(() => {
+    const sync = () => {
+      const { name, maxAgeSeconds, path, sameSite } = appConfig.localeCookie;
+      document.cookie = `${name}=${locale}; Max-Age=${maxAgeSeconds}; Path=${path}; SameSite=${sameSite}${window.location.protocol === "https:" ? "; Secure" : ""}`;
+    };
+    const syncWhenVisible = () => { if (document.visibilityState === "visible") sync(); };
+    sync();
+    window.addEventListener("pageshow", sync);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+    return () => {
+      window.removeEventListener("pageshow", sync);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [locale]);
 }
 
 export default function SiteNavigation({ locale, page, serviceSlug, copy }: NavigationProps) {
@@ -38,6 +56,7 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
   const servicesRef = useRef<HTMLDetailsElement>(null);
   const servicesHoverRef = useRef(false);
   const [hash, setHash] = useState("");
+  useLocalePreference(locale);
 
   useEffect(() => {
     const syncHash = () => setHash(currentSharedHash());
@@ -102,10 +121,10 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
         <Link href={pageUrl("blog", locale)} aria-current={page === "blog" ? "page" : undefined} onClick={closeMenus}>{copy.blog}</Link>
         <Link href={pageUrl("faq", locale)} aria-current={page === "faq" ? "page" : undefined} onClick={closeMenus}>{copy.faq}</Link>
         <Link href={pageUrl("about", locale)} aria-current={page === "about" ? "page" : undefined} onClick={closeMenus}>{copy.about}</Link>
-        <Link href="#footer-contact" onClick={closeMenus}>{copy.contact}</Link>
+        <Link href={pageUrl("contacts", locale)} aria-current={page === "contacts" ? "page" : undefined} onClick={closeMenus}>{copy.contact}</Link>
       </nav>
       <nav aria-label={copy.language} className="site-menu__languages">
-        {locales.map((language) => <a key={language} href={page === "service" ? `${serviceUrl(serviceSlug, language)}${hash === "#footer-contact" ? hash : ""}` : `${pageUrl(page, language)}${hash}`} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined} onClick={closeMenus}>{language.toUpperCase()}</a>)}
+        {locales.map((language) => <a key={language} href={localeSwitchUrl(page === "service" ? { page, serviceSlug } : { page }, language, hash)} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined} onClick={closeMenus}>{language.toUpperCase()}</a>)}
       </nav>
     </div>
   </details>;

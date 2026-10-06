@@ -6,6 +6,7 @@
   "about": { "title": "About WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences." },
   "blog": { "title": "Blog", "description": "" },
   "faq": { "title": "FAQs", "description": "" },
+  "contacts": { "title": "Contact", "description": "" },
   "landing": {
     "menu": "Open menu",
     "hero": {
@@ -100,10 +101,24 @@
       ]
     },
     "footer": {
-      "services": "Services",
-      "projects": "Projects",
-      "company": "Company",
-      "contact": "Let's work together",
+      "idea": "HAVE AN IDEA?",
+      "promise": "LET’S MAKE IT REAL.",
+      "navigation": "Footer navigation",
+      "newsletterTitle": "Subscribe to our newsletter",
+      "newsletterDescription": "Get ideas, recent projects, and updates on technology and news from WebCreativeTeam.",
+      "email": "Your email",
+      "subscribe": "Subscribe",
+      "newsletterUnavailable": "Newsletter signup is not available yet.",
+      "consentNews": "I agree to receive news and useful content.",
+      "consentPrivacy": "I accept the",
+      "privacyPolicy": "Privacy Policy",
+      "follow": "Follow us",
+      "socialUnavailable": "Our profiles will be available soon.",
+      "privacy": "Privacy",
+      "cookies": "Cookies",
+      "terms": "Terms and Conditions",
+      "legalUnavailable": "Content is being prepared.",
+      "close": "Close",
       "rights": "© 2026 WebCreativeTeam. All rights reserved."
     }
   },

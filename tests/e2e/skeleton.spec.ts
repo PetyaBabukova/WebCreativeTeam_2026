@@ -68,7 +68,7 @@ test("Blog is third in the menu and its language switch keeps the page", async (
   }
 });
 
-test("FAQs follows Blog, keeps the locale, and /faq opens the BG placeholder", async ({ page }) => {
+test("FAQs follows Blog and keeps the locale", async ({ page }) => {
   for (const locale of locales) {
     await page.goto(pageUrl("home", locale));
     await page.locator(".site-menu > summary").click();
@@ -86,8 +86,31 @@ test("FAQs follows Blog, keeps the locale, and /faq opens the BG placeholder", a
     await page.locator(".site-menu > summary").click();
     await expect(page.locator(`.site-menu__languages a[lang="${locale === "bg" ? "en" : "bg"}"]`)).toHaveAttribute("href", pageUrl("faq", locale === "bg" ? "en" : "bg"));
   }
+});
+
+test("bare URLs use the current locale until another locale is chosen", async ({ page }) => {
+  const firstVisit = await page.context().request.get(new URL("/", testOrigin).href, { maxRedirects: 0 });
+  expect(firstVisit.status()).toBe(307);
+  expect(firstVisit.headers().location).toBe(pageUrl("home", "bg"));
+  await page.goto(pageUrl("home", "en"));
+  await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.localeCookie.name)?.value).toBe("en");
+  const redirect = await page.context().request.get(new URL("/faq?from=email", testOrigin).href, { maxRedirects: 0 });
+  expect(redirect.status()).toBe(307);
+  expect(redirect.headers().location).toBe(`${pageUrl("faq", "en")}?from=email`);
+  expect(redirect.headers()["cache-control"]).toBe("private, no-store");
   await page.goto("/faq");
-  await expect(page).toHaveURL(new RegExp(pageUrl("faq", "bg") + "$"));
+  expect(new URL(page.url()).pathname).toBe(pageUrl("faq", "en"));
+  await page.goto("/");
+  expect(new URL(page.url()).pathname).toBe(pageUrl("home", "en"));
+  await page.locator(".site-menu > summary").click();
+  await page.locator('.site-menu__languages a[lang="bg"]').click();
+  expect(new URL(page.url()).pathname).toBe(pageUrl("home", "bg"));
+  await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.localeCookie.name)?.value).toBe("bg");
+  await page.goBack();
+  expect(new URL(page.url()).pathname).toBe(pageUrl("home", "en"));
+  await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.localeCookie.name)?.value).toBe("en");
+  await page.goto("/faq");
+  expect(new URL(page.url()).pathname).toBe(pageUrl("faq", "en"));
 });
 
 test("service submenu opens on mouse hover and closes when the pointer leaves", async ({ page }) => {
@@ -401,14 +424,43 @@ test("paused orb responds more strongly to hover and relaxes when resumed", asyn
   await expect.poll(tiltStrength).toBeLessThan(rotatingTilt * 1.2);
 });
 
-test("header CTA sits left of the menu and links to the contact footer", async ({ page }) => {
+test("footer routes, legal dialogs and incomplete integrations remain honest", async ({ page }) => {
+  for (const locale of locales) {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(pageUrl("contacts", locale));
+    const footer = page.locator(".site-footer");
+    const navigation = footer.getByRole("navigation", { name: locale === "bg" ? "Навигация във футъра" : "Footer navigation" });
+    await expect(navigation.getByRole("link")).toHaveCount(10);
+    await expect(navigation.getByRole("link", { name: locale === "bg" ? "Контакти" : "Contact" })).toHaveAttribute("href", pageUrl("contacts", locale));
+    await expect(footer.locator(".site-footer__social-icons a")).toHaveCount(0);
+    await expect(footer.locator(".site-footer__email-row button")).toBeDisabled();
+    const privacy = footer.locator(".site-footer__bottom-links button").first();
+    await privacy.focus();
+    await privacy.press("Enter");
+    const dialog = footer.getByRole("dialog", { name: locale === "bg" ? "Политиката за поверителност" : "Privacy Policy" });
+    await expect(dialog).toBeVisible();
+    await dialog.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    await expect(privacy).toBeFocused();
+    for (const width of [390, 768, 900, 1100, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const grid = await footer.locator(".site-footer__grid").boundingBox();
+      const social = await footer.locator(".site-footer__social").boundingBox();
+      expect(grid && social && social.x + social.width <= grid.x + grid.width + 1).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await expect(page.getByRole("link", { name: appConfig.contactEmail })).toHaveAttribute("href", `mailto:${appConfig.contactEmail}`);
+  }
+});
+
+test("header CTA sits left of the menu and links to the contact page", async ({ page }) => {
   for (const locale of locales) {
     for (const width of [1536, 390, 360]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(pageUrl("home", locale));
       const cta = page.locator(".site-header__cta");
       await expect(cta).toBeVisible();
-      await expect(cta).toHaveAttribute("href", "#footer-contact");
+      await expect(cta).toHaveAttribute("href", pageUrl("contacts", locale));
       const appearance = await cta.evaluate((element) => {
         const style = getComputedStyle(element);
         const probe = document.createElement("span");

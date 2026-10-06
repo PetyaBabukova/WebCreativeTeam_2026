@@ -1,10 +1,11 @@
-import { appConfig } from "./config";
+import { appConfig, localizedPath, locales, type Locale } from "./config";
 
-export const locales = ["bg", "en"] as const;
-export type Locale = (typeof locales)[number];
-export type Page = "home" | "about" | "blog" | "faq";
+export { isLocale, locales } from "./config";
+export type { Locale } from "./config";
+export type Page = "home" | "about" | "blog" | "faq" | "contacts";
 export const serviceSlugs = ["ai-automation", "seo-geo", "digital-marketing", "branding", "web-solutions"] as const;
 export type ServiceSlug = (typeof serviceSlugs)[number];
+export type SiteRoute = { page: Page; serviceSlug?: never } | { page: "service"; serviceSlug: ServiceSlug };
 
 export function isServiceSlug(value: string): value is ServiceSlug {
   return (serviceSlugs as readonly string[]).includes(value);
@@ -14,21 +15,22 @@ export function serviceUrl(slug: ServiceSlug, locale: Locale): string {
   return `${appConfig.paths.services}/${slug}/${locale}`;
 }
 
-export function isLocale(value: string): value is Locale {
-  return (locales as readonly string[]).includes(value);
-}
-
 export function pageUrl(page: Page, locale: Locale): string {
-  return page === "home" ? `${appConfig.paths.root}${locale}` : `${appConfig.paths[page]}/${locale}`;
+  return localizedPath(page === "home" ? appConfig.paths.root : appConfig.paths[page], locale);
 }
 
 export function sectionUrl(section: string, locale: Locale, page: Page | "service"): string {
   return `${page === "home" ? "" : pageUrl("home", locale)}#${section}`;
 }
 
+export function localeSwitchUrl(route: SiteRoute, locale: Locale, hash = ""): string {
+  if (route.page === "service") {
+    return serviceUrl(route.serviceSlug, locale);
+  }
+  return `${pageUrl(route.page, locale)}${hash}`;
+}
+
 export const canonicalRedirects = [
-  { source: appConfig.paths.root, destination: pageUrl("home", "bg"), permanent: false },
-  { source: appConfig.paths.faq, destination: pageUrl("faq", "bg"), permanent: false },
   ...locales.map((locale) => ({
     source: `${pageUrl("home", locale)}${appConfig.paths.about}`, destination: pageUrl("about", locale), permanent: true,
   })),
