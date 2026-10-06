@@ -1,22 +1,24 @@
 {
   "skip": "Skip to content", "navigation": "Main navigation", "language": "Language",
-  "homeLabel": "Home", "aboutLabel": "About",
+  "homeLabel": "Home", "aboutLabel": "About", "servicesLabel": "Services", "blogLabel": "Blog", "contactLabel": "Contact",
+  "servicesToggle": "Services submenu", "serviceLinks": ["AI Automation", "SEO & GEO", "Digital Marketing", "Branding", "Web Solutions"],
   "home": { "title": "Refuse to go unnoticed | WebCreativeTeam", "description": "SEO, AI Search and digital strategy for sustainable online growth." },
   "about": { "title": "About WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences." },
+  "blog": { "title": "Blog", "description": "" },
   "landing": {
     "menu": "Open menu",
     "hero": {
       "lines": ["REFUSE", "TO GO", "UNNOTICED"],
-      "description": "Where strategy, technology, and creativity converge, digital solutions are created that set brands apart and drive businesses forward",
-      "contact": "Let's work together",
+      "description": "Strategy, technology and creativity come together in solutions that make brands stand out.",
+      "contact": "Get started with us",
       "rotationPause": "Pause logo rotation"
     },
     "intro": {
-      "lines": ["Being online isn't the goal", "Making an impact is"],
-      "description": "Successful brands turn marketing, technology, and design into a connected system that moves the business forward and upward",
+      "lines": ["Being online is no longer enough.", "The goal is to be found and chosen."],
+      "description": "Successful brands connect marketing, technology and design into a system that drives the business forward.",
       "items": [
-        { "title": "VISIBILITY", "proposition": "The right audience, the right moment", "description": "Visibility across search engines, AI-powered discovery, and key digital business channels" },
-        { "title": "EXPERIENCE", "proposition": "A presence that leaves a mark", "description": "A distinctive brand and web experience with a clear identity and strong presence" },
+        { "title": "VISIBILITY", "proposition": "The right audience, the right moment", "description": "Visibility across search engines, AI environments and digital channels." },
+        { "title": "IMPACT", "proposition": "A presence that leaves a mark", "description": "A distinctive brand and web experience with a clear identity and strong presence" },
         { "title": "MOMENTUM", "proposition": "Technology that moves business forward", "description": "Automation, optimisation, and digital solutions for sustainable growth" }
       ]
     },
@@ -41,7 +43,7 @@
         },
         {
           "eyebrow": "MAKE NOISE WITH PURPOSE",
-          "title": "DIGITAL MARKETING",
+          "title": "Digital marketing",
           "highlight": "momentum",
           "features": ["Strategy", "Performance", "Social Media"],
           "description": "Great marketing does more than attract attention. It connects strategy, content, and data to turn interest into action — and action into sustainable growth.",
@@ -54,6 +56,14 @@
           "features": ["Logo", "Identity", "Digital Brand"],
           "description": "We create a distinctive visual identity that tells your story and makes your brand stand out in the digital world.",
           "learnMore": "Build your brand"
+        },
+        {
+          "eyebrow": "YOUR WEBSITE IS MORE THAN A BUSINESS CARD",
+          "title": "Web solutions",
+          "highlight": "that work",
+          "features": ["Development", "Redesign", "Support"],
+          "description": "We create fast, modern and thoughtfully designed websites that look distinctive, perform flawlessly and grow with your business.",
+          "learnMore": "Build your website"
         }
       ]
     },
@@ -81,7 +91,7 @@
     "contact": {
       "heading": "Let's grow together?",
       "description": "Let's turn your ambitions into real results. Get in touch with us today.",
-      "button": "Let's work together",
+      "button": "Get started with us",
       "reasons": [
         "A clear strategy with real goals",
         "Driven by data and proven methods",

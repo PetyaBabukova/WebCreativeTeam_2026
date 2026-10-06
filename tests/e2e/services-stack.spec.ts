@@ -5,7 +5,7 @@ test("SEO & GEO card uses the supplied artwork and translated copy", async ({ pa
   for (const locale of ["bg", "en"] as const) {
     await page.goto(pageUrl("home", locale));
     const cards = page.locator(".services__card");
-    await expect(cards).toHaveCount(4);
+    await expect(cards).toHaveCount(5);
     const seo = cards.nth(1);
     await expect(seo).toHaveAttribute("data-service-art", "seo-geo");
     await expect(seo.locator("h3")).toContainText("SEO & GEO");
@@ -25,7 +25,7 @@ test("digital marketing card uses the supplied artwork and copy in both language
     await page.goto(pageUrl("home", locale));
     const card = page.locator('.services__card[data-service-art="digital-marketing"]');
     await expect(card.locator(".services__eyebrow")).toHaveText(locale === "bg" ? "НАПРАВИ ШУМ СЪС СМИСЪЛ" : "MAKE NOISE WITH PURPOSE");
-    await expect(card.locator(".services__card-title span").first()).toHaveText(locale === "bg" ? "ДИГИТАЛЕН МАРКЕТИНГ" : "DIGITAL MARKETING");
+    await expect(card.locator(".services__card-title span").first()).toHaveText(locale === "bg" ? "Дигитален маркетинг" : "Digital marketing");
     await expect(card.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "импулс" : "momentum");
     await expect(card.locator(".services__feature")).toContainText(locale === "bg"
       ? ["Стратегия", "Performance", "Социални медии"]
@@ -50,6 +50,37 @@ test("branding card uses the supplied artwork and copy in both languages", async
     await expect(card.locator(".services__learn-more")).toContainText(locale === "bg" ? "Изгради бранд" : "Build your brand");
     await expect(card.locator(".services__image img")).toHaveAttribute("src", /branding/);
   }
+});
+
+test("web design card uses the supplied artwork and copy in both languages", async ({ page }) => {
+  for (const locale of ["bg", "en"] as const) {
+    await page.goto(pageUrl("home", locale));
+    const card = page.locator('.services__card[data-service-art="web-design"]');
+    await expect(card.locator(".services__eyebrow")).toHaveText(locale === "bg" ? "САЙТЪТ НЕ Е ПРОСТО ВИЗИТКА" : "YOUR WEBSITE IS MORE THAN A BUSINESS CARD");
+    await expect(card.locator(".services__card-title span").first()).toHaveText(locale === "bg" ? "Уеб решения" : "Web solutions");
+    await expect(card.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "които работят" : "that work");
+    await expect(card.locator(".services__feature")).toContainText(locale === "bg"
+      ? ["Изработка", "Редизайн", "Поддръжка"]
+      : ["Development", "Redesign", "Support"]);
+    await expect(card.locator(".services__description")).toContainText(locale === "bg" ? "растат заедно с бизнеса" : "grow with your business");
+    await expect(card.locator(".services__learn-more")).toContainText(locale === "bg" ? "Създай своя сайт" : "Build your website");
+    await expect(card.locator(".services__image img")).toHaveAttribute("src", /web-design/);
+  }
+});
+
+test("fifth service covers the fourth without revealing earlier cards", async ({ page }) => {
+  await page.setViewportSize({ width: 1536, height: 900 });
+  await page.goto(pageUrl("home", "bg"));
+  const cards = page.locator(".services__card");
+  const fifthTop = await cards.nth(4).evaluate((card) => card.getBoundingClientRect().top + window.scrollY);
+  await page.evaluate((top) => window.scrollTo(0, top - 20), fifthTop);
+  await expect.poll(() => cards.nth(3).evaluate((card) => Number(getComputedStyle(card).opacity))).toBeLessThan(.1);
+  for (const index of [0, 1, 2]) {
+    expect(await cards.nth(index).evaluate((card) => Number(getComputedStyle(card).opacity))).toBeLessThan(.1);
+  }
+  await expect.poll(() => cards.nth(3).evaluate((card) => new DOMMatrixReadOnly(getComputedStyle(card).transform).a)).toBeLessThanOrEqual(.81);
+  await page.evaluate((top) => window.scrollTo(0, top - innerHeight), fifthTop);
+  await expect.poll(() => cards.nth(3).evaluate((card) => Number(getComputedStyle(card).opacity))).toBe(1);
 });
 
 test("fourth service covers the third without revealing earlier cards", async ({ page }) => {
@@ -81,13 +112,13 @@ test("third service covers the second without revealing the first", async ({ pag
   await expect.poll(() => opacity(1)).toBe(1);
 });
 
-test("marketing and branding text fit narrow mobile cards", async ({ page }) => {
+test("service text fits narrow mobile cards", async ({ page }) => {
   for (const width of [320, 360]) {
     await page.setViewportSize({ width, height: 844 });
     for (const locale of ["bg", "en"] as const) {
       await page.goto(pageUrl("home", locale));
       await page.evaluate(() => document.fonts.ready);
-      for (const art of ["digital-marketing", "branding"]) {
+      for (const art of ["digital-marketing", "branding", "web-design"]) {
         const clipped = await page.locator(`.services__card[data-service-art="${art}"]`).evaluate((card) => {
           const elements = card.querySelectorAll<HTMLElement>(".services__card-title span, .services__feature span, .services__eyebrow");
           return [...elements].filter((element) => element.scrollWidth > element.clientWidth + 1).map((element) => element.textContent);
@@ -166,7 +197,7 @@ test("mobile card keeps artwork above copy and short landscape uses flow", async
   await expect.poll(mobileScale).toBeLessThanOrEqual(.84);
   expect(await mobileScale()).toBeGreaterThanOrEqual(.82);
   const overlap = await page.evaluate(() => {
-    const a = document.querySelector(".services__card:nth-child(2) .services__eyebrow")!.getBoundingClientRect();
+    const a = document.querySelector(".services__card:nth-of-type(2) .services__eyebrow")!.getBoundingClientRect();
     const b = document.querySelector(".site-header__cta")!.getBoundingClientRect();
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   });
@@ -228,7 +259,7 @@ test("service cards remain readable without JavaScript", async ({ browser }) => 
   const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.goto(pageUrl("home", "bg"));
-  await expect(page.locator(".services__card")).toHaveCount(4);
+  await expect(page.locator(".services__card")).toHaveCount(5);
   await expect(page.locator(".services__cards")).toHaveAttribute("data-stack", "flow");
   await expect(page.locator(".services__card").first()).toHaveCSS("opacity", "1");
   await expect(page.locator(".services__card").first()).toHaveCSS("transform", "none");

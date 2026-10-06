@@ -7,6 +7,8 @@ import aiAutomationImage from "@/assets/services/ai-automation.webp";
 import seoGeoImage from "@/assets/services/seo-and-geo.webp";
 import digitalMarketingImage from "@/assets/services/digital-marketing.webp";
 import brandingImage from "@/assets/services/branding.webp";
+import webDesignImage from "@/assets/services/web-design.webp";
+import { serviceSlugs } from "@/lib/routing";
 import { ScrollArrow } from "./HeroOrb";
 
 type Service = {
@@ -18,13 +20,14 @@ type Service = {
   learnMore: string;
 };
 type ServicesCopy = { heading: string; items: Service[] };
-type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "logo" | "layers" | "screen";
+type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "logo" | "layers" | "screen" | "refresh";
 
 const serviceVisuals = [
   { id: "ai", image: aiAutomationImage, icons: ["gear", "robot", "network"] as IconKind[] },
   { id: "seo-geo", image: seoGeoImage, icons: ["search", "database", "network"] as IconKind[] },
   { id: "digital-marketing", image: digitalMarketingImage, icons: ["target", "chart", "people"] as IconKind[] },
   { id: "branding", image: brandingImage, icons: ["logo", "layers", "screen"] as IconKind[] },
+  { id: "web-design", image: webDesignImage, icons: ["screen", "refresh", "gear"] as IconKind[] },
 ];
 
 function FeatureIcon({ kind }: { kind: IconKind }) {
@@ -40,7 +43,8 @@ function FeatureIcon({ kind }: { kind: IconKind }) {
                   : kind === "people" ? <><circle cx="16" cy="9" r="4" /><circle cx="5" cy="12" r="3" /><circle cx="27" cy="12" r="3" /><path d="M9 26v-3a7 7 0 0 1 14 0v3H9ZM1 26v-4a5 5 0 0 1 6-5m24 9v-4a5 5 0 0 0-6-5" /></>
                     : kind === "logo" ? <><circle cx="16" cy="6" r="3" /><circle cx="5" cy="25" r="3" /><circle cx="27" cy="25" r="3" /><path d="M16 9v6M5 22v-5l11-4 11 4v5" /></>
                       : kind === "layers" ? <><path d="m16 3 13 7-13 7L3 10l13-7Zm-13 13 13 7 13-7M3 22l13 7 13-7" /></>
-                        : <><rect x="3" y="4" width="26" height="19" rx="2" /><path d="M12 29h8m-4-6v6" /></>}
+                        : kind === "refresh" ? <><path d="M27 12a11 11 0 0 0-19-5L5 10m0-7v7h7M5 20a11 11 0 0 0 19 5l3-3m0 7v-7h-7" /></>
+                          : <><rect x="3" y="4" width="26" height="19" rx="2" /><path d="M12 29h8m-4-6v6" /></>}
   </svg>;
 }
 
@@ -135,8 +139,8 @@ function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
 }
 
 export default function ServicesSection({ copy }: { copy: ServicesCopy }) {
-  if (copy.items.length !== serviceVisuals.length) {
-    throw new Error(`Expected ${serviceVisuals.length} services, received ${copy.items.length}`);
+  if (copy.items.length !== serviceVisuals.length || copy.items.length !== serviceSlugs.length) {
+    throw new Error(`Expected ${serviceSlugs.length} services, received ${copy.items.length}`);
   }
   const cardRefs = useRef<(HTMLElement | null)[]>([]);
   const firstCardRef = useRef<HTMLElement>(null);
@@ -174,7 +178,7 @@ export default function ServicesSection({ copy }: { copy: ServicesCopy }) {
         </div>
       </motion.div>
       <div className="container services__cards" data-stack={stack}>
-        {copy.items.map((item, index) => <ServiceCard key={item.title} item={item} index={index} stack={stack} cardRefs={cardRefs} firstCardRef={firstCardRef} />)}
+        {copy.items.map((item, index) => <ServiceCard key={serviceSlugs[index]} item={item} index={index} stack={stack} cardRefs={cardRefs} firstCardRef={firstCardRef} />)}
       </div>
     </section>
   </MotionConfig>;

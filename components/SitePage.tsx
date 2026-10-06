@@ -4,13 +4,20 @@ import heroBackgroundDesktop from "@/assets/hero/background-desktop.webp";
 import heroBackgroundMobile from "@/assets/hero/background-mobile.webp";
 import { appConfig } from "@/lib/config";
 import { messages } from "@/lib/messages";
-import { locales, pageUrl, type Locale, type Page } from "@/lib/routing";
+import { pageUrl, serviceSlugs, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
+import SiteNavigation from "./SiteNavigation";
 import "./SitePage.css";
 
-function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
+type HeaderProps = { locale: Locale } & (
+  | { page: Page; serviceSlug?: never }
+  | { page: "service"; serviceSlug: ServiceSlug }
+);
+
+function SiteHeader(props: HeaderProps) {
+  const { locale } = props;
   const copy = messages[locale];
   return <header className="site-header">
     <div className="container site-header__inner">
@@ -19,18 +26,18 @@ function SiteHeader({ locale, page }: { locale: Locale; page: Page }) {
       </Link>
       <div className="site-header__actions">
         <a className="button button--outline site-header__cta" href="#footer-contact">{copy.landing.hero.contact}</a>
-        <details className="site-menu">
-          <summary className="button--outline" aria-label={copy.landing.menu}><span aria-hidden="true" className="site-menu__bars"><span /><span /></span></summary>
-          <div className="site-menu__panel">
-            <nav aria-label={copy.navigation}>
-              <Link href={pageUrl("home", locale)} aria-current={page === "home" ? "page" : undefined}>{copy.homeLabel}</Link>
-              <Link href={pageUrl("about", locale)} aria-current={page === "about" ? "page" : undefined}>{copy.aboutLabel}</Link>
-            </nav>
-            <nav aria-label={copy.language} className="site-menu__languages">
-              {locales.map((language) => <Link key={language} href={pageUrl(page, language)} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</Link>)}
-            </nav>
-          </div>
-        </details>
+        <SiteNavigation {...props} copy={{
+          menu: copy.landing.menu,
+          navigation: copy.navigation,
+          language: copy.language,
+          home: copy.homeLabel,
+          services: copy.servicesLabel,
+          servicesToggle: copy.servicesToggle,
+          serviceLinks: copy.serviceLinks,
+          blog: copy.blogLabel,
+          about: copy.aboutLabel,
+          contact: copy.contactLabel,
+        }} />
       </div>
     </div>
   </header>;
@@ -76,7 +83,19 @@ export default function SitePage({ locale, page }: { locale: Locale; page: Page 
   const copy = messages[locale];
   return <div className={`site-page site-page--${page}`}>
     <SiteHeader locale={locale} page={page} />
-    {page === "home" ? <HomePage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}><h1>{copy.about.title}</h1><p>{copy.about.description}</p></main>}
+    {page === "home" ? <HomePage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
+      <h1>{copy[page].title}</h1>
+      {copy[page].description && <p>{copy[page].description}</p>}
+    </main>}
+    <SiteFooter locale={locale} />
+  </div>;
+}
+
+export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlug }) {
+  const title = messages[locale].serviceLinks[serviceSlugs.indexOf(slug)];
+  return <div className="site-page site-page--service">
+    <SiteHeader locale={locale} page="service" serviceSlug={slug} />
+    <main id="main" className="container standard-page" tabIndex={-1}><h1>{title}</h1></main>
     <SiteFooter locale={locale} />
   </div>;
 }

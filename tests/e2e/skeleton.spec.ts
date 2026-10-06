@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { appConfig, testOrigin } from "../../lib/config";
-import { locales, pageUrl } from "../../lib/routing";
+import { locales, pageUrl, serviceSlugs, serviceUrl } from "../../lib/routing";
 
 async function orbAngle(page: import("@playwright/test").Page) {
   return page.locator(".hero-orb__spin").evaluate((element) => {
@@ -26,9 +26,127 @@ test("SSR serves both locales without JavaScript", async ({ browser }) => {
     await expect(page.locator(".intro__title")).toHaveCSS("opacity", "1");
     await expect(page.locator(".intro__cards li")).toHaveCount(3);
     await expect(page.locator("#services h2")).toHaveText(locale === "bg" ? "Нашите услуги" : "Our Services");
-    await expect(page.locator(".services__card")).toHaveCount(4);
+    await expect(page.locator(".services__card")).toHaveCount(5);
   }
   await context.close();
+});
+
+test("navigation links to all five service pages in both languages", async ({ page }) => {
+  for (const locale of locales) {
+    await page.goto(pageUrl("home", locale));
+    await page.locator(".site-menu > summary").click();
+    await page.locator(".site-menu__services summary").click();
+    const links = page.locator(".site-menu__submenu a");
+    await expect(links).toHaveCount(serviceSlugs.length);
+    for (const [index, slug] of serviceSlugs.entries()) {
+      await expect(links.nth(index)).toHaveAttribute("href", serviceUrl(slug, locale));
+    }
+    const selectedLabel = await links.nth(2).innerText();
+    await links.nth(2).click();
+    await expect(page).toHaveURL(new RegExp(serviceUrl("digital-marketing", locale) + "$"));
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(selectedLabel);
+  }
+});
+
+test("Blog is third in the menu and its language switch keeps the page", async ({ page }) => {
+  for (const locale of locales) {
+    await page.goto(pageUrl("home", locale));
+    await page.locator(".site-menu > summary").click();
+    const links = page.locator(".site-menu__panel > nav:first-child > a, .site-menu__panel > nav:first-child > .site-menu__services > a");
+    await expect(links).toHaveCount(5);
+    await expect(links.nth(2)).toHaveAttribute("href", pageUrl("blog", locale));
+    await links.nth(2).click();
+    await expect(page).toHaveURL(new RegExp(pageUrl("blog", locale) + "$"));
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(locale === "bg" ? "Блог" : "Blog");
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+    await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(pageUrl("blog", locale) + "$"));
+    for (const language of locales) {
+      await expect(page.locator(`link[rel="alternate"][hreflang="${language}"]`)).toHaveAttribute("href", new RegExp(pageUrl("blog", language) + "$"));
+    }
+    await page.locator(".site-menu > summary").click();
+    await expect(page.locator(`.site-menu__languages a[lang="${locale === "bg" ? "en" : "bg"}"]`)).toHaveAttribute("href", pageUrl("blog", locale === "bg" ? "en" : "bg"));
+  }
+});
+
+test("service submenu opens on mouse hover and closes when the pointer leaves", async ({ page }) => {
+  await page.goto(pageUrl("home", "bg"));
+  await page.locator(".site-menu > summary").click();
+  const services = page.locator(".site-menu__services");
+  await services.locator(":scope > a").hover();
+  await expect(services.locator(":scope > details")).toHaveAttribute("open", "");
+  await services.locator(".site-menu__submenu a").first().hover();
+  await expect(services.locator(":scope > details")).toHaveAttribute("open", "");
+  await page.locator('.site-menu__panel > nav a[href="/about/bg"]').hover();
+  await expect(services.locator(":scope > details")).not.toHaveAttribute("open", "");
+});
+
+test("mobile service submenu is already open when the menu opens", async ({ browser }) => {
+  const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await page.goto(pageUrl("home", "bg"));
+  await page.locator(".site-menu > summary").tap();
+  const services = page.locator(".site-menu__services");
+  await expect(services.locator(":scope > details")).toHaveAttribute("open", "");
+  await expect(services.locator(".site-menu__submenu a")).toHaveCount(serviceSlugs.length);
+  await context.close();
+});
+
+test("all service placeholders respond without JavaScript", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  for (const locale of locales) {
+    for (const slug of serviceSlugs) {
+      const response = await page.goto(serviceUrl(slug, locale));
+      expect(response?.status(), serviceUrl(slug, locale)).toBe(200);
+      await expect(page.locator("html")).toHaveAttribute("lang", locale);
+      await expect(page.getByRole("heading", { level: 1 })).not.toBeEmpty();
+      await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(serviceUrl(slug, locale) + "$"));
+      for (const language of locales) {
+        await expect(page.locator(`link[rel="alternate"][hreflang="${language}"]`)).toHaveAttribute("href", new RegExp(serviceUrl(slug, language) + "$"));
+      }
+    }
+  }
+  await context.close();
+});
+
+test("unknown service and incomplete language URLs return 404", async ({ request }) => {
+  for (const path of ["/services/unknown/bg", "/services/ai-automation/fr", "/services/ai-automation"]) {
+    expect((await request.get(path)).status(), path).toBe(404);
+  }
+});
+
+test("service navigation works without JavaScript and Escape closes menu layers", async ({ browser, page }) => {
+  const noJs = await browser.newContext({ javaScriptEnabled: false });
+  const staticPage = await noJs.newPage();
+  await staticPage.goto(pageUrl("home", "bg"));
+  await staticPage.locator(".site-menu > summary").click();
+  await staticPage.locator(".site-menu__services summary").click();
+  await staticPage.locator(".site-menu__submenu a").first().click();
+  await expect(staticPage).toHaveURL(new RegExp(serviceUrl("ai-automation", "bg") + "$"));
+  await noJs.close();
+
+  await page.goto(pageUrl("home", "bg"));
+  await page.locator(".site-menu > summary").click();
+  await page.locator(".site-menu__services summary").click();
+  await page.locator(".site-menu__services summary").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".site-menu__services details")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".site-menu")).toHaveAttribute("open", "");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".site-menu")).not.toHaveAttribute("open", "");
+});
+
+test("About links to service pages and language switch keeps the service", async ({ page }) => {
+  await page.goto(pageUrl("about", "en"));
+  await page.locator(".site-menu > summary").click();
+  await page.locator(".site-menu__services summary").click();
+  await page.locator(".site-menu__submenu a").last().click();
+  await expect(page).toHaveURL(new RegExp(serviceUrl("web-solutions", "en") + "$"));
+  await page.locator(".site-menu > summary").click();
+  await expect(page.locator('.site-menu__languages a[lang="bg"]')).toHaveAttribute("href", serviceUrl("web-solutions", "bg"));
+  await page.locator('.site-menu__languages a[lang="bg"]').click();
+  await expect(page).toHaveURL(new RegExp(serviceUrl("web-solutions", "bg") + "$"));
 });
 
 test("hero uses the mobile image and keeps the background static", async ({ page }) => {
@@ -301,7 +419,7 @@ test("header CTA sits left of the menu and links to the contact footer", async (
       expect(appearance.paddingBlock).toBeCloseTo(.4, 1);
       expect(appearance.paddingInline).toBeCloseTo(1, 1);
       expect(appearance.height).toBeGreaterThanOrEqual(44);
-      const menuColor = await page.locator(".site-menu summary").evaluate((element) => {
+      const menuColor = await page.locator(".site-menu > summary").evaluate((element) => {
         const style = getComputedStyle(element);
         return { color: style.color, borderColor: style.borderColor };
       });
@@ -319,7 +437,7 @@ test("header CTA sits left of the menu and links to the contact footer", async (
       await expect(cta).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       await expect(cta).toHaveCSS("color", hoverColor);
       await expect(cta).toHaveCSS("border-color", hoverColor);
-      const summary = page.locator(".site-menu summary");
+      const summary = page.locator(".site-menu > summary");
       await summary.hover();
       await expect(summary).toHaveCSS("color", hoverColor);
       await expect(summary).toHaveCSS("border-color", hoverColor);
@@ -346,7 +464,7 @@ test("orange menu icon turns into an X when opened with the keyboard", async ({ 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(pageUrl("home", "bg"));
   const menu = page.locator(".site-menu");
-  const summary = menu.locator("summary");
+  const summary = menu.locator(":scope > summary");
   const strokes = menu.locator(".site-menu__bars span");
   await expect(strokes).toHaveCount(2);
   const menuColors = await summary.evaluate((element) => {
@@ -381,7 +499,7 @@ test("touch input does not leave the controls in the green hover state", async (
   await page.goto(pageUrl("home", "bg"));
   const orange = await page.locator(".hero__arrow polygon").evaluate((element) => getComputedStyle(element).fill);
   expect(await page.evaluate(() => matchMedia("(hover: hover)").matches)).toBe(false);
-  const summary = page.locator(".site-menu summary");
+  const summary = page.locator(".site-menu > summary");
   await summary.tap();
   await expect(page.locator(".site-menu")).toHaveAttribute("open", "");
   await expect(summary).toHaveCSS("color", orange);
@@ -395,7 +513,7 @@ test("header CTA and menu stay visible while the logo scrolls away", async ({ pa
     await page.goto(pageUrl("home", "bg"));
     const actions = page.locator(".site-header__actions");
     const cta = page.locator(".site-header__cta");
-    const summary = page.locator(".site-menu summary");
+    const summary = page.locator(".site-menu > summary");
     await expect(actions).toHaveCSS("position", "fixed");
     const initialTop = (await actions.boundingBox())!.y;
     await page.evaluate(() => {

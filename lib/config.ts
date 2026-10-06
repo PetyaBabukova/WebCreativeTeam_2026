@@ -9,6 +9,8 @@ export const appConfig = {
   paths: {
     root: "/",
     about: "/about",
+    blog: "/blog",
+    services: "/services",
     health: "/healthz",
     api: "/api",
   },

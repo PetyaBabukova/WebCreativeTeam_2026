@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { pageUrl, type Locale, type Page } from "./routing";
+import { pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug } from "./routing";
 import { messages } from "./messages";
 import { siteOrigin } from "./config";
 
@@ -16,6 +16,19 @@ export async function pageMetadata(page: Page, locale: Locale): Promise<Metadata
     alternates: {
       canonical: pageUrl(page, locale),
       languages: { bg: pageUrl(page, "bg"), en: pageUrl(page, "en") },
+    },
+  };
+}
+
+export async function serviceMetadata(slug: ServiceSlug, locale: Locale): Promise<Metadata> {
+  await connection();
+  return {
+    metadataBase: siteOrigin(),
+    title: `${messages[locale].serviceLinks[serviceSlugs.indexOf(slug)]} | WebCreativeTeam`,
+    robots: { index: false, follow: false },
+    alternates: {
+      canonical: serviceUrl(slug, locale),
+      languages: { bg: serviceUrl(slug, "bg"), en: serviceUrl(slug, "en") },
     },
   };
 }
