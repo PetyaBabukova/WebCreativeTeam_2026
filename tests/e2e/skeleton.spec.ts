@@ -35,7 +35,7 @@ test("navigation links to all five service pages in both languages", async ({ pa
   for (const locale of locales) {
     await page.goto(pageUrl("home", locale));
     await page.locator(".site-menu > summary").click();
-    await page.locator(".site-menu__services summary").click();
+    await page.locator(".site-menu__services-arrow").click();
     const links = page.locator(".site-menu__submenu a");
     await expect(links).toHaveCount(serviceSlugs.length);
     for (const [index, slug] of serviceSlugs.entries()) {
@@ -45,6 +45,49 @@ test("navigation links to all five service pages in both languages", async ({ pa
     await links.nth(2).click();
     await expect(page).toHaveURL(new RegExp(serviceUrl("digital-marketing", locale) + "$"));
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(selectedLabel);
+  }
+});
+
+test("AI service detail stays readable and loads its art across viewports", async ({ page }) => {
+  for (const locale of locales) {
+    for (const viewport of [{ width: 320, height: 700 }, { width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 800, height: 900 }, { width: 1024, height: 768 }, { width: 1280, height: 720 }, { width: 1600, height: 900 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto(serviceUrl("ai-automation", locale));
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page.locator(".service-detail__section")).toHaveCount(1);
+      await expect(page.locator(".service-detail__link[aria-current='page']")).toHaveAttribute("href", serviceUrl("ai-automation", locale));
+      await expect(page.locator(".service-detail__cta")).toHaveAttribute("href", pageUrl("contacts", locale));
+      await page.locator(".service-detail__section-art").scrollIntoViewIfNeeded();
+      await expect.poll(() => page.locator(".service-detail__section-art img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+      const layout = await page.evaluate(() => {
+        const accent = document.querySelector<HTMLElement>(".service-detail__title span:last-child")!;
+        const art = [...document.querySelectorAll<HTMLImageElement>(".service-detail__hero-art img, .service-detail__section-art img")];
+        const links = [...document.querySelectorAll<HTMLElement>(".service-detail__link")];
+        const widths = links.map((link) => link.getBoundingClientRect().width);
+        const nav = document.querySelector<HTMLElement>(".service-detail__links")!;
+        const navStyle = getComputedStyle(nav);
+        const navContentWidth = nav.clientWidth - parseFloat(navStyle.paddingLeft) - parseFloat(navStyle.paddingRight);
+        const aligned = [
+          [".service-detail__hero-copy .service-detail__eyebrow", ".service-detail__hero-description", ".service-detail__hero-art"],
+          [".service-detail__section-copy .service-detail__eyebrow", ".service-detail__section-bottom > :last-child", ".service-detail__section-art"],
+        ].every(([topSelector, bottomSelector, artSelector]) => {
+          const top = document.querySelector(topSelector)!.getBoundingClientRect();
+          const bottom = document.querySelector(bottomSelector)!.getBoundingClientRect();
+          const image = document.querySelector(artSelector)!.getBoundingClientRect();
+          return Math.abs(top.top - image.top) < 1 && Math.abs(bottom.bottom - image.bottom) < 1;
+        });
+        return {
+          overflow: document.documentElement.scrollWidth > innerWidth,
+          accentClipped: accent.scrollWidth > accent.clientWidth,
+          imagesLoaded: art.length === 2 && art.every((image) => image.complete && image.naturalWidth > 0),
+          equalLinkWidths: widths.every((width) => Math.abs(width - widths[0]) < 1),
+          linksDoNotFillContent: widths.every((width) => width < navContentWidth - 1),
+          linksNotClipped: links.every((link) => link.scrollWidth <= link.clientWidth + 1),
+          aligned: innerWidth <= 760 || aligned,
+        };
+      });
+      expect(layout, `${locale} at ${viewport.width}x${viewport.height}`).toEqual({ overflow: false, accentClipped: false, imagesLoaded: true, equalLinkWidths: true, linksDoNotFillContent: true, linksNotClipped: true, aligned: true });
+    }
   }
 });
 
@@ -113,16 +156,46 @@ test("bare URLs use the current locale until another locale is chosen", async ({
   expect(new URL(page.url()).pathname).toBe(pageUrl("faq", "en"));
 });
 
-test("service submenu opens on mouse hover and closes when the pointer leaves", async ({ page }) => {
+test("desktop service submenu opens only on click and the arrow stays beside its link", async ({ page }) => {
   await page.goto(pageUrl("home", "bg"));
   await page.locator(".site-menu > summary").click();
   const services = page.locator(".site-menu__services");
+  const submenu = services.locator(":scope > details");
+  const toggle = submenu.locator(":scope > summary");
+  const arrow = toggle.locator(".site-menu__services-arrow");
   await services.locator(":scope > a").hover();
-  await expect(services.locator(":scope > details")).toHaveAttribute("open", "");
-  await services.locator(".site-menu__submenu a").first().hover();
-  await expect(services.locator(":scope > details")).toHaveAttribute("open", "");
+  await expect(submenu).not.toHaveAttribute("open", "");
+  await arrow.hover();
+  await expect(submenu).not.toHaveAttribute("open", "");
+  await arrow.click();
+  await expect(submenu).toHaveAttribute("open", "");
   await page.locator('.site-menu__panel > nav a[href="/about/bg"]').hover();
-  await expect(services.locator(":scope > details")).not.toHaveAttribute("open", "");
+  await expect(submenu).toHaveAttribute("open", "");
+  await arrow.click();
+  await expect(submenu).not.toHaveAttribute("open", "");
+  const targets = await services.evaluate((element) => {
+    const link = element.querySelector(":scope > a")!;
+    const arrow = element.querySelector(".site-menu__services-arrow")!;
+    const linkBox = link.getBoundingClientRect();
+    const arrowBox = arrow.getBoundingClientRect();
+    return {
+      gap: arrowBox.left - linkBox.right,
+      linkTarget: document.elementFromPoint(linkBox.left + linkBox.width / 2, linkBox.top + linkBox.height / 2)?.closest("a") === link,
+      arrowTarget: document.elementFromPoint(arrowBox.left + arrowBox.width / 2, arrowBox.top + arrowBox.height / 2)?.closest("summary") === arrow.closest("summary"),
+      arrowWidth: arrowBox.width,
+      overflow: element.closest(".site-menu__panel")!.scrollWidth > element.closest(".site-menu__panel")!.clientWidth,
+    };
+  });
+  expect(targets.gap).toBeGreaterThanOrEqual(-1);
+  expect(targets.gap).toBeLessThanOrEqual(1);
+  expect(targets.linkTarget).toBe(true);
+  expect(targets.arrowTarget).toBe(true);
+  expect(targets.arrowWidth).toBeGreaterThanOrEqual(44);
+  expect(targets.overflow).toBe(false);
+  await arrow.click();
+  await page.locator(".site-menu > summary").click();
+  await page.locator(".site-menu > summary").click();
+  await expect(submenu).not.toHaveAttribute("open", "");
 });
 
 test("mobile service submenu is already open when the menu opens", async ({ browser }) => {
@@ -166,14 +239,15 @@ test("service navigation works without JavaScript and Escape closes menu layers"
   const staticPage = await noJs.newPage();
   await staticPage.goto(pageUrl("home", "bg"));
   await staticPage.locator(".site-menu > summary").click();
-  await staticPage.locator(".site-menu__services summary").click();
+  await staticPage.locator(".site-menu__services-arrow").click();
+  await expect(staticPage.locator(".site-menu__services > details")).toHaveAttribute("open", "");
   await staticPage.locator(".site-menu__submenu a").first().click();
   await expect(staticPage).toHaveURL(new RegExp(serviceUrl("ai-automation", "bg") + "$"));
   await noJs.close();
 
   await page.goto(pageUrl("home", "bg"));
   await page.locator(".site-menu > summary").click();
-  await page.locator(".site-menu__services summary").click();
+  await page.locator(".site-menu__services-arrow").click();
   await page.locator(".site-menu__services summary").focus();
   await page.keyboard.press("Escape");
   await expect(page.locator(".site-menu__services details")).not.toHaveAttribute("open", "");
@@ -185,7 +259,7 @@ test("service navigation works without JavaScript and Escape closes menu layers"
 test("About links to service pages and language switch keeps the service", async ({ page }) => {
   await page.goto(pageUrl("about", "en"));
   await page.locator(".site-menu > summary").click();
-  await page.locator(".site-menu__services summary").click();
+  await page.locator(".site-menu__services-arrow").click();
   await page.locator(".site-menu__submenu a").last().click();
   await expect(page).toHaveURL(new RegExp(serviceUrl("web-solutions", "en") + "$"));
   await page.locator(".site-menu > summary").click();
@@ -466,8 +540,18 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
     await expect(navigation.getByRole("link")).toHaveCount(10);
     await expect(navigation.getByRole("link", { name: locale === "bg" ? "Контакти" : "Contact" })).toHaveAttribute("href", pageUrl("contacts", locale));
     await expect(footer.locator(".site-footer__brand a")).toHaveAttribute("href", `${pageUrl("home", locale)}#main`);
-    await expect(footer.locator(".site-footer__social-icons a")).toHaveCount(0);
-    await expect(footer.locator(".site-footer__social-icons button")).toHaveCount(5);
+    await expect(footer.locator(".site-footer__social-icons a")).toHaveCount(3);
+    await expect(footer.locator(".site-footer__social-icons button")).toHaveCount(2);
+    for (const [name, url] of [
+      ["LinkedIn", "https://www.linkedin.com/company/webcreativeteam"],
+      ["Facebook", "https://www.facebook.com/webcreativeteam"],
+      ["YouTube", "https://www.youtube.com/@WebCreativeTeam"],
+    ]) {
+      const profile = footer.getByRole("link", { name });
+      await expect(profile).toHaveAttribute("href", url);
+      await expect(profile).toHaveAttribute("target", "_blank");
+      await expect(profile).toHaveAttribute("rel", "noopener noreferrer");
+    }
     const email = footer.getByRole("textbox", { name: locale === "bg" ? "Твоят имейл" : "Your email" });
     const subscribe = footer.locator(".site-footer__email-row button");
     await expect(email).toBeEnabled();
@@ -499,6 +583,24 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
     await expect(page.getByRole("link", { name: appConfig.contactEmail })).toHaveAttribute("href", `mailto:${appConfig.contactEmail}`);
+  }
+});
+
+test("footer logo returns to the top on every click", async ({ page }) => {
+  for (const locale of locales) {
+    await page.goto(pageUrl("home", locale));
+    const logo = page.locator(".site-footer__brand a");
+    for (let click = 0; click < 2; click++) {
+      await logo.scrollIntoViewIfNeeded();
+      expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
+      await logo.click();
+      await expect(page).toHaveURL(new RegExp(`${pageUrl("home", locale)}#main$`));
+      await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
+    }
+    await page.goto(pageUrl("contacts", locale));
+    await page.locator(".site-footer__brand a").click();
+    await expect(page).toHaveURL(new RegExp(`${pageUrl("home", locale)}#main$`));
+    await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
   }
 });
 

@@ -2,6 +2,27 @@
   "skip": "Skip to content", "navigation": "Main navigation", "language": "Language",
   "homeLabel": "Home", "aboutLabel": "About", "servicesLabel": "Services", "blogLabel": "Blog", "faqLabel": "FAQs", "contactLabel": "Contact",
   "servicesToggle": "Services submenu", "serviceLinks": ["AI Automation", "SEO & GEO", "Digital Marketing", "Branding", "Web Solutions"],
+  "serviceDetails": {
+    "ai-automation": {
+      "hero": {
+        "title": "AI",
+        "accent": "Automation",
+        "eyebrow": "Less routine",
+        "description": "We automate repetitive tasks, connect systems and build AI solutions that save time, reduce manual work and free your team to focus on higher-value tasks.",
+        "imageAlt": "AI solution connecting documents, CRM and business tools"
+      },
+      "sections": [
+        {
+          "eyebrow": "Focus on what matters",
+          "titleSegments": [{ "text": "Business", "accent": false }, { "text": "processes", "accent": true }],
+          "body": "We analyse everyday processes, remove unnecessary steps and build automations that make work faster, easier to manage and less dependent on manual effort.",
+          "image": "business-processes",
+          "imageAlt": "Automation connecting documents with business systems and processes",
+          "cta": true
+        }
+      ]
+    }
+  },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },
   "about": { "title": "About WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences." },
   "blog": { "title": "Blog", "description": "" },

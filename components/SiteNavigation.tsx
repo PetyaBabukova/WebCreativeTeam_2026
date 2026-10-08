@@ -54,7 +54,6 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
   }
   const menuRef = useRef<HTMLDetailsElement>(null);
   const servicesRef = useRef<HTMLDetailsElement>(null);
-  const servicesHoverRef = useRef(false);
   const [hash, setHash] = useState("");
   useLocalePreference(locale);
 
@@ -66,7 +65,6 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
   }, []);
 
   function closeMenus() {
-    servicesHoverRef.current = false;
     if (servicesRef.current) servicesRef.current.open = false;
     if (menuRef.current) menuRef.current.open = false;
   }
@@ -99,20 +97,13 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
     <div className="site-menu__panel">
       <nav aria-label={copy.navigation}>
         <Link href={pageUrl("home", locale)} aria-current={page === "home" ? "page" : undefined} onClick={closeMenus}>{copy.home}</Link>
-        <div className="site-menu__services"
-          onPointerEnter={(event) => {
-            if (event.pointerType !== "mouse") return;
-            servicesHoverRef.current = true;
-            if (servicesRef.current) servicesRef.current.open = true;
-          }}
-          onPointerLeave={(event) => {
-            if (event.pointerType !== "mouse") return;
-            servicesHoverRef.current = false;
-            if (servicesRef.current) servicesRef.current.open = false;
-          }}>
+        <div className="site-menu__services">
           <Link href={sectionUrl("services", locale, page)} onClick={closeMenus}>{copy.services}</Link>
           <details ref={servicesRef}>
-            <summary aria-label={copy.servicesToggle} onClick={(event) => { if (servicesHoverRef.current && event.detail > 0) event.preventDefault(); }}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg></summary>
+            <summary aria-label={copy.servicesToggle}>
+              <span className="site-menu__services-sizer" aria-hidden="true">{copy.services}</span>
+              <span className="site-menu__services-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m5 9 7 7 7-7" /></svg></span>
+            </summary>
             <div className="site-menu__submenu">
               {serviceSlugs.map((slug, index) => <Link key={slug} href={serviceUrl(slug, locale)} aria-current={serviceSlug === slug ? "page" : undefined} onClick={closeMenus}>{copy.serviceLinks[index]}</Link>)}
             </div>

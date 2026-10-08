@@ -10,10 +10,10 @@ export const appConfig = {
   contactEmail: "office@webcreativeteam.com",
   brandLogoPath: "/logo_2026_DARK_HORIZONTAL.svg",
   socialProfiles: {
-    linkedin: null,
-    facebook: null,
+    linkedin: "https://www.linkedin.com/company/webcreativeteam",
+    facebook: "https://www.facebook.com/webcreativeteam",
     instagram: null,
-    youtube: null,
+    youtube: "https://www.youtube.com/@WebCreativeTeam",
     tiktok: null,
   },
   listenHost: "0.0.0.0",

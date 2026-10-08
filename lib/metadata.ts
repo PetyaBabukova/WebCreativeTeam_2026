@@ -22,9 +22,11 @@ export async function pageMetadata(page: Page, locale: Locale): Promise<Metadata
 
 export async function serviceMetadata(slug: ServiceSlug, locale: Locale): Promise<Metadata> {
   await connection();
+  const detail = slug === "ai-automation" ? messages[locale].serviceDetails["ai-automation"] : undefined;
   return {
     metadataBase: siteOrigin(),
     title: `${messages[locale].serviceLinks[serviceSlugs.indexOf(slug)]} | WebCreativeTeam`,
+    description: detail?.hero.description,
     robots: { index: false, follow: false },
     alternates: {
       canonical: serviceUrl(slug, locale),

@@ -79,7 +79,8 @@ describe("public pages", () => {
     expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).toBeEnabled();
     expect(within(footer).getByRole("checkbox", { name: `${copy.landing.footer.consentPrivacy} ${copy.landing.footer.privacyPolicy}` })).toBeEnabled();
     expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).not.toHaveAttribute("name");
-    expect(within(footer).getAllByRole("button", { name: /^(LinkedIn|Facebook|Instagram|YouTube|TikTok)$/ })).toHaveLength(5);
+    expect(within(footer).getAllByRole("link", { name: /^(LinkedIn|Facebook|YouTube)$/ })).toHaveLength(3);
+    expect(within(footer).getAllByRole("button", { name: /^(Instagram|TikTok)$/ })).toHaveLength(2);
     expect(footer).not.toHaveTextContent(locale === "bg" ? "Профилите скоро ще бъдат достъпни." : "Our profiles will be available soon.");
     expect(footer).not.toHaveTextContent(locale === "bg" ? "Абонаментът все още не е достъпен." : "Newsletter signup is not available yet.");
   });
@@ -127,9 +128,32 @@ describe("public pages", () => {
     render(await Page(params));
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(messages[locale].serviceLinks[3]);
     expect((await metadata(params)).alternates?.canonical).toBe(serviceUrl("branding", locale));
+    expect((await metadata(params)).description).toBeUndefined();
     const invalid = { params: Promise.resolve({ slug: "unknown" }) };
     await expect(Page(invalid)).rejects.toThrow();
     await expect(metadata(invalid)).rejects.toThrow();
+  });
+  it.each([
+    [BgService, bgServiceMetadata, "bg"],
+    [EnService, enServiceMetadata, "en"],
+  ] as const)("renders the AI detail page while keeping locale and noindex %#", async (Page, metadata, locale) => {
+    const params = { params: Promise.resolve({ slug: "ai-automation" }) };
+    render(await Page(params));
+    const copy = messages[locale];
+    const main = screen.getByRole("main");
+    expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveTextContent(copy.serviceDetails["ai-automation"].hero.accent);
+    expect(within(main).getByRole("heading", { level: 2 })).toHaveTextContent(copy.serviceDetails["ai-automation"].sections[0].titleSegments.map((part) => part.text).join(" "));
+    expect(within(main).getByRole("img", { name: copy.serviceDetails["ai-automation"].hero.imageAlt })).toHaveAttribute("src", expect.any(String));
+    expect(within(main).getByRole("img", { name: copy.serviceDetails["ai-automation"].sections[0].imageAlt })).toHaveAttribute("src", expect.any(String));
+    const navigation = within(main).getByRole("navigation", { name: copy.servicesLabel });
+    const links = within(navigation).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));
+    expect(links[0]).toHaveAttribute("aria-current", "page");
+    expect(within(main).getByRole("link", { name: copy.landing.hero.contact })).toHaveAttribute("href", pageUrl("contacts", locale));
+    const seo = await metadata(params);
+    expect(seo.description).toBe(copy.serviceDetails["ai-automation"].hero.description);
+    expect(seo.robots).toEqual({ index: false, follow: false });
   });
   it.each([[BgLayout, "bg"], [EnLayout, "en"]] as const)("provides one complete locale document %#", (Layout, lang) => {
     const html = renderToStaticMarkup(<Layout><main id="main">Content</main></Layout>);
@@ -209,7 +233,7 @@ describe("public pages", () => {
     expect(menu.open).toBe(false);
     fireEvent.keyDown(menu, { key: "Escape" });
   });
-  it("supports desktop hover and closes the open menu after navigation", () => {
+  it("ignores desktop hover and closes the open menu after navigation", () => {
     Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
     const { container } = render(<SiteNavigation locale="en" page="about" copy={navigationCopy()} />);
     const menu = container.querySelector<HTMLDetailsElement>(".site-menu")!;
@@ -221,9 +245,9 @@ describe("public pages", () => {
     fireEvent.pointerEnter(surface, { pointerType: "touch" });
     expect(services.open).toBe(false);
     fireEvent.pointerEnter(surface, { pointerType: "mouse" });
-    expect(services.open).toBe(true);
+    expect(services.open).toBe(false);
     fireEvent.pointerLeave(surface, { pointerType: "touch" });
-    expect(services.open).toBe(true);
+    expect(services.open).toBe(false);
     fireEvent.pointerLeave(surface, { pointerType: "mouse" });
     expect(services.open).toBe(false);
     services.open = true;
