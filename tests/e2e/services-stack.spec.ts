@@ -16,7 +16,8 @@ test("SEO & GEO card uses the supplied artwork and translated copy", async ({ pa
       : ["SEO Optimisation", "Technical SEO", "AI Search & GEO"]);
     await expect(seo.locator(".services__learn-more")).toContainText(locale === "bg" ? "Подобри видимостта" : "Improve your visibility");
     await expect(seo.locator(".services__image img")).toHaveAttribute("src", /seo-and-geo/);
-    await expect(cards.locator("a, button")).toHaveCount(0);
+    await expect(cards.locator(".services__learn-more")).toHaveCount(5);
+    await expect(cards.locator(".services__features a, .services__features button")).toHaveCount(0);
   }
 });
 
@@ -129,6 +130,34 @@ test("service text fits narrow mobile cards", async ({ page }) => {
   }
 });
 
+test("mobile cards place the eyebrow below the art and keep three compact features in one row", async ({ page }) => {
+  for (const width of [320, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const locale of ["bg", "en"] as const) {
+      await page.goto(pageUrl("home", locale));
+      await page.evaluate(() => document.fonts.ready);
+      const layout = await page.locator(".services__card").evaluateAll((cards) => cards.map((card) => {
+        const art = card.querySelector<HTMLElement>(".services__image")!.getBoundingClientRect();
+        const eyebrow = card.querySelector<HTMLElement>(".services__eyebrow")!.getBoundingClientRect();
+        const title = card.querySelector<HTMLElement>(".services__card-title")!.getBoundingClientRect();
+        const features = [...card.querySelectorAll<HTMLElement>(".services__feature")];
+        const boxes = features.map((feature) => feature.getBoundingClientRect());
+        return {
+          eyebrowBelowArt: eyebrow.top > art.bottom,
+          titleBelowEyebrow: title.top > eyebrow.bottom,
+          featureCount: features.length,
+          oneRow: boxes.every((box) => Math.abs(box.top - boxes[0].top) < 1),
+          featuresFit: features.every((feature) => feature.scrollWidth <= feature.clientWidth + 1 && feature.scrollHeight <= feature.clientHeight + 1),
+        };
+      }));
+      expect(layout, `${locale} at ${width}px`).toEqual(Array.from({ length: 5 }, () => ({
+        eyebrowBelowArt: true, titleBelowEyebrow: true, featureCount: 3, oneRow: true, featuresFit: true,
+      })));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+    }
+  }
+});
+
 test("service cards fit laptop viewports with side space", async ({ page }) => {
   for (const [width, height] of [[1366, 768], [1280, 720], [900, 600]]) {
     await page.setViewportSize({ width, height });
@@ -185,12 +214,12 @@ test("mobile card keeps artwork above copy and short landscape uses flow", async
     textTop: card.querySelector(".services__card-content")!.getBoundingClientRect().top,
     eyebrowTop: card.querySelector(".services__eyebrow")!.getBoundingClientRect().top,
     eyebrowBottom: card.querySelector(".services__eyebrow")!.getBoundingClientRect().bottom,
-    imageTop: card.querySelector(".services__image")!.getBoundingClientRect().top,
+    titleTop: card.querySelector(".services__card-title")!.getBoundingClientRect().top,
     overflow: document.documentElement.scrollWidth > innerWidth,
   }));
   expect(mobile.textTop).toBeGreaterThanOrEqual(mobile.imageBottom - 1);
-  expect(mobile.eyebrowTop).toBeGreaterThan(mobile.imageTop);
-  expect(mobile.eyebrowBottom).toBeLessThan(mobile.imageBottom);
+  expect(mobile.eyebrowTop).toBeGreaterThan(mobile.imageBottom);
+  expect(mobile.eyebrowBottom).toBeLessThan(mobile.titleTop);
   expect(mobile.overflow).toBe(false);
   await seo.evaluate((card) => window.scrollTo(0, card.getBoundingClientRect().top + window.scrollY - 5));
   const mobileScale = () => page.locator(".services__card").first().evaluate((card) => new DOMMatrixReadOnly(getComputedStyle(card).transform).a);

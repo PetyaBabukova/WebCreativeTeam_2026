@@ -50,13 +50,17 @@ test("navigation links to all five service pages in both languages", async ({ pa
 
 test("AI service detail stays readable and loads its art across viewports", async ({ page }) => {
   for (const locale of locales) {
-    for (const viewport of [{ width: 320, height: 700 }, { width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 800, height: 900 }, { width: 1024, height: 768 }, { width: 1280, height: 720 }, { width: 1600, height: 900 }]) {
+    for (const viewport of [{ width: 320, height: 700 }, { width: 390, height: 844 }, { width: 761, height: 900 }, { width: 768, height: 1024 }, { width: 800, height: 900 }, { width: 1024, height: 768 }, { width: 1280, height: 720 }, { width: 1440, height: 1600 }, { width: 1600, height: 900 }]) {
       await page.setViewportSize(viewport);
       await page.goto(serviceUrl("ai-automation", locale));
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expect(page.locator(".service-detail__section")).toHaveCount(1);
       await expect(page.locator(".service-detail__link[aria-current='page']")).toHaveAttribute("href", serviceUrl("ai-automation", locale));
-      await expect(page.locator(".service-detail__cta")).toHaveAttribute("href", pageUrl("contacts", locale));
+      await expect(page.locator(".service-detail__cta")).toHaveCount(0);
+      await expect(page.locator(".service-detail__link")).toHaveCount(serviceSlugs.length);
+      const headerClear = await page.evaluate(() => document.querySelector<HTMLElement>(".site-header")!.getBoundingClientRect().bottom
+        <= document.querySelector<HTMLElement>(".service-detail__hero-copy .service-detail__eyebrow")!.getBoundingClientRect().top);
+      expect(headerClear, `${locale} at ${viewport.width}x${viewport.height} header clearance`).toBe(true);
       await page.locator(".service-detail__section-art").scrollIntoViewIfNeeded();
       await expect.poll(() => page.locator(".service-detail__section-art img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
       const layout = await page.evaluate(() => {
@@ -69,13 +73,20 @@ test("AI service detail stays readable and loads its art across viewports", asyn
         const navContentWidth = nav.clientWidth - parseFloat(navStyle.paddingLeft) - parseFloat(navStyle.paddingRight);
         const aligned = [
           [".service-detail__hero-copy .service-detail__eyebrow", ".service-detail__hero-description", ".service-detail__hero-art"],
-          [".service-detail__section-copy .service-detail__eyebrow", ".service-detail__section-bottom > :last-child", ".service-detail__section-art"],
+          [".service-detail__section-heading .service-detail__eyebrow", ".service-detail__section-bottom > :last-child", ".service-detail__section-art"],
         ].every(([topSelector, bottomSelector, artSelector]) => {
           const top = document.querySelector(topSelector)!.getBoundingClientRect();
           const bottom = document.querySelector(bottomSelector)!.getBoundingClientRect();
           const image = document.querySelector(artSelector)!.getBoundingClientRect();
           return Math.abs(top.top - image.top) < 1 && Math.abs(bottom.bottom - image.bottom) < 1;
         });
+        const inVerticalOrder = (selectors: string[], root: ParentNode = document) => selectors
+          .map((selector) => root.querySelector<HTMLElement>(selector)!.getBoundingClientRect())
+          .every((rect, index, rects) => index === 0 || rects[index - 1].bottom <= rect.top);
+        const mobileOrder = inVerticalOrder([".service-detail__hero-copy", ".service-detail__hero-art", ".service-detail__hero-description", ".service-detail__links"])
+          && [...document.querySelectorAll<HTMLElement>(".service-detail__section")].every((section) => inVerticalOrder([
+            ".service-detail__section-heading", ".service-detail__section-art", ".service-detail__section-bottom",
+          ], section));
         return {
           overflow: document.documentElement.scrollWidth > innerWidth,
           accentClipped: accent.scrollWidth > accent.clientWidth,
@@ -83,10 +94,12 @@ test("AI service detail stays readable and loads its art across viewports", asyn
           equalLinkWidths: widths.every((width) => Math.abs(width - widths[0]) < 1),
           linksDoNotFillContent: widths.every((width) => width < navContentWidth - 1),
           linksNotClipped: links.every((link) => link.scrollWidth <= link.clientWidth + 1),
+          singleLineLinks: links.every((link) => link.querySelector("span")!.getBoundingClientRect().height <= parseFloat(getComputedStyle(link).lineHeight) + 1),
           aligned: innerWidth <= 760 || aligned,
+          mobileOrder: innerWidth > 760 || mobileOrder,
         };
       });
-      expect(layout, `${locale} at ${viewport.width}x${viewport.height}`).toEqual({ overflow: false, accentClipped: false, imagesLoaded: true, equalLinkWidths: true, linksDoNotFillContent: true, linksNotClipped: true, aligned: true });
+      expect(layout, `${locale} at ${viewport.width}x${viewport.height}`).toEqual({ overflow: false, accentClipped: false, imagesLoaded: true, equalLinkWidths: true, linksDoNotFillContent: true, linksNotClipped: true, singleLineLinks: true, aligned: true, mobileOrder: true });
     }
   }
 });
@@ -389,7 +402,7 @@ test("services title and shared arrow yield to the first card and return on reve
   const stage = section.locator(".services__heading-stage");
   const arrow = section.locator(".services__arrow");
   await page.locator(".services__card").first().evaluate((card) => window.scrollBy(0, card.getBoundingClientRect().top - innerHeight));
-  const clearOfHeader = await page.evaluate(() => document.querySelector(".services__heading-inner h2")!.getBoundingClientRect().top >= document.querySelector(".site-header__actions")!.getBoundingClientRect().bottom);
+  const clearOfHeader = await page.evaluate(() => document.querySelector(".services__heading-inner h2")!.getBoundingClientRect().top >= document.querySelector(".site-header")!.getBoundingClientRect().bottom);
   expect(clearOfHeader).toBe(true);
   await expect(stage).toHaveCSS("opacity", "1");
   const arrowAngle = () => arrow.evaluate((element) => {
@@ -420,6 +433,24 @@ test("services follows intro more closely and shows the revised card copy", asyn
   await expect(card.locator(".services__eyebrow")).toHaveText("Спри да губиш време");
   await expect(card.locator(".services__feature")).toContainText(["Бизнес процеси", "AI асистенти", "AI интеграции"]);
   await expect(card.locator(".services__learn-more")).toHaveText("Автоматизирай");
+});
+
+test("home service cards link to their detail pages in the current locale", async ({ page }) => {
+  for (const locale of locales) {
+    await page.goto(pageUrl("home", locale));
+    const cards = page.locator(".services__card");
+    await expect(cards).toHaveCount(serviceSlugs.length);
+    for (const [index, slug] of serviceSlugs.entries()) {
+      await expect(cards.nth(index).locator(".services__learn-more")).toHaveAttribute("href", serviceUrl(slug, locale));
+      await expect(cards.nth(index).locator(".services__card-title a")).toHaveAttribute("href", serviceUrl(slug, locale));
+      await expect(cards.nth(index).locator(".services__features a")).toHaveCount(0);
+    }
+    await cards.first().locator(".services__learn-more").click();
+    await expect(page).toHaveURL(new RegExp(serviceUrl("ai-automation", locale) + "$"));
+    await page.goto(pageUrl("home", locale));
+    await page.locator(".services__card-title a").first().click();
+    await expect(page).toHaveURL(new RegExp(serviceUrl("ai-automation", locale) + "$"));
+  }
 });
 
 test("services artwork stays above readable text on narrow screens", async ({ page }) => {
@@ -750,25 +781,32 @@ test("touch input does not leave the controls in the green hover state", async (
   await context.close();
 });
 
-test("header CTA and menu stay visible while the logo scrolls away", async ({ page }) => {
+test("the full header stays visible with equal top and bottom padding", async ({ page }) => {
   for (const width of [390, 1536]) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(pageUrl("home", "bg"));
+    const header = page.locator(".site-header");
     const actions = page.locator(".site-header__actions");
     const cta = page.locator(".site-header__cta");
     const summary = page.locator(".site-menu > summary");
-    await expect(actions).toHaveCSS("position", "fixed");
-    const initialTop = (await actions.boundingBox())!.y;
+    await expect(header).toHaveCSS("position", "fixed");
+    await expect(actions).toHaveCSS("position", "absolute");
+    const initialTop = (await header.boundingBox())!.y;
+    const padding = await page.locator(".site-header__inner").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return [style.paddingTop, style.paddingBottom];
+    });
+    expect(padding[0]).toBe(padding[1]);
     await page.evaluate(() => {
       const spacer = document.createElement("div");
       spacer.style.height = "200vh";
       document.body.append(spacer);
       window.scrollTo(0, innerHeight);
     });
-    await expect.poll(async () => (await actions.boundingBox())!.y).toBeCloseTo(initialTop, 0);
+    await expect.poll(async () => (await header.boundingBox())!.y).toBeCloseTo(initialTop, 0);
     await expect(cta).toBeInViewport();
     await expect(summary).toBeInViewport();
-    await expect(page.locator(".site-header__brand")).not.toBeInViewport();
+    await expect(page.locator(".site-header__brand")).toBeInViewport();
     await summary.click();
     await expect(page.locator(".site-menu")).toHaveAttribute("open", "");
     await expect(page.locator(".site-menu__panel")).toBeVisible();

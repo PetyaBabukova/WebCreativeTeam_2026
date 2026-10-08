@@ -18,7 +18,7 @@
           "body": "We analyse everyday processes, remove unnecessary steps and build automations that make work faster, easier to manage and less dependent on manual effort.",
           "image": "business-processes",
           "imageAlt": "Automation connecting documents with business systems and processes",
-          "cta": true
+          "cta": false
         }
       ]
     }

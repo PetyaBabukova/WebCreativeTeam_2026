@@ -2,13 +2,14 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { MotionConfig, motion, useMotionValue, useScroll, useTransform } from "motion/react";
 import aiAutomationImage from "@/assets/services/ai-automation.webp";
 import seoGeoImage from "@/assets/services/seo-and-geo.webp";
 import digitalMarketingImage from "@/assets/services/digital-marketing.webp";
 import brandingImage from "@/assets/services/branding.webp";
 import webDesignImage from "@/assets/services/web-design.webp";
-import { serviceSlugs } from "@/lib/routing";
+import { serviceSlugs, serviceUrl, type Locale } from "@/lib/routing";
 import { ScrollArrow } from "./HeroOrb";
 
 type Service = {
@@ -55,9 +56,10 @@ function SmallArrow() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><path d="M3 12h17m-7-7 7 7-7 7" /></svg>;
 }
 
-function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
+function ServiceCard({ item, index, href, stack, cardRefs, firstCardRef }: {
   item: Service;
   index: number;
+  href: string;
   stack: "flow" | "sticky";
   cardRefs: React.RefObject<(HTMLElement | null)[]>;
   firstCardRef: React.RefObject<HTMLElement | null>;
@@ -83,7 +85,7 @@ function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
       }
       const nextRect = next.getBoundingClientRect();
       const nextTop = nextRect.top + (nextRect.height - next.offsetHeight) / 2;
-      const fadeEnd = Math.max(0, stickyTop + height - nextHeight);
+      const fadeEnd = Math.max(stickyTop, stickyTop + height - nextHeight);
       const fadeDistance = Math.max(120, viewportHeight * .25);
       const scaleStart = viewportHeight * .9;
       const scaleProgress = Math.max(0, Math.min(1, (scaleStart - nextTop) / Math.max(1, scaleStart - fadeEnd)));
@@ -127,7 +129,7 @@ function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
     </div>
     <div className="services__card-content">
       <p className="services__eyebrow">{item.eyebrow}</p>
-      <h3 id={`service-title-${index}`} className="services__card-title"><span>{item.title}</span>{" "}<span>{item.highlight}</span></h3>
+      <h3 id={`service-title-${index}`} className="services__card-title"><Link href={href} className="services__card-title-link"><span>{item.title}</span>{" "}<span>{item.highlight}</span></Link></h3>
       <ul className="services__features" aria-label={item.eyebrow}>
         {item.features.map((feature, featureIndex) => <li className="services__feature button--outline" key={feature} data-feature-icon={visual.icons[featureIndex]}>
           <FeatureIcon kind={visual.icons[featureIndex]} />
@@ -136,12 +138,12 @@ function ServiceCard({ item, index, stack, cardRefs, firstCardRef }: {
         </li>)}
       </ul>
       <p className="services__description">{item.description}</p>
-      <span className="services__learn-more button--outline">{item.learnMore}<SmallArrow /></span>
+      <Link href={href} className="services__learn-more button--outline">{item.learnMore}<SmallArrow /></Link>
     </div>
   </motion.article>;
 }
 
-export default function ServicesSection({ copy }: { copy: ServicesCopy }) {
+export default function ServicesSection({ copy, locale }: { copy: ServicesCopy; locale: Locale }) {
   if (copy.items.length !== serviceVisuals.length || copy.items.length !== serviceSlugs.length) {
     throw new Error(`Expected ${serviceSlugs.length} services, received ${copy.items.length}`);
   }
@@ -191,7 +193,7 @@ export default function ServicesSection({ copy }: { copy: ServicesCopy }) {
         </div>
       </motion.div>
       <div className="container services__cards" data-stack={stack}>
-        {copy.items.map((item, index) => <ServiceCard key={serviceSlugs[index]} item={item} index={index} stack={stack} cardRefs={cardRefs} firstCardRef={firstCardRef} />)}
+        {copy.items.map((item, index) => <ServiceCard key={serviceSlugs[index]} item={item} index={index} href={serviceUrl(serviceSlugs[index], locale)} stack={stack} cardRefs={cardRefs} firstCardRef={firstCardRef} />)}
       </div>
     </section>
   </MotionConfig>;

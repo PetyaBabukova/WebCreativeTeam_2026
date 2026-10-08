@@ -69,7 +69,7 @@ function HomePage({ locale }: { locale: Locale }) {
       </div>
     </section>
     <IntroSection copy={copy.intro} />
-    <ServicesSection copy={copy.services} />
+    <ServicesSection copy={copy.services} locale={locale} />
   </main>;
 }
 
@@ -184,9 +184,9 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
           <div className="service-detail__hero-copy">
             <div className="service-detail__eyebrow"><p>{detail.hero.eyebrow}</p></div>
             <h1 id="service-detail-title" className="service-detail__title"><span>{detail.hero.title}</span>{" "}<span>{detail.hero.accent}</span></h1>
-            <p className="service-detail__hero-description">{detail.hero.description}</p>
           </div>
           <div className="service-detail__hero-art"><Image src={visual.hero} alt={detail.hero.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 55vw" priority /></div>
+          <p className="service-detail__hero-description">{detail.hero.description}</p>
         </div>
       </section>
       <nav className="container service-detail__links" aria-label={copy.servicesLabel}>
@@ -196,15 +196,15 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
       </nav>
       <div className="service-detail__sections">
         {detail.sections.map((section, index) => <section key={section.image} className="container service-detail__section" aria-labelledby={`service-detail-section-${index + 1}`}>
-          <div className="service-detail__section-copy">
+          <div className="service-detail__section-heading">
             <div className="service-detail__eyebrow"><span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span><p>{section.eyebrow}</p></div>
             <h2 id={`service-detail-section-${index + 1}`}>{section.titleSegments.map((part, partIndex) => <span key={`${part.text}-${partIndex}`} className={part.accent ? "service-detail__accent" : undefined}>{partIndex > 0 ? " " : null}{part.text}</span>)}</h2>
-            <div className="service-detail__section-bottom">
-              <p className="service-detail__body">{section.body}</p>
-              {section.cta && <Link className="button button--outline service-detail__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>}
-            </div>
           </div>
           <div className="service-detail__section-art"><Image src={aiSectionImage(section.image)} alt={section.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 50vw" /></div>
+          <div className="service-detail__section-bottom">
+            <p className="service-detail__body">{section.body}</p>
+            {section.cta && <Link className="button button--outline service-detail__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>}
+          </div>
         </section>)}
       </div>
     </main> : <main id="main" className="container standard-page" tabIndex={-1}><h1>{title}</h1></main>}
