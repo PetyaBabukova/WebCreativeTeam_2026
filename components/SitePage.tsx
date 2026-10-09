@@ -6,6 +6,7 @@ import serviceDetailBackground from "@/assets/services/products_page_background.
 import aiDetailHero from "@/assets/services/products_page_intro_image.webp";
 import seoDetailHero from "@/assets/services/SEO_and_Geo_intro_image.webp";
 import digitalMarketingDetailHero from "@/assets/services/digital_marketing_intro_image.webp";
+import brandingDetailHero from "@/assets/services/branding_intro_image.webp";
 import aiBusinessProcesses from "@/assets/services/products_page_business_proces_section_image.webp";
 import aiAssistants from "@/assets/services/produts_page_AI_assistent_image.webp";
 import aiIntegrations from "@/assets/services/AI_integration_image.webp";
@@ -15,6 +16,9 @@ import aiSearchGeo from "@/assets/services/From Web Chaos to AI AAI_search_and_D
 import marketingStrategy from "@/assets/services/Digital_Strategy_image.webp";
 import advertisingCampaigns from "@/assets/services/advertising_campaigns_image.webp";
 import socialMedia from "@/assets/services/Social_media_image.webp";
+import brandStrategy from "@/assets/services/branding_strategy_image.webp";
+import visualIdentity from "@/assets/services/branding_identity_image.webp";
+import brandPresence from "@/assets/services/branding_presence_image.webp";
 import { appConfig } from "@/lib/config";
 import { messages, serviceDetail } from "@/lib/messages";
 import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
@@ -170,9 +174,9 @@ function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
   </svg>;
 }
 
-const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo, "marketing-strategy": marketingStrategy, "advertising-campaigns": advertisingCampaigns, "social-media": socialMedia } as const;
+const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo, "marketing-strategy": marketingStrategy, "advertising-campaigns": advertisingCampaigns, "social-media": socialMedia, "brand-strategy": brandStrategy, "visual-identity": visualIdentity, "brand-presence": brandPresence } as const;
 
-const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero, "digital-marketing": digitalMarketingDetailHero } as const;
+const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero, "digital-marketing": digitalMarketingDetailHero, branding: brandingDetailHero } as const;
 
 function serviceDetailHeroImage(slug: ServiceSlug) {
   if (!(slug in serviceDetailHeroImages)) throw new Error(`Missing service hero image: ${slug}`);

@@ -19,6 +19,7 @@ const serviceFeatureSectionIds: Partial<Record<ServiceSlug, readonly string[]>> 
   "ai-automation": ["business-processes", "ai-assistants", "ai-integrations"],
   "seo-geo": ["seo-optimization", "technical-seo", "ai-search-geo"],
   "digital-marketing": ["marketing-strategy", "advertising-campaigns", "social-media"],
+  branding: ["brand-strategy", "visual-identity", "brand-presence"],
 };
 
 export function serviceFeatureSectionId(slug: ServiceSlug, index: number): string | undefined {

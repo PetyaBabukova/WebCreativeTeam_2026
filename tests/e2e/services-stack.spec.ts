@@ -45,10 +45,11 @@ test("branding card uses the supplied artwork and copy in both languages", async
     const card = page.locator('.services__card[data-service-art="branding"]');
     await expect(card.locator(".services__eyebrow")).toHaveText(locale === "bg" ? "НЕ ИЗГЛЕЖДАЙ КАТО ВСИЧКИ" : "DON’T LOOK LIKE EVERYONE ELSE");
     await expect(card.locator(".services__card-title span").first()).toHaveText(locale === "bg" ? "Брандинг" : "Branding");
-    await expect(card.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "с характер" : "with character");
+    await expect(card.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "с характер" : "with identity");
     await expect(card.locator(".services__feature")).toContainText(locale === "bg"
-      ? ["Лого", "Идентичност", "Дигитален бранд"]
-      : ["Logo", "Identity", "Digital Brand"]);
+      ? ["Стратегия", "Идентичност", "Присъствие"]
+      : ["Strategy", "Identity", "Presence"]);
+    expect(await card.locator(".services__feature").evaluateAll((items) => items.map((item) => item.getAttribute("data-feature-icon")))).toEqual(["compass", "fingerprint", "devices"]);
     await expect(card.locator(".services__description")).toContainText(locale === "bg" ? "дигиталния свят" : "digital world");
     await expect(card.locator(".services__learn-more")).toContainText(locale === "bg" ? "Изгради бранд" : "Build your brand");
     await expect(card.locator(".services__image img")).toHaveAttribute("src", /branding/);

@@ -215,6 +215,8 @@
 .service-detail__eyebrow p { margin: 0; font-size: clamp(.8rem, 1vw, .95rem); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .service-detail__section h2 { display: flex; flex-direction: column; align-items: flex-start; margin: var(--service-heading-gap) 0 1.5rem; color: var(--color-deep-green-on-light); font-size: clamp(2.275rem, 4.2vw, 4.2rem); font-weight: 700; line-height: .96; letter-spacing: var(--heading-bold-letter-spacing); }
 .service-detail__title-followup { white-space: nowrap; }
+/* This gradient phrase is longer than the narrow text column next to the image, so it wraps between words instead of leaving the viewport. */
+.service-detail__section h2#visual-identity .service-detail__title-followup { white-space: normal; }
 .service-detail__section-bottom { display: flex; grid-column: 1; grid-row: 2; align-self: end; flex-direction: column; align-items: flex-start; max-width: 36rem; }
 .service-detail__body { max-width: 36ch; margin: 0 0 1.75rem; font-size: clamp(1.05rem, 1.4vw, 1.35rem); line-height: 1.5; }
 .service-detail__section-bottom .service-detail__body:last-child { margin-bottom: 0; }
@@ -254,6 +256,8 @@
   .service-detail__section h2 { margin-bottom: 0; }
   .service-detail__section h2#ai-search-geo { font-size: min(2.275rem, 11vw); }
   .service-detail__section h2#ai-search-geo .service-detail__title-followup { white-space: nowrap; }
+/* This gradient phrase is longer than the narrow text column next to the image, so it wraps between words instead of leaving the viewport. */
+.service-detail__section h2#visual-identity .service-detail__title-followup { white-space: normal; }
   .service-detail__section-art { height: auto; }
 }
 

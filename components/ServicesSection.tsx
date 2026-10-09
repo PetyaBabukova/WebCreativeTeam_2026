@@ -21,13 +21,13 @@ type Service = {
   learnMore: string;
 };
 type ServicesCopy = { heading: string; items: Service[] };
-type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "logo" | "layers" | "screen" | "refresh";
+type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "compass" | "fingerprint" | "devices" | "screen" | "refresh";
 
 const serviceVisuals = [
   { id: "ai", image: aiAutomationImage, icons: ["gear", "robot", "network"] as IconKind[] },
   { id: "seo-geo", image: seoGeoImage, icons: ["search", "database", "network"] as IconKind[] },
   { id: "digital-marketing", image: digitalMarketingImage, icons: ["target", "chart", "people"] as IconKind[] },
-  { id: "branding", image: brandingImage, icons: ["logo", "layers", "screen"] as IconKind[] },
+  { id: "branding", image: brandingImage, icons: ["compass", "fingerprint", "devices"] as IconKind[] },
   { id: "web-design", image: webDesignImage, icons: ["screen", "refresh", "gear"] as IconKind[] },
 ];
 
@@ -45,8 +45,9 @@ function FeatureIcon({ kind }: { kind: IconKind }) {
               : kind === "target" ? <><circle cx="15" cy="17" r="11" /><circle cx="15" cy="17" r="6" /><circle cx="15" cy="17" r="1.5" /><path d="m15 17 12-12m-5 0h5v5" /></>
                 : kind === "chart" ? <><path d="M3 27h26M6 23v-6h4v6m2 0V12h4v11m2 0V8h4v15m2 0V4h4v19" /><path d="m5 14 6-5 5 2 9-7" /></>
                   : kind === "people" ? <><circle cx="16" cy="9" r="4" /><circle cx="5" cy="12" r="3" /><circle cx="27" cy="12" r="3" /><path d="M9 26v-3a7 7 0 0 1 14 0v3H9ZM1 26v-4a5 5 0 0 1 6-5m24 9v-4a5 5 0 0 0-6-5" /></>
-                    : kind === "logo" ? <><circle cx="16" cy="6" r="3" /><circle cx="5" cy="25" r="3" /><circle cx="27" cy="25" r="3" /><path d="M16 9v6M5 22v-5l11-4 11 4v5" /></>
-                      : kind === "layers" ? <><path d="m16 3 13 7-13 7L3 10l13-7Zm-13 13 13 7 13-7M3 22l13 7 13-7" /></>
+                    : kind === "compass" ? <><circle cx="16" cy="16" r="13" /><path d="m21.5 10.5-3.2 7.8-7.8 3.2 3.2-7.8 7.8-3.2Z" /><circle cx="16" cy="16" r="1" /></>
+                      : kind === "fingerprint" ? <><path d="M9.5 6.5A12 12 0 0 1 28 16.5" /><path d="M4.5 12.5a12 12 0 0 1 2.2-3.7" /><path d="M8 28a17 17 0 0 1-2.5-9.5 10.5 10.5 0 0 1 21 0v1" /><path d="M11.5 29a14 14 0 0 1-2-9.5 6.5 6.5 0 0 1 13 0c0 3.5-.6 6.5-1.8 9" /><path d="M16 19.5c0 3.5-.8 6.8-2.5 9.5" /><path d="M26.5 23.5c-.4 1.6-1 3.2-1.8 4.6" /></>
+                        : kind === "devices" ? <><rect x="2" y="5" width="21" height="15" rx="1.5" /><path d="M8 25h7m-3.5-5v5" /><rect x="20" y="12" width="10" height="16" rx="1.8" /><path d="M24 25h2" /></>
                         : kind === "refresh" ? <><path d="M27 12a11 11 0 0 0-19-5L5 10m0-7v7h7M5 20a11 11 0 0 0 19 5l3-3m0 7v-7h-7" /></>
                           : <><rect x="3" y="4" width="26" height="19" rx="2" /><path d="M12 29h8m-4-6v6" /></>}
   </svg>;

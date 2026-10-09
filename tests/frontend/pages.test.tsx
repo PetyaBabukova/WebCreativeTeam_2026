@@ -132,10 +132,11 @@ describe("public pages", () => {
     [BgService, bgServiceMetadata, "bg"],
     [EnService, enServiceMetadata, "en"],
   ] as const)("validates localized service routes %#", async (Page, metadata, locale) => {
-    const params = { params: Promise.resolve({ slug: "branding" }) };
+    // Web solutions is still a placeholder page without detail copy.
+    const params = { params: Promise.resolve({ slug: "web-solutions" }) };
     render(await Page(params));
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(messages[locale].serviceLinks[3]);
-    expect((await metadata(params)).alternates?.canonical).toBe(serviceUrl("branding", locale));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(messages[locale].serviceLinks[4]);
+    expect((await metadata(params)).alternates?.canonical).toBe(serviceUrl("web-solutions", locale));
     expect((await metadata(params)).description).toBeUndefined();
     const invalid = { params: Promise.resolve({ slug: "unknown" }) };
     await expect(Page(invalid)).rejects.toThrow();
@@ -202,6 +203,38 @@ describe("public pages", () => {
     expect(seo.robots).toEqual({ index: false, follow: false });
     expect(seo.alternates?.canonical).toBe(serviceUrl("seo-geo", locale));
     expect(seo.alternates?.languages).toEqual({ bg: serviceUrl("seo-geo", "bg"), en: serviceUrl("seo-geo", "en") });
+  });
+  it.each([
+    [BgService, bgServiceMetadata, "bg"],
+    [EnService, enServiceMetadata, "en"],
+  ] as const)("renders the branding intro and its strategy section %#", async (Page, metadata, locale) => {
+    const params = { params: Promise.resolve({ slug: "branding" }) };
+    render(await Page(params));
+    const copy = messages[locale];
+    const hero = copy.serviceDetails.branding.hero;
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("data-service", "branding");
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName(`${hero.title} ${hero.accent}`);
+    expect(within(main).getByText(hero.eyebrow)).toBeInTheDocument();
+    expect(within(main).getByText(hero.description)).toBeInTheDocument();
+    expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("branding_intro_image"));
+    const sections = copy.serviceDetails.branding.sections;
+    const headings = within(main).getAllByRole("heading", { level: 2 });
+    expect(headings).toHaveLength(3);
+    sections.forEach((section, index) => {
+      expect(headings[index]).toHaveAccessibleName(section.titleSegments.map((part) => part.text).join(" "));
+      expect(headings[index]).toHaveAttribute("id", ["brand-strategy", "visual-identity", "brand-presence"][index]);
+      expect(within(main).getByText(section.eyebrow)).toBeInTheDocument();
+      expect(within(main).getByText(section.body)).toBeInTheDocument();
+      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.stringContaining(["branding_strategy_image", "branding_identity_image", "branding_presence_image"][index]));
+    });
+    expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
+    const links = within(within(main).getByRole("navigation", { name: copy.servicesLabel })).getAllByRole("link");
+    expect(links[3]).toHaveAttribute("aria-current", "page");
+    const seo = await metadata(params);
+    expect(seo.description).toBe(hero.description);
+    expect(seo.robots).toEqual({ index: false, follow: false });
+    expect(seo.alternates?.canonical).toBe(serviceUrl("branding", locale));
   });
   it.each([
     [BgService, bgServiceMetadata, "bg"],

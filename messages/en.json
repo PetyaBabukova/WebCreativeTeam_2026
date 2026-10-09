@@ -107,6 +107,41 @@
           "cta": false
         }
       ]
+    },
+    "branding": {
+      "hero": {
+        "title": "Branding",
+        "accent": "with identity",
+        "eyebrow": "Leave a mark.",
+        "description": "We build distinctive brands that do more than look good — they create a feeling, tell stories and stay in people’s minds. We combine strategy, creativity and design to turn ideas into a recognisable visual identity and a consistent brand presence across every digital channel.",
+        "imageAlt": "Brand identity with a logo, colour palette, printed materials and a mobile screen"
+      },
+      "sections": [
+        {
+          "eyebrow": "A strong brand starts with an idea",
+          "titleSegments": [{ "text": "Strategy", "accent": false }, { "text": "with a clear direction", "accent": true }],
+          "body": "We build the strategic foundation of the brand by analysing the market, the audience and the competitive landscape. We define its positioning, values, personality and key messages to create a distinctive identity that builds trust, attracts the right people and stays recognisable over time.",
+          "image": "brand-strategy",
+          "imageAlt": "A compass at the centre, connected to icons for audience, goals, messaging and brand layers",
+          "cta": false
+        },
+        {
+          "eyebrow": "Be recognisable",
+          "titleSegments": [{ "text": "Identity", "accent": false }, { "text": "with its own signature", "accent": true }],
+          "body": "We turn the brand’s character and values into a distinctive visual language. We create the logo, colour palette, typography and graphic elements that work in harmony and build a complete, recognisable identity. Every detail has a role, so the brand stays consistent, memorable and distinct from the competition.",
+          "image": "visual-identity",
+          "imageAlt": "A logo on a construction grid with a colour palette, typography and visual identity materials",
+          "cta": false
+        },
+        {
+          "eyebrow": "Not just presence. Impact.",
+          "titleSegments": [{ "text": "Presence", "accent": false }, { "text": "without limits", "accent": true }],
+          "body": "We carry the brand’s identity into every digital channel, creating a consistent and recognisable visual presence. From the website and social networks to advertising visuals and digital materials, we build a complete brand experience that connects every touchpoint with the audience and leaves a lasting impression.",
+          "image": "brand-presence",
+          "imageAlt": "A logo at the centre, connected to a website, a mobile screen, social posts and advertising visuals of one brand",
+          "cta": false
+        }
+      ]
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },
@@ -161,8 +196,8 @@
         {
           "eyebrow": "DON’T LOOK LIKE EVERYONE ELSE",
           "title": "Branding",
-          "highlight": "with character",
-          "features": ["Logo", "Identity", "Digital Brand"],
+          "highlight": "with identity",
+          "features": ["Strategy", "Identity", "Presence"],
           "description": "We create a distinctive visual identity that tells your story and makes your brand stand out in the digital world.",
           "learnMore": "Build your brand"
         },
