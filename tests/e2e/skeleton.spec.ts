@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { appConfig, testOrigin } from "../../lib/config";
-import { aiAutomationSectionId, locales, pageUrl, serviceSlugs, serviceUrl } from "../../lib/routing";
+import { locales, pageUrl, serviceFeatureSectionId, serviceSlugs, serviceUrl } from "../../lib/routing";
 
 async function orbAngle(page: import("@playwright/test").Page) {
   return page.locator(".hero-orb__spin").evaluate((element) => {
@@ -41,10 +41,42 @@ test("navigation links to all five service pages in both languages", async ({ pa
     for (const [index, slug] of serviceSlugs.entries()) {
       await expect(links.nth(index)).toHaveAttribute("href", serviceUrl(slug, locale));
     }
-    const selectedLabel = await links.nth(2).innerText();
     await links.nth(2).click();
     await expect(page).toHaveURL(new RegExp(serviceUrl("digital-marketing", locale) + "$"));
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(selectedLabel);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName(locale === "bg" ? "Дигитален маркетинг импулс" : "Digital marketing momentum");
+  }
+});
+
+test("digital marketing intro stays readable across mobile and desktop widths", async ({ page }) => {
+  for (const locale of locales) {
+    for (const width of [320, 390, 761, 1024, 1366, 1600]) {
+      await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
+      await page.goto(serviceUrl("digital-marketing", locale));
+      await expect(page.locator(".service-detail__section")).toHaveCount(0);
+      await expect(page.locator('.service-detail__link[aria-current="page"]')).toHaveAttribute("href", serviceUrl("digital-marketing", locale));
+      const layout = await page.evaluate(() => {
+        const phrase = document.querySelector<HTMLElement>(".service-detail__title > span:first-child")!;
+        const column = document.querySelector<HTMLElement>(".service-detail__hero-copy")!.getBoundingClientRect();
+        const art = document.querySelector<HTMLElement>(".service-detail__hero-art")!.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(phrase);
+        const readableRightEdge = window.innerWidth <= 760 ? window.innerWidth - 1 : art.left + art.width * .18;
+        const textFits = [...range.getClientRects()].every((rect) => rect.left >= column.left - 1 && rect.right <= readableRightEdge);
+        const image = document.querySelector<HTMLImageElement>(".service-detail__hero-art img")!;
+        const nav = document.querySelector<HTMLElement>(".service-detail__links")!;
+        const footer = document.querySelector<HTMLElement>("footer")!;
+        return {
+          textFits,
+          imageLoaded: image.complete && image.naturalWidth > 0,
+          noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+          footerGap: footer.getBoundingClientRect().top - nav.getBoundingClientRect().bottom,
+        };
+      });
+      expect(layout.textFits, `${locale} at ${width}px title fits`).toBe(true);
+      expect(layout.imageLoaded, `${locale} at ${width}px image loaded`).toBe(true);
+      expect(layout.noHorizontalOverflow, `${locale} at ${width}px no overflow`).toBe(true);
+      expect(layout.footerGap, `${locale} at ${width}px footer gap`).toBeGreaterThan(0);
+    }
   }
 });
 
@@ -466,10 +498,10 @@ test("home service cards link to their detail pages in the current locale", asyn
       await expect(cards.nth(index).locator(".services__learn-more")).toHaveAttribute("href", serviceUrl(slug, locale));
       await expect(cards.nth(index).locator(".services__card-title a")).toHaveAttribute("href", serviceUrl(slug, locale));
       const featureLinks = cards.nth(index).locator(".services__features a");
-      await expect(featureLinks).toHaveCount(index === 0 ? 3 : 0);
-      if (index === 0) {
+      await expect(featureLinks).toHaveCount(index <= 1 ? 3 : 0);
+      if (index <= 1) {
         for (const featureIndex of [0, 1, 2]) {
-          await expect(featureLinks.nth(featureIndex)).toHaveAttribute("href", `${serviceUrl(slug, locale)}#${aiAutomationSectionId(featureIndex)}`);
+          await expect(featureLinks.nth(featureIndex)).toHaveAttribute("href", `${serviceUrl(slug, locale)}#${serviceFeatureSectionId(slug, featureIndex)}`);
         }
       }
     }
@@ -480,8 +512,8 @@ test("home service cards link to their detail pages in the current locale", asyn
     await expect(page).toHaveURL(new RegExp(serviceUrl("ai-automation", locale) + "$"));
     await page.goto(pageUrl("home", locale));
     await page.locator(".services__card").first().locator(".services__features a").last().click();
-    await expect(page).toHaveURL(new RegExp(`${serviceUrl("ai-automation", locale)}#${aiAutomationSectionId(2)}$`));
-    await expect(page.locator(`#${aiAutomationSectionId(2)}`)).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`${serviceUrl("ai-automation", locale)}#${serviceFeatureSectionId("ai-automation", 2)}$`));
+    await expect(page.locator(`#${serviceFeatureSectionId("ai-automation", 2)}`)).toBeVisible();
   }
 });
 

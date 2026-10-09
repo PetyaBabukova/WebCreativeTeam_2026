@@ -62,8 +62,25 @@
           "image": "technical-seo",
           "imageAlt": "Website structure with links, speed and search engine crawlers",
           "cta": false
+        },
+        {
+          "eyebrow": "Be discoverable by AI, too",
+          "titleSegments": [{ "text": "AI Search & GEO", "accent": false }, { "text": "the next level", "accent": true }],
+          "body": "We optimize content, structure and brand signals so AI search engines and generative systems can recognize and use them more easily. The goal is for your business to appear not only in traditional search results, but also in the answers, recommendations and summaries shaping the new way people search.",
+          "image": "ai-search-geo",
+          "imageAlt": "Content and brand signals flow through an AI system into answers and recommendations",
+          "cta": false
         }
       ]
+    },
+    "digital-marketing": {
+      "hero": {
+        "title": "Digital marketing",
+        "accent": "momentum",
+        "eyebrow": "When ideas become results",
+        "description": "We create digital strategies that connect the right messages with the right audience. We combine creativity, content, advertising and data analysis to build a strong presence, turn interest into action and achieve measurable results.",
+        "imageAlt": "Laptop with digital content, advertising panels and performance charts"
+      }
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },

@@ -19,7 +19,7 @@ test("SEO & GEO card uses the supplied artwork and translated copy", async ({ pa
     await expect(cards.locator(".services__learn-more")).toHaveCount(5);
     await expect(cards.first().locator(".services__features a")).toHaveCount(3);
     await expect(cards.locator(".services__features button")).toHaveCount(0);
-    await expect(cards.nth(1).locator(".services__features a")).toHaveCount(0);
+    await expect(cards.nth(1).locator(".services__features a")).toHaveCount(3);
   }
 });
 

@@ -9,7 +9,7 @@ import seoGeoImage from "@/assets/services/seo-and-geo.webp";
 import digitalMarketingImage from "@/assets/services/digital-marketing.webp";
 import brandingImage from "@/assets/services/branding.webp";
 import webDesignImage from "@/assets/services/web-design.webp";
-import { aiAutomationSectionId, serviceSlugs, serviceUrl, type Locale } from "@/lib/routing";
+import { serviceFeatureSectionId, serviceSlugs, serviceUrl, type Locale } from "@/lib/routing";
 import { ScrollArrow } from "./HeroOrb";
 
 type Service = {
@@ -135,9 +135,10 @@ function ServiceCard({ item, index, href, stack, cardRefs, firstCardRef }: {
           const content = <><FeatureIcon kind={visual.icons[featureIndex]} /><span>{feature}</span><SmallArrow /></>;
           const className = "services__feature button--outline";
           const icon = visual.icons[featureIndex];
+          const sectionId = serviceFeatureSectionId(serviceSlugs[index], featureIndex);
           return <li key={feature}>
-            {serviceSlugs[index] === "ai-automation"
-              ? <Link href={`${href}#${aiAutomationSectionId(featureIndex)}`} className={className} data-feature-icon={icon}>{content}</Link>
+            {sectionId
+              ? <Link href={`${href}#${sectionId}`} className={className} data-feature-icon={icon}>{content}</Link>
               : <div className={className} data-feature-icon={icon}>{content}</div>}
           </li>;
         })}

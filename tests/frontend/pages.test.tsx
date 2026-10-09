@@ -184,13 +184,13 @@ describe("public pages", () => {
     expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("SEO_and_Geo_intro_image"));
     const sections = copy.serviceDetails["seo-geo"].sections;
     const headings = within(main).getAllByRole("heading", { level: 2 });
-    expect(headings).toHaveLength(2);
+    expect(headings).toHaveLength(3);
     sections.forEach((section, index) => {
       expect(headings[index]).toHaveAccessibleName(section.titleSegments.map((part) => part.text).join(" "));
       expect(headings[index]).toHaveAttribute("id", section.image);
       expect(within(main).getByText(section.eyebrow)).toBeInTheDocument();
       expect(within(main).getByText(section.body)).toBeInTheDocument();
-      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.stringContaining(index === 0 ? "SEO_optimization_section_image" : "technical_SEO_section_image"));
+      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.stringContaining(["SEO_optimization_section_image", "technical_SEO_section_image", "AAI_search_and_DEO_section_image"][index]));
     });
     expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
     const navigation = within(main).getByRole("navigation", { name: copy.servicesLabel });
@@ -202,6 +202,30 @@ describe("public pages", () => {
     expect(seo.robots).toEqual({ index: false, follow: false });
     expect(seo.alternates?.canonical).toBe(serviceUrl("seo-geo", locale));
     expect(seo.alternates?.languages).toEqual({ bg: serviceUrl("seo-geo", "bg"), en: serviceUrl("seo-geo", "en") });
+  });
+  it.each([
+    [BgService, bgServiceMetadata, "bg"],
+    [EnService, enServiceMetadata, "en"],
+  ] as const)("renders the digital marketing intro without unpublished sections %#", async (Page, metadata, locale) => {
+    const params = { params: Promise.resolve({ slug: "digital-marketing" }) };
+    render(await Page(params));
+    const copy = messages[locale];
+    const hero = copy.serviceDetails["digital-marketing"].hero;
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("data-service", "digital-marketing");
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName(`${hero.title} ${hero.accent}`);
+    expect(within(main).getByText(hero.eyebrow)).toBeInTheDocument();
+    expect(within(main).getByText(hero.description)).toBeInTheDocument();
+    expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("digital_marketing_intro_image"));
+    expect(main.querySelector(".service-detail__section")).not.toBeInTheDocument();
+    const links = within(within(main).getByRole("navigation", { name: copy.servicesLabel })).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));
+    expect(links[2]).toHaveAttribute("aria-current", "page");
+    const seo = await metadata(params);
+    expect(seo.description).toBe(hero.description);
+    expect(seo.robots).toEqual({ index: false, follow: false });
+    expect(seo.alternates?.canonical).toBe(serviceUrl("digital-marketing", locale));
+    expect(seo.alternates?.languages).toEqual({ bg: serviceUrl("digital-marketing", "bg"), en: serviceUrl("digital-marketing", "en") });
   });
   it.each([[BgLayout, "bg"], [EnLayout, "en"]] as const)("provides one complete locale document %#", (Layout, lang) => {
     const html = renderToStaticMarkup(<Layout><main id="main">Content</main></Layout>);

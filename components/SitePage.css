@@ -161,7 +161,7 @@
 .services__learn-more svg { width: 1.5rem; height: 1.5rem; }
 
 .site-page--service-detail .site-header__cta, .site-page--service-detail .site-menu > summary { background: var(--color-deep); }
-.service-detail { --service-heading-gap: clamp(2.5rem, 4vw, 4rem); position: relative; isolation: isolate; min-height: 100svh; }
+.service-detail { --service-heading-gap: clamp(2.5rem, 4vw, 4rem); --service-art-corner: clamp(4.5rem, 16vw, 14rem); position: relative; isolation: isolate; min-height: 100svh; }
 /*
   The browser paints the first frame before any image (even the inline blur placeholder) is decoded, so the base layer
   must already look like the background image: a gradient of its sampled colours (products_page_background.webp,
@@ -186,8 +186,15 @@
 @keyframes service-typewriter-reveal { from { visibility: hidden; } to { visibility: visible; } }
 @keyframes service-typewriter-cursor { 0% { visibility: hidden; } 1% { visibility: visible; } 100% { visibility: hidden; } }
 .service-detail__hero-description { grid-column: 1; grid-row: 2; align-self: end; max-width: 36ch; margin: 0; font-size: clamp(1.05rem, 1.45vw, 1.4rem); line-height: 1.5; }
-.service-detail__hero-art { position: relative; grid-column: 2; grid-row: 1 / span 2; width: 100%; height: 100%; aspect-ratio: 7 / 5; overflow: hidden; -webkit-mask-image: linear-gradient(to right, transparent, #000 7% 93%, transparent), linear-gradient(to bottom, transparent, #000 7% 93%, transparent); mask-image: linear-gradient(to right, transparent, #000 7% 93%, transparent), linear-gradient(to bottom, transparent, #000 7% 93%, transparent); -webkit-mask-composite: source-in; mask-composite: intersect; }
+.service-detail__hero-art {
+  --hero-mask-horizontal: linear-gradient(to right, transparent 0%, rgb(0 0 0 / .08) 4%, rgb(0 0 0 / .3) 9%, rgb(0 0 0 / .65) 14%, rgb(0 0 0 / .9) 19%, #000 24%);
+  --hero-mask-vertical: linear-gradient(to bottom, #000 0% 80%, rgb(0 0 0 / .9) 86%, rgb(0 0 0 / .5) 93%, transparent 100%);
+  position: relative; grid-column: 2; grid-row: 1 / span 2; width: 100%; height: 100%; aspect-ratio: 7 / 5; overflow: hidden; border-radius: 0 var(--service-art-corner) 0 0;
+  -webkit-mask-image: var(--hero-mask-horizontal), var(--hero-mask-vertical); mask-image: var(--hero-mask-horizontal), var(--hero-mask-vertical);
+  -webkit-mask-composite: source-in; mask-composite: intersect;
+}
 .service-detail__hero-art img { object-fit: cover; object-position: center; }
+.service-detail[data-service="digital-marketing"] .service-detail__hero-art img { object-position: 30% center; }
 .service-detail__links { position: relative; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), min(100%, 14rem))); align-items: stretch; gap: clamp(.5rem, 1vw, 1rem); padding-block: var(--section-pad-end); }
 .service-detail__link { min-width: 0; gap: .5em; }
 .service-detail__link > span { white-space: normal; }
@@ -210,9 +217,9 @@
 .service-detail__section-bottom { display: flex; grid-column: 1; grid-row: 2; align-self: end; flex-direction: column; align-items: flex-start; max-width: 36rem; }
 .service-detail__body { max-width: 36ch; margin: 0 0 1.75rem; font-size: clamp(1.05rem, 1.4vw, 1.35rem); line-height: 1.5; }
 .service-detail__section-bottom .service-detail__body:last-child { margin-bottom: 0; }
-.service-detail__section-art { position: relative; grid-column: 2; grid-row: 1 / span 2; width: 100%; height: 100%; aspect-ratio: 7 / 5; overflow: hidden; border-radius: 0 clamp(4.5rem, 16vw, 14rem) 0 0; box-shadow: 0 1rem 3rem #3b2c1b38; }
+.service-detail__section-art { position: relative; grid-column: 2; grid-row: 1 / span 2; width: 100%; height: 100%; aspect-ratio: 7 / 5; overflow: hidden; border-radius: 0 var(--service-art-corner) 0 0; box-shadow: 0 1rem 3rem #3b2c1b38; }
 .service-detail__section-art img { object-fit: cover; }
-.service-detail__section:nth-child(even) .service-detail__section-art { border-radius: clamp(4.5rem, 16vw, 14rem) 0 0 0; }
+.service-detail__section:nth-child(even) .service-detail__section-art { border-radius: var(--service-art-corner) 0 0 0; }
 
 @media (width > 47.5rem) {
   :lang(bg) .service-detail__title > .service-detail__title-accent { font-size: .65em; }
@@ -223,6 +230,10 @@
   .service-detail__section:nth-child(even) .service-detail__section-art { grid-column: 1; }
 }
 
+@media (width > 47.5rem) and (width <= 68.75rem) {
+  .service-detail__hero-art { --hero-mask-horizontal: linear-gradient(to right, transparent 0%, rgb(0 0 0 / .08) 3%, rgb(0 0 0 / .3) 7%, rgb(0 0 0 / .65) 11%, rgb(0 0 0 / .9) 15%, #000 18%); }
+}
+
 @media (width <= 47.5rem) {
   .service-detail__background img { object-position: 24% center; }
   .service-detail__hero-inner { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; row-gap: 1.5rem; }
@@ -230,12 +241,18 @@
   .service-detail__title { margin-bottom: 0; font-size: clamp(2.4rem, 12vw, 4.5rem); }
   .service-detail__title > .service-detail__title-accent { font-size: 1em; }
   .service-detail__hero-description { max-width: 38ch; }
-  .service-detail__hero-art { height: auto; }
+  .service-detail__hero-art {
+    --hero-mask-horizontal: linear-gradient(to right, transparent 0%, rgb(0 0 0 / .3) 3%, #000 9% 94%, transparent 100%);
+    --hero-mask-vertical: linear-gradient(to bottom, transparent 0%, #000 4% 82%, rgb(0 0 0 / .9) 86%, rgb(0 0 0 / .5) 93%, transparent 100%);
+    height: auto; border-top-right-radius: clamp(2.5rem, 10vw, 5rem);
+  }
   .service-detail__links { padding-top: 0; }
   .service-detail__section { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; row-gap: 2rem; }
   .service-detail__section + .service-detail__section { margin-block-start: min(calc(var(--section-gap) * .5), 1.5rem); }
   .service-detail__section-heading, .service-detail__section-art, .service-detail__section-bottom { grid-column: 1; grid-row: auto; align-self: auto; }
   .service-detail__section h2 { margin-bottom: 0; }
+  .service-detail__section h2#ai-search-geo { font-size: min(2.275rem, 11vw); }
+  .service-detail__section h2#ai-search-geo .service-detail__title-followup { white-space: nowrap; }
   .service-detail__section-art { height: auto; }
 }
 

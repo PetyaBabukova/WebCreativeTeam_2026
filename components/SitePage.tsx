@@ -5,11 +5,13 @@ import heroBackgroundMobile from "@/assets/hero/background-mobile.webp";
 import serviceDetailBackground from "@/assets/services/products_page_background.webp";
 import aiDetailHero from "@/assets/services/products_page_intro_image.webp";
 import seoDetailHero from "@/assets/services/SEO_and_Geo_intro_image.webp";
+import digitalMarketingDetailHero from "@/assets/services/digital_marketing_intro_image.webp";
 import aiBusinessProcesses from "@/assets/services/products_page_business_proces_section_image.webp";
 import aiAssistants from "@/assets/services/produts_page_AI_assistent_image.webp";
 import aiIntegrations from "@/assets/services/AI_integration_image.webp";
 import seoOptimization from "@/assets/services/SEO_optimization_section_image.webp";
 import technicalSeo from "@/assets/services/technical_SEO_section_image.webp";
+import aiSearchGeo from "@/assets/services/From Web Chaos to AI AAI_search_and_DEO_section_image.webp";
 import { appConfig } from "@/lib/config";
 import { messages, serviceDetail } from "@/lib/messages";
 import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
@@ -165,9 +167,9 @@ function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
   </svg>;
 }
 
-const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo } as const;
+const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo } as const;
 
-const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero } as const;
+const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero, "digital-marketing": digitalMarketingDetailHero } as const;
 
 function serviceDetailHeroImage(slug: ServiceSlug) {
   if (!(slug in serviceDetailHeroImages)) throw new Error(`Missing service hero image: ${slug}`);
@@ -183,10 +185,10 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
   const copy = messages[locale];
   const title = copy.serviceLinks[serviceSlugs.indexOf(slug)];
   const detail = serviceDetail(locale, slug);
-  const sections = detail && "sections" in detail ? detail.sections : undefined;
+  const sections: typeof messages.bg.serviceDetails["ai-automation"]["sections"] | undefined = detail && "sections" in detail && Array.isArray(detail.sections) ? detail.sections : undefined;
   return <div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
     <SiteHeader locale={locale} page="service" serviceSlug={slug} />
-    {detail ? <main id="main" className="service-detail" tabIndex={-1}>
+    {detail ? <main id="main" className="service-detail" data-service={slug} tabIndex={-1}>
       <div className="service-detail__background" aria-hidden="true"><Image src={serviceDetailBackground} alt="" fill sizes="100vw" priority unoptimized decoding="sync" /></div>
       <section className="service-detail__hero" aria-labelledby="service-detail-title">
         <div className="container service-detail__hero-inner">

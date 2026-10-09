@@ -15,11 +15,16 @@ export function serviceUrl(slug: ServiceSlug, locale: Locale): string {
   return `${appConfig.paths.services}/${slug}/${locale}`;
 }
 
-const aiAutomationSectionIds = ["business-processes", "ai-assistants", "ai-integrations"] as const;
+const serviceFeatureSectionIds: Partial<Record<ServiceSlug, readonly string[]>> = {
+  "ai-automation": ["business-processes", "ai-assistants", "ai-integrations"],
+  "seo-geo": ["seo-optimization", "technical-seo", "ai-search-geo"],
+};
 
-export function aiAutomationSectionId(index: number): string {
-  const id = aiAutomationSectionIds[index];
-  if (!id) throw new Error(`Missing AI automation section ID at index ${index}`);
+export function serviceFeatureSectionId(slug: ServiceSlug, index: number): string | undefined {
+  const ids = serviceFeatureSectionIds[slug];
+  if (!ids) return undefined;
+  const id = ids[index];
+  if (!id) throw new Error(`Missing section ID for ${slug} at index ${index}`);
   return id;
 }
 
