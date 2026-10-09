@@ -15,6 +15,14 @@ export function serviceUrl(slug: ServiceSlug, locale: Locale): string {
   return `${appConfig.paths.services}/${slug}/${locale}`;
 }
 
+const aiAutomationSectionIds = ["business-processes", "ai-assistants", "ai-integrations"] as const;
+
+export function aiAutomationSectionId(index: number): string {
+  const id = aiAutomationSectionIds[index];
+  if (!id) throw new Error(`Missing AI automation section ID at index ${index}`);
+  return id;
+}
+
 export function pageUrl(page: Page, locale: Locale): string {
   return localizedPath(page === "home" ? appConfig.paths.root : appConfig.paths[page], locale);
 }

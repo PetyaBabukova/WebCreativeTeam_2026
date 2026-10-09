@@ -19,8 +19,33 @@
           "image": "business-processes",
           "imageAlt": "Automation connecting documents with business systems and processes",
           "cta": false
+        },
+        {
+          "eyebrow": "Support for your team",
+          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "assistants", "accent": true }],
+          "body": "We create AI assistants for specific tasks - finding and processing information, working with documents, preparing content and handling internal queries. They save time, make everyday work easier and help the team focus on more important tasks.",
+          "image": "ai-assistants",
+          "imageAlt": "AI assistant at a laptop with icons for documents, search, content and scheduling",
+          "cta": false
+        },
+        {
+          "eyebrow": "Everything works together",
+          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "integrations", "accent": true }],
+          "body": "We connect AI with the tools and systems you already use. Data flows between them automatically, actions are triggered when specific conditions are met, and your team works in a more connected, faster and more efficient environment.",
+          "image": "ai-integrations",
+          "imageAlt": "AI hub connecting email, calendars, documents, data and other work tools",
+          "cta": false
         }
       ]
+    },
+    "seo-geo": {
+      "hero": {
+        "title": "SEO & GEO",
+        "accent": "impact",
+        "eyebrow": "BE DISCOVERABLE",
+        "description": "We build visibility across search engines and AI environments through SEO, Technical SEO and GEO strategies that help your brand be found, understood and preferred wherever people look for solutions.",
+        "imageAlt": "Illuminated globe with a search bar and symbols for analytics, location and AI"
+      }
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },

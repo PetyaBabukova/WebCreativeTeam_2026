@@ -2,12 +2,15 @@ import Image from "next/image";
 import Link from "next/link";
 import heroBackgroundDesktop from "@/assets/hero/background-desktop.webp";
 import heroBackgroundMobile from "@/assets/hero/background-mobile.webp";
-import aiDetailBackground from "@/assets/services/products_page_background.webp";
+import serviceDetailBackground from "@/assets/services/products_page_background.webp";
 import aiDetailHero from "@/assets/services/products_page_intro_image.webp";
+import seoDetailHero from "@/assets/services/SEO_and_Geo_intro_image.webp";
 import aiBusinessProcesses from "@/assets/services/products_page_business_proces_section_image.webp";
+import aiAssistants from "@/assets/services/produts_page_AI_assistent_image.webp";
+import aiIntegrations from "@/assets/services/AI_integration_image.webp";
 import { appConfig } from "@/lib/config";
-import { messages } from "@/lib/messages";
-import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
+import { messages, serviceDetail } from "@/lib/messages";
+import { aiAutomationSectionId, localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
 import FooterLegalButton from "./FooterLegalButton";
 import FooterNewsletter from "./FooterNewsletter";
 import HeroMotion from "./HeroOrb";
@@ -159,33 +162,36 @@ function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
   </svg>;
 }
 
-const aiDetailVisuals = {
-  background: aiDetailBackground,
-  hero: aiDetailHero,
-  sections: { "business-processes": aiBusinessProcesses },
-} as const;
+const aiSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations } as const;
+
+const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero } as const;
+
+function serviceDetailHeroImage(slug: ServiceSlug) {
+  if (!(slug in serviceDetailHeroImages)) throw new Error(`Missing service hero image: ${slug}`);
+  return serviceDetailHeroImages[slug as keyof typeof serviceDetailHeroImages];
+}
 
 function aiSectionImage(image: string) {
-  if (!(image in aiDetailVisuals.sections)) throw new Error(`Missing AI section image: ${image}`);
-  return aiDetailVisuals.sections[image as keyof typeof aiDetailVisuals.sections];
+  if (!(image in aiSectionImages)) throw new Error(`Missing AI section image: ${image}`);
+  return aiSectionImages[image as keyof typeof aiSectionImages];
 }
 
 export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlug }) {
   const copy = messages[locale];
   const title = copy.serviceLinks[serviceSlugs.indexOf(slug)];
-  const detail = slug === "ai-automation" ? copy.serviceDetails["ai-automation"] : undefined;
-  const visual = aiDetailVisuals;
+  const detail = serviceDetail(locale, slug);
+  const sections = slug === "ai-automation" ? copy.serviceDetails["ai-automation"].sections : undefined;
   return <div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
     <SiteHeader locale={locale} page="service" serviceSlug={slug} />
     {detail ? <main id="main" className="service-detail" tabIndex={-1}>
-      <div className="service-detail__background" aria-hidden="true"><Image src={visual.background} alt="" fill sizes="100vw" priority /></div>
+      <div className="service-detail__background" aria-hidden="true"><Image src={serviceDetailBackground} alt="" fill sizes="100vw" priority /></div>
       <section className="service-detail__hero" aria-labelledby="service-detail-title">
         <div className="container service-detail__hero-inner">
           <div className="service-detail__hero-copy">
             <div className="service-detail__eyebrow"><p>{detail.hero.eyebrow}</p></div>
             <h1 id="service-detail-title" className="service-detail__title"><span>{detail.hero.title}</span>{" "}<span>{detail.hero.accent}</span></h1>
           </div>
-          <div className="service-detail__hero-art"><Image src={visual.hero} alt={detail.hero.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 55vw" priority /></div>
+          <div className="service-detail__hero-art"><Image src={serviceDetailHeroImage(slug)} alt={detail.hero.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 55vw" priority /></div>
           <p className="service-detail__hero-description">{detail.hero.description}</p>
         </div>
       </section>
@@ -194,11 +200,11 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
           <ServiceLinkIcon slug={serviceSlug} /><span>{copy.serviceLinks[index]}</span>
         </Link>)}
       </nav>
-      <div className="service-detail__sections">
-        {detail.sections.map((section, index) => <section key={section.image} className="container service-detail__section" aria-labelledby={`service-detail-section-${index + 1}`}>
+      {sections && <div className="service-detail__sections">
+        {sections.map((section, index) => <section key={section.image} className="container service-detail__section" aria-labelledby={aiAutomationSectionId(index)}>
           <div className="service-detail__section-heading">
             <div className="service-detail__eyebrow"><span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span><p>{section.eyebrow}</p></div>
-            <h2 id={`service-detail-section-${index + 1}`}>{section.titleSegments.map((part, partIndex) => <span key={`${part.text}-${partIndex}`} className={part.accent ? "service-detail__accent" : undefined}>{partIndex > 0 ? " " : null}{part.text}</span>)}</h2>
+            <h2 id={aiAutomationSectionId(index)}>{section.titleSegments.map((part, partIndex) => <span key={`${part.text}-${partIndex}`} className={part.accent ? "service-detail__accent" : undefined}>{partIndex > 0 ? " " : null}{part.text}</span>)}</h2>
           </div>
           <div className="service-detail__section-art"><Image src={aiSectionImage(section.image)} alt={section.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 50vw" /></div>
           <div className="service-detail__section-bottom">
@@ -206,7 +212,7 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
             {section.cta && <Link className="button button--outline service-detail__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>}
           </div>
         </section>)}
-      </div>
+      </div>}
     </main> : <main id="main" className="container standard-page" tabIndex={-1}><h1>{title}</h1></main>}
     <SiteFooter locale={locale} route={{ page: "service", serviceSlug: slug }} />
   </div>;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { appConfig } from "@/lib/config";
 import { locales, localeSwitchUrl, pageUrl, sectionUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
@@ -56,6 +56,37 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
   const servicesRef = useRef<HTMLDetailsElement>(null);
   const [hash, setHash] = useState("");
   useLocalePreference(locale);
+
+  useLayoutEffect(() => {
+    const header = menuRef.current?.closest<HTMLElement>(".site-header");
+    if (!header) return;
+
+    let compact = false;
+    let rootRem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+    const sync = () => {
+      const next = compact ? window.scrollY > .5 * rootRem : window.scrollY > 1.5 * rootRem;
+      if (next === compact) return;
+      compact = next;
+      header.toggleAttribute("data-compact", compact);
+    };
+    const onResize = () => {
+      rootRem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      sync();
+    };
+
+    sync();
+    header.setAttribute("data-header-ready", "");
+    window.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("resize", onResize);
+    window.addEventListener("pageshow", sync);
+    return () => {
+      window.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("pageshow", sync);
+      header.removeAttribute("data-header-ready");
+      header.removeAttribute("data-compact");
+    };
+  }, []);
 
   useEffect(() => {
     const syncHash = () => setHash(currentSharedHash());

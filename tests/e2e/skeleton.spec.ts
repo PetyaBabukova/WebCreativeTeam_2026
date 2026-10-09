@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { appConfig, testOrigin } from "../../lib/config";
-import { locales, pageUrl, serviceSlugs, serviceUrl } from "../../lib/routing";
+import { aiAutomationSectionId, locales, pageUrl, serviceSlugs, serviceUrl } from "../../lib/routing";
 
 async function orbAngle(page: import("@playwright/test").Page) {
   return page.locator(".hero-orb__spin").evaluate((element) => {
@@ -443,13 +443,23 @@ test("home service cards link to their detail pages in the current locale", asyn
     for (const [index, slug] of serviceSlugs.entries()) {
       await expect(cards.nth(index).locator(".services__learn-more")).toHaveAttribute("href", serviceUrl(slug, locale));
       await expect(cards.nth(index).locator(".services__card-title a")).toHaveAttribute("href", serviceUrl(slug, locale));
-      await expect(cards.nth(index).locator(".services__features a")).toHaveCount(0);
+      const featureLinks = cards.nth(index).locator(".services__features a");
+      await expect(featureLinks).toHaveCount(index === 0 ? 3 : 0);
+      if (index === 0) {
+        for (const featureIndex of [0, 1, 2]) {
+          await expect(featureLinks.nth(featureIndex)).toHaveAttribute("href", `${serviceUrl(slug, locale)}#${aiAutomationSectionId(featureIndex)}`);
+        }
+      }
     }
     await cards.first().locator(".services__learn-more").click();
     await expect(page).toHaveURL(new RegExp(serviceUrl("ai-automation", locale) + "$"));
     await page.goto(pageUrl("home", locale));
     await page.locator(".services__card-title a").first().click();
     await expect(page).toHaveURL(new RegExp(serviceUrl("ai-automation", locale) + "$"));
+    await page.goto(pageUrl("home", locale));
+    await page.locator(".services__card").first().locator(".services__features a").last().click();
+    await expect(page).toHaveURL(new RegExp(`${serviceUrl("ai-automation", locale)}#${aiAutomationSectionId(2)}$`));
+    await expect(page.locator(`#${aiAutomationSectionId(2)}`)).toBeVisible();
   }
 });
 
@@ -811,6 +821,50 @@ test("the full header stays visible with equal top and bottom padding", async ({
     await expect(page.locator(".site-menu")).toHaveAttribute("open", "");
     await expect(page.locator(".site-menu__panel")).toBeVisible();
   }
+});
+
+test("header compacts above scrolled content and leaves anchored services visible", async ({ page }) => {
+  for (const width of [390, 1366]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(pageUrl("home", "bg"));
+    const header = page.locator(".site-header");
+    await expect(header).toHaveAttribute("data-header-ready", "");
+    const expandedHeight = (await header.boundingBox())!.height;
+    const expandedScrollPadding = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
+
+    await page.evaluate(() => window.scrollTo(0, innerHeight));
+    await expect(header).toHaveAttribute("data-compact", "");
+    await expect.poll(async () => (await header.boundingBox())!.height).toBeLessThan(expandedHeight * .7);
+
+    await page.goto("about:blank");
+    await page.goto(`${pageUrl("home", "bg")}#services`);
+    await expect(header).toHaveAttribute("data-compact", "");
+    await expect.poll(async () => (await header.boundingBox())!.height).toBeLessThan(expandedHeight * .7);
+    const anchorPosition = await page.evaluate(() => ({
+      sectionTop: document.querySelector("#services")!.getBoundingClientRect().top,
+      headingTop: document.querySelector(".services__heading-stage")!.getBoundingClientRect().top,
+      headerBottom: document.querySelector(".site-header")!.getBoundingClientRect().bottom,
+    }));
+    expect(anchorPosition.sectionTop).toBeGreaterThanOrEqual(anchorPosition.headerBottom);
+    expect(anchorPosition.sectionTop).toBeLessThanOrEqual(expandedScrollPadding + 1);
+    expect(anchorPosition.headingTop).toBeGreaterThanOrEqual(anchorPosition.headerBottom);
+    await page.locator(".site-menu > summary").click();
+    await expect(page.locator(".site-menu__panel")).toBeVisible();
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(header).not.toHaveAttribute("data-compact", "");
+    await expect.poll(async () => Math.abs((await header.boundingBox())!.height - expandedHeight)).toBeLessThan(1);
+  }
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto(pageUrl("home", "bg"));
+  await page.evaluate(() => window.scrollTo(0, innerHeight));
+  await expect(page.locator(".site-header")).toHaveAttribute("data-compact", "");
+  await expect.poll(async () => (await page.locator(".site-header").boundingBox())!.height).toBeLessThan(7 * 16);
+  await page.locator(".site-menu > summary").click();
+  const menuBounds = await page.locator(".site-menu__panel").evaluate((panel) => ({ bottom: panel.getBoundingClientRect().bottom, height: panel.clientHeight }));
+  expect(menuBounds.bottom).toBeLessThanOrEqual(390);
+  expect(menuBounds.height).toBeGreaterThan(12 * 16);
 });
 
 test("Motion completes the hero entrance after mount", async ({ page }) => {

@@ -143,17 +143,48 @@ describe("public pages", () => {
     const main = screen.getByRole("main");
     expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(within(main).getByRole("heading", { level: 1 })).toHaveTextContent(copy.serviceDetails["ai-automation"].hero.accent);
-    expect(within(main).getByRole("heading", { level: 2 })).toHaveTextContent(copy.serviceDetails["ai-automation"].sections[0].titleSegments.map((part) => part.text).join(" "));
+    const sections = copy.serviceDetails["ai-automation"].sections;
+    const headings = within(main).getAllByRole("heading", { level: 2 });
+    expect(headings).toHaveLength(sections.length);
+    sections.forEach((section, index) => {
+      expect(headings[index]).toHaveTextContent(section.titleSegments.map((part) => part.text).join(" "));
+      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.any(String));
+    });
     expect(within(main).getByRole("img", { name: copy.serviceDetails["ai-automation"].hero.imageAlt })).toHaveAttribute("src", expect.any(String));
-    expect(within(main).getByRole("img", { name: copy.serviceDetails["ai-automation"].sections[0].imageAlt })).toHaveAttribute("src", expect.any(String));
     const navigation = within(main).getByRole("navigation", { name: copy.servicesLabel });
     const links = within(navigation).getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));
     expect(links[0]).toHaveAttribute("aria-current", "page");
-    expect(within(main).getByRole("link", { name: copy.landing.hero.contact })).toHaveAttribute("href", pageUrl("contacts", locale));
+    expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
     const seo = await metadata(params);
     expect(seo.description).toBe(copy.serviceDetails["ai-automation"].hero.description);
     expect(seo.robots).toEqual({ index: false, follow: false });
+  });
+  it.each([
+    [BgService, bgServiceMetadata, "bg"],
+    [EnService, enServiceMetadata, "en"],
+  ] as const)("renders the SEO & GEO intro in the active locale without invented sections %#", async (Page, metadata, locale) => {
+    const params = { params: Promise.resolve({ slug: "seo-geo" }) };
+    render(await Page(params));
+    const copy = messages[locale];
+    const hero = copy.serviceDetails["seo-geo"].hero;
+    const main = screen.getByRole("main");
+    expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveTextContent(`${hero.title} ${hero.accent}`);
+    expect(within(main).getByText(hero.eyebrow)).toBeInTheDocument();
+    expect(within(main).getByText(hero.description)).toBeInTheDocument();
+    expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("SEO_and_Geo_intro_image"));
+    expect(within(main).queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+    expect(main.querySelector(".service-detail__sections")).toBeNull();
+    const navigation = within(main).getByRole("navigation", { name: copy.servicesLabel });
+    const links = within(navigation).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));
+    expect(links[1]).toHaveAttribute("aria-current", "page");
+    const seo = await metadata(params);
+    expect(seo.description).toBe(hero.description);
+    expect(seo.robots).toEqual({ index: false, follow: false });
+    expect(seo.alternates?.canonical).toBe(serviceUrl("seo-geo", locale));
+    expect(seo.alternates?.languages).toEqual({ bg: serviceUrl("seo-geo", "bg"), en: serviceUrl("seo-geo", "en") });
   });
   it.each([[BgLayout, "bg"], [EnLayout, "en"]] as const)("provides one complete locale document %#", (Layout, lang) => {
     const html = renderToStaticMarkup(<Layout><main id="main">Content</main></Layout>);

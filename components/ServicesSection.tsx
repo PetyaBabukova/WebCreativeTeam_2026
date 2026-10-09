@@ -9,7 +9,7 @@ import seoGeoImage from "@/assets/services/seo-and-geo.webp";
 import digitalMarketingImage from "@/assets/services/digital-marketing.webp";
 import brandingImage from "@/assets/services/branding.webp";
 import webDesignImage from "@/assets/services/web-design.webp";
-import { serviceSlugs, serviceUrl, type Locale } from "@/lib/routing";
+import { aiAutomationSectionId, serviceSlugs, serviceUrl, type Locale } from "@/lib/routing";
 import { ScrollArrow } from "./HeroOrb";
 
 type Service = {
@@ -131,11 +131,16 @@ function ServiceCard({ item, index, href, stack, cardRefs, firstCardRef }: {
       <p className="services__eyebrow">{item.eyebrow}</p>
       <h3 id={`service-title-${index}`} className="services__card-title"><Link href={href} className="services__card-title-link"><span>{item.title}</span>{" "}<span>{item.highlight}</span></Link></h3>
       <ul className="services__features" aria-label={item.eyebrow}>
-        {item.features.map((feature, featureIndex) => <li className="services__feature button--outline" key={feature} data-feature-icon={visual.icons[featureIndex]}>
-          <FeatureIcon kind={visual.icons[featureIndex]} />
-          <span>{feature}</span>
-          <SmallArrow />
-        </li>)}
+        {item.features.map((feature, featureIndex) => {
+          const content = <><FeatureIcon kind={visual.icons[featureIndex]} /><span>{feature}</span><SmallArrow /></>;
+          const className = "services__feature button--outline";
+          const icon = visual.icons[featureIndex];
+          return <li key={feature}>
+            {serviceSlugs[index] === "ai-automation"
+              ? <Link href={`${href}#${aiAutomationSectionId(featureIndex)}`} className={className} data-feature-icon={icon}>{content}</Link>
+              : <div className={className} data-feature-icon={icon}>{content}</div>}
+          </li>;
+        })}
       </ul>
       <p className="services__description">{item.description}</p>
       <Link href={href} className="services__learn-more button--outline">{item.learnMore}<SmallArrow /></Link>
