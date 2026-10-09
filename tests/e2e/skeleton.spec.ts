@@ -54,17 +54,19 @@ test("AI service detail stays readable and loads its art across viewports", asyn
       await page.setViewportSize(viewport);
       await page.goto(serviceUrl("ai-automation", locale));
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-      await expect(page.locator(".service-detail__section")).toHaveCount(1);
+      await expect(page.locator(".service-detail__section")).toHaveCount(3);
       await expect(page.locator(".service-detail__link[aria-current='page']")).toHaveAttribute("href", serviceUrl("ai-automation", locale));
       await expect(page.locator(".service-detail__cta")).toHaveCount(0);
       await expect(page.locator(".service-detail__link")).toHaveCount(serviceSlugs.length);
       const headerClear = await page.evaluate(() => document.querySelector<HTMLElement>(".site-header")!.getBoundingClientRect().bottom
         <= document.querySelector<HTMLElement>(".service-detail__hero-copy .service-detail__eyebrow")!.getBoundingClientRect().top);
       expect(headerClear, `${locale} at ${viewport.width}x${viewport.height} header clearance`).toBe(true);
-      await page.locator(".service-detail__section-art").scrollIntoViewIfNeeded();
-      await expect.poll(() => page.locator(".service-detail__section-art img").evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+      for (const image of await page.locator(".service-detail__section-art img").all()) {
+        await image.scrollIntoViewIfNeeded();
+        await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
+      }
       const layout = await page.evaluate(() => {
-        const accent = document.querySelector<HTMLElement>(".service-detail__title span:last-child")!;
+        const accent = document.querySelector<HTMLElement>(".service-detail__title-accent")!;
         const art = [...document.querySelectorAll<HTMLImageElement>(".service-detail__hero-art img, .service-detail__section-art img")];
         const links = [...document.querySelectorAll<HTMLElement>(".service-detail__link")];
         const widths = links.map((link) => link.getBoundingClientRect().width);
@@ -90,7 +92,7 @@ test("AI service detail stays readable and loads its art across viewports", asyn
         return {
           overflow: document.documentElement.scrollWidth > innerWidth,
           accentClipped: accent.scrollWidth > accent.clientWidth,
-          imagesLoaded: art.length === 2 && art.every((image) => image.complete && image.naturalWidth > 0),
+          imagesLoaded: art.length === 4 && art.every((image) => image.complete && image.naturalWidth > 0),
           equalLinkWidths: widths.every((width) => Math.abs(width - widths[0]) < 1),
           linksDoNotFillContent: widths.every((width) => width < navContentWidth - 1),
           linksNotClipped: links.every((link) => link.scrollWidth <= link.clientWidth + 1),
@@ -100,6 +102,26 @@ test("AI service detail stays readable and loads its art across viewports", asyn
         };
       });
       expect(layout, `${locale} at ${viewport.width}x${viewport.height}`).toEqual({ overflow: false, accentClipped: false, imagesLoaded: true, equalLinkWidths: true, linksDoNotFillContent: true, linksNotClipped: true, singleLineLinks: true, aligned: true, mobileOrder: true });
+    }
+  }
+});
+
+test("service headings type under both system motion settings", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    await page.goto(serviceUrl("ai-automation", "bg"));
+    const heroCharacters = page.locator(".service-detail__title-accent .service-typewriter__char");
+    await expect(heroCharacters.first()).toHaveCSS("animation-name", "service-typewriter-reveal");
+    await expect.poll(() => heroCharacters.evaluateAll((characters) => characters.filter((character) => getComputedStyle(character).visibility === "visible").length)).toBe(await heroCharacters.count());
+
+    const accents = page.locator(".service-detail__section .service-typewriter");
+    await expect(accents).toHaveCount(3);
+    for (const accent of await accents.all()) {
+      await accent.scrollIntoViewIfNeeded();
+      await expect(accent).toHaveAttribute("data-typewriter-active", "");
+      const characters = accent.locator(".service-typewriter__char");
+      await expect.poll(() => characters.evaluateAll((letters) => letters.filter((letter) => getComputedStyle(letter).visibility === "visible").length)).toBe(await characters.count());
     }
   }
 });
@@ -1039,4 +1061,45 @@ test("mobile headline fills the content width without overflowing", async ({ pag
       expect(longest / container, `${locale} @ ${width}px does not fill the width`).toBeGreaterThan(.91);
     }
   }
+});
+
+test("service background and hero art paint in the first frame without a flash", async ({ page }) => {
+  // The first frame is painted before any image is decoded; only the CSS base layer is visible then.
+  await page.goto(serviceUrl("ai-automation", "bg"));
+  const base = await page.locator(".service-detail__background").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { image: style.backgroundImage, color: style.backgroundColor, page: getComputedStyle(document.body).backgroundColor };
+  });
+  expect(base.image).toContain("linear-gradient");
+  expect(base.color).not.toBe(base.page);
+  // Synchronous decoding lets the background and hero art appear in the same first frame as the text, instead of one frame later.
+  for (const selector of [".service-detail__background img", ".service-detail__hero-art img", ".service-detail__section-art img"]) {
+    for (const image of await page.locator(selector).all()) await expect(image).toHaveAttribute("decoding", "sync");
+  }
+  // On tall screens the first section is visible on load; a lazy image there popped in after the rest of the page.
+  await expect(page.locator(".service-detail__section-art img").first()).toHaveAttribute("loading", "eager");
+});
+
+test("a reload starts at the top, while client-side back navigation keeps the scroll position", async ({ page }) => {
+  // User decision, 9 October 2026: restoring a deep position on reload flashed the scroll-driven sections.
+  await page.setViewportSize({ width: 1536, height: 730 });
+  await page.goto(pageUrl("home", "bg"));
+  await page.mouse.move(700, 400);
+  for (let step = 0; step < 10; step++) await page.mouse.wheel(0, 250);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(1000);
+  await page.reload();
+  await page.waitForLoadState("load");
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => scrollY)).toBe(0);
+
+  for (let step = 0; step < 6; step++) await page.mouse.wheel(0, 250);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(800);
+  // Wait for the wheel scroll to settle before recording the position to return to.
+  let left = -1;
+  await expect.poll(async () => { const previous = left; left = await page.evaluate(() => scrollY); return left === previous; }, { intervals: [250] }).toBe(true);
+  await page.evaluate(() => document.querySelector<HTMLAnchorElement>(`a[href="/services/seo-geo/bg"]`)!.click());
+  await page.waitForURL(/seo-geo\/bg$/);
+  await page.goBack();
+  await page.waitForURL(/\/bg$/);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBe(left);
 });

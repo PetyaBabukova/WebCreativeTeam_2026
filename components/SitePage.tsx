@@ -8,14 +8,17 @@ import seoDetailHero from "@/assets/services/SEO_and_Geo_intro_image.webp";
 import aiBusinessProcesses from "@/assets/services/products_page_business_proces_section_image.webp";
 import aiAssistants from "@/assets/services/produts_page_AI_assistent_image.webp";
 import aiIntegrations from "@/assets/services/AI_integration_image.webp";
+import seoOptimization from "@/assets/services/SEO_optimization_section_image.webp";
+import technicalSeo from "@/assets/services/technical_SEO_section_image.webp";
 import { appConfig } from "@/lib/config";
 import { messages, serviceDetail } from "@/lib/messages";
-import { aiAutomationSectionId, localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
+import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
 import FooterLegalButton from "./FooterLegalButton";
 import FooterNewsletter from "./FooterNewsletter";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
+import ServiceTypewriter from "./ServiceTypewriter";
 import SiteNavigation from "./SiteNavigation";
 import "./SitePage.css";
 
@@ -162,7 +165,7 @@ function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
   </svg>;
 }
 
-const aiSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations } as const;
+const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo } as const;
 
 const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero } as const;
 
@@ -171,27 +174,27 @@ function serviceDetailHeroImage(slug: ServiceSlug) {
   return serviceDetailHeroImages[slug as keyof typeof serviceDetailHeroImages];
 }
 
-function aiSectionImage(image: string) {
-  if (!(image in aiSectionImages)) throw new Error(`Missing AI section image: ${image}`);
-  return aiSectionImages[image as keyof typeof aiSectionImages];
+function serviceSectionImage(image: string) {
+  if (!(image in serviceSectionImages)) throw new Error(`Missing service section image: ${image}`);
+  return serviceSectionImages[image as keyof typeof serviceSectionImages];
 }
 
 export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlug }) {
   const copy = messages[locale];
   const title = copy.serviceLinks[serviceSlugs.indexOf(slug)];
   const detail = serviceDetail(locale, slug);
-  const sections = slug === "ai-automation" ? copy.serviceDetails["ai-automation"].sections : undefined;
+  const sections = detail && "sections" in detail ? detail.sections : undefined;
   return <div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
     <SiteHeader locale={locale} page="service" serviceSlug={slug} />
     {detail ? <main id="main" className="service-detail" tabIndex={-1}>
-      <div className="service-detail__background" aria-hidden="true"><Image src={serviceDetailBackground} alt="" fill sizes="100vw" priority /></div>
+      <div className="service-detail__background" aria-hidden="true"><Image src={serviceDetailBackground} alt="" fill sizes="100vw" priority unoptimized decoding="sync" /></div>
       <section className="service-detail__hero" aria-labelledby="service-detail-title">
         <div className="container service-detail__hero-inner">
           <div className="service-detail__hero-copy">
             <div className="service-detail__eyebrow"><p>{detail.hero.eyebrow}</p></div>
-            <h1 id="service-detail-title" className="service-detail__title"><span>{detail.hero.title}</span>{" "}<span>{detail.hero.accent}</span></h1>
+            <h1 id="service-detail-title" className="service-detail__title"><span>{detail.hero.title}</span>{" "}<ServiceTypewriter key={`${locale}-${detail.hero.accent}`} text={detail.hero.accent} locale={locale} className="service-detail__title-accent" startOnPaint /></h1>
           </div>
-          <div className="service-detail__hero-art"><Image src={serviceDetailHeroImage(slug)} alt={detail.hero.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 55vw" priority /></div>
+          <div className="service-detail__hero-art"><Image src={serviceDetailHeroImage(slug)} alt={detail.hero.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 55vw" priority decoding="sync" /></div>
           <p className="service-detail__hero-description">{detail.hero.description}</p>
         </div>
       </section>
@@ -201,12 +204,18 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
         </Link>)}
       </nav>
       {sections && <div className="service-detail__sections">
-        {sections.map((section, index) => <section key={section.image} className="container service-detail__section" aria-labelledby={aiAutomationSectionId(index)}>
+        {sections.map((section, index) => <section key={section.image} className="container service-detail__section" aria-labelledby={section.image}>
           <div className="service-detail__section-heading">
             <div className="service-detail__eyebrow"><span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span><p>{section.eyebrow}</p></div>
-            <h2 id={aiAutomationSectionId(index)}>{section.titleSegments.map((part, partIndex) => <span key={`${part.text}-${partIndex}`} className={part.accent ? "service-detail__accent" : undefined}>{partIndex > 0 ? " " : null}{part.text}</span>)}</h2>
+            <h2 id={section.image}>
+              <span className="sr-only">{section.titleSegments.map((part) => part.text).join(" ")}</span>
+              <span aria-hidden="true">{section.titleSegments[0].text}</span>
+              <span className="service-detail__title-followup" aria-hidden="true">
+                {section.titleSegments.slice(1).map((part, partIndex) => <span key={`${part.text}-${partIndex}`}>{partIndex > 0 ? " " : null}{part.accent ? <ServiceTypewriter key={`${locale}-${part.text}`} text={part.text} locale={locale} className="service-detail__accent" assistiveText={false} /> : part.text}</span>)}
+              </span>
+            </h2>
           </div>
-          <div className="service-detail__section-art"><Image src={aiSectionImage(section.image)} alt={section.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 50vw" /></div>
+          <div className="service-detail__section-art"><Image src={serviceSectionImage(section.image)} alt={section.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 50vw" loading={index === 0 ? "eager" : "lazy"} decoding="sync" /></div>
           <div className="service-detail__section-bottom">
             <p className="service-detail__body">{section.body}</p>
             {section.cta && <Link className="button button--outline service-detail__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>}

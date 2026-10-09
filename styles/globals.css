@@ -26,6 +26,7 @@
   --section-gap: clamp(2.75rem, 5vh, 4rem);
   --section-pad-start: clamp(5rem, 9vh, 7rem);
   --section-pad-end: clamp(2.5rem, 4vh, 3.5rem);
+  --heading-bold-letter-spacing: -.025em;
 }
 
 @media (width > 47.5rem) {

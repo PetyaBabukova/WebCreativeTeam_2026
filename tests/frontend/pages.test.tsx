@@ -23,6 +23,14 @@ import { isLocale, canonicalRedirects, localeSwitchUrl, pageUrl, serviceSlugs, s
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
 
 vi.mock("next/server", () => ({ connection: vi.fn(async () => {}) }));
+vi.mock("@/assets/services/products_page_background.webp", () => ({
+  default: {
+    src: "/assets/services/products_page_background.webp",
+    width: 1672,
+    height: 941,
+    blurDataURL: "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs",
+  },
+}));
 
 const originalMatchMedia = Object.getOwnPropertyDescriptor(window, "matchMedia");
 const originalVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
@@ -142,12 +150,12 @@ describe("public pages", () => {
     const copy = messages[locale];
     const main = screen.getByRole("main");
     expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(within(main).getByRole("heading", { level: 1 })).toHaveTextContent(copy.serviceDetails["ai-automation"].hero.accent);
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName(`${copy.serviceDetails["ai-automation"].hero.title} ${copy.serviceDetails["ai-automation"].hero.accent}`);
     const sections = copy.serviceDetails["ai-automation"].sections;
     const headings = within(main).getAllByRole("heading", { level: 2 });
     expect(headings).toHaveLength(sections.length);
     sections.forEach((section, index) => {
-      expect(headings[index]).toHaveTextContent(section.titleSegments.map((part) => part.text).join(" "));
+      expect(headings[index]).toHaveAccessibleName(section.titleSegments.map((part) => part.text).join(" "));
       expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.any(String));
     });
     expect(within(main).getByRole("img", { name: copy.serviceDetails["ai-automation"].hero.imageAlt })).toHaveAttribute("src", expect.any(String));
@@ -163,19 +171,28 @@ describe("public pages", () => {
   it.each([
     [BgService, bgServiceMetadata, "bg"],
     [EnService, enServiceMetadata, "en"],
-  ] as const)("renders the SEO & GEO intro in the active locale without invented sections %#", async (Page, metadata, locale) => {
+  ] as const)("renders the SEO & GEO intro and numbered sections in the active locale %#", async (Page, metadata, locale) => {
     const params = { params: Promise.resolve({ slug: "seo-geo" }) };
     render(await Page(params));
     const copy = messages[locale];
     const hero = copy.serviceDetails["seo-geo"].hero;
     const main = screen.getByRole("main");
     expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(within(main).getByRole("heading", { level: 1 })).toHaveTextContent(`${hero.title} ${hero.accent}`);
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName(`${hero.title} ${hero.accent}`);
     expect(within(main).getByText(hero.eyebrow)).toBeInTheDocument();
     expect(within(main).getByText(hero.description)).toBeInTheDocument();
     expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("SEO_and_Geo_intro_image"));
-    expect(within(main).queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
-    expect(main.querySelector(".service-detail__sections")).toBeNull();
+    const sections = copy.serviceDetails["seo-geo"].sections;
+    const headings = within(main).getAllByRole("heading", { level: 2 });
+    expect(headings).toHaveLength(2);
+    sections.forEach((section, index) => {
+      expect(headings[index]).toHaveAccessibleName(section.titleSegments.map((part) => part.text).join(" "));
+      expect(headings[index]).toHaveAttribute("id", section.image);
+      expect(within(main).getByText(section.eyebrow)).toBeInTheDocument();
+      expect(within(main).getByText(section.body)).toBeInTheDocument();
+      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.stringContaining(index === 0 ? "SEO_optimization_section_image" : "technical_SEO_section_image"));
+    });
+    expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
     const navigation = within(main).getByRole("navigation", { name: copy.servicesLabel });
     const links = within(navigation).getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));

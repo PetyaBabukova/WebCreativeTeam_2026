@@ -14,7 +14,7 @@
       "sections": [
         {
           "eyebrow": "Focus on what matters",
-          "titleSegments": [{ "text": "Business", "accent": false }, { "text": "processes", "accent": true }],
+          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "For business processes", "accent": true }],
           "body": "We analyse everyday processes, remove unnecessary steps and build automations that make work faster, easier to manage and less dependent on manual effort.",
           "image": "business-processes",
           "imageAlt": "Automation connecting documents with business systems and processes",
@@ -22,7 +22,7 @@
         },
         {
           "eyebrow": "Support for your team",
-          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "assistants", "accent": true }],
+          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "Assistants", "accent": true }],
           "body": "We create AI assistants for specific tasks - finding and processing information, working with documents, preparing content and handling internal queries. They save time, make everyday work easier and help the team focus on more important tasks.",
           "image": "ai-assistants",
           "imageAlt": "AI assistant at a laptop with icons for documents, search, content and scheduling",
@@ -45,7 +45,25 @@
         "eyebrow": "BE DISCOVERABLE",
         "description": "We build visibility across search engines and AI environments through SEO, Technical SEO and GEO strategies that help your brand be found, understood and preferred wherever people look for solutions.",
         "imageAlt": "Illuminated globe with a search bar and symbols for analytics, location and AI"
-      }
+      },
+      "sections": [
+        {
+          "eyebrow": "Closer to what people search for",
+          "titleSegments": [{ "text": "SEO", "accent": false }, { "text": "optimization", "accent": true }],
+          "body": "We improve the structure, content and key pages so search engines can find, understand and rank the site more easily. We focus on relevance, internal linking and search intent to turn visibility into meaningful traffic and business opportunities.",
+          "image": "seo-optimization",
+          "imageAlt": "Search page, rising chart and magnifying glass over a globe representing SEO optimization",
+          "cta": false
+        },
+        {
+          "eyebrow": "Foundation for visibility",
+          "titleSegments": [{ "text": "SEO", "accent": false }, { "text": "architecture", "accent": true }],
+          "body": "We identify and resolve the technical issues that prevent search engines from crawling, understanding and indexing your website correctly. We optimize speed, mobile performance, site structure, canonical tags, sitemaps, redirects and internal links to build a solid foundation for better visibility and sustainable growth.",
+          "image": "technical-seo",
+          "imageAlt": "Website structure with links, speed and search engine crawlers",
+          "cta": false
+        }
+      ]
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },
@@ -85,7 +103,7 @@
           "eyebrow": "Be where they’re searching",
           "title": "SEO & GEO",
           "highlight": "impact",
-          "features": ["SEO Optimisation", "Technical SEO", "AI Search & GEO"],
+          "features": ["SEO Optimisation", "SEO architecture", "AI Search & GEO"],
           "description": "Being online isn’t enough. You need to be found, understood, and chosen — across search engines and AI-powered search.",
           "learnMore": "Improve your visibility"
         },

@@ -12,8 +12,8 @@ test("SEO & GEO card uses the supplied artwork and translated copy", async ({ pa
     await expect(seo.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "влияние" : "impact");
     await expect(seo.locator(".services__card-title span").last()).toHaveCSS("text-transform", "none");
     await expect(seo.locator(".services__feature")).toContainText(locale === "bg"
-      ? ["SEO оптимизация", "Technical SEO", "AI Search & GEO"]
-      : ["SEO Optimisation", "Technical SEO", "AI Search & GEO"]);
+      ? ["SEO оптимизация", "SEO архитектура", "AI Search & GEO"]
+      : ["SEO Optimisation", "SEO architecture", "AI Search & GEO"]);
     await expect(seo.locator(".services__learn-more")).toContainText(locale === "bg" ? "Подобри видимостта" : "Improve your visibility");
     await expect(seo.locator(".services__image img")).toHaveAttribute("src", /seo-and-geo/);
     await expect(cards.locator(".services__learn-more")).toHaveCount(5);
