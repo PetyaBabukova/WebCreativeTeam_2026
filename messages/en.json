@@ -80,7 +80,33 @@
         "eyebrow": "When ideas become results",
         "description": "We create digital strategies that connect the right messages with the right audience. We combine creativity, content, advertising and data analysis to build a strong presence, turn interest into action and achieve measurable results.",
         "imageAlt": "Laptop with digital content, advertising panels and performance charts"
-      }
+      },
+      "sections": [
+        {
+          "eyebrow": "Big ideas need a plan",
+          "titleSegments": [{ "text": "Strategy", "accent": false }, { "text": "beyond the obvious", "accent": true }],
+          "body": "We build marketing strategies tailored to business goals, the audience and the competitive landscape. We analyse opportunities, identify the right channels and create a clear action plan that turns ideas into focused campaigns, measurable results and sustainable growth.",
+          "image": "marketing-strategy",
+          "imageAlt": "Screen showing steps from analysis and strategy to execution and results",
+          "cta": false
+        },
+        {
+          "eyebrow": "The right message. The right moment.",
+          "titleSegments": [{ "text": "Advertising campaigns", "accent": false }, { "text": "with impact", "accent": true }],
+          "body": "We create and manage advertising campaigns that reach the right people with the right message at the right moment. We combine strategy, creatives, targeting and continuous optimization to turn the advertising budget into real results, a stronger presence and sustainable growth.",
+          "image": "advertising-campaigns",
+          "imageAlt": "Advertising messages reaching different audiences and converging on a shared goal",
+          "cta": false
+        },
+        {
+          "eyebrow": "Build connections, not just posts",
+          "titleSegments": [{ "text": "Social media", "accent": false }, { "text": "beyond the likes", "accent": true }],
+          "body": "We build a recognisable presence on social networks through creative content, consistent communication and engaging stories. We connect brands with their audience, encourage interaction and turn social channels into a space for trust, loyalty and long-term relationships.",
+          "image": "social-media",
+          "imageAlt": "Smartphone with posts, social network icons and reactions connected in a shared network",
+          "cta": false
+        }
+      ]
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },

@@ -12,6 +12,9 @@ import aiIntegrations from "@/assets/services/AI_integration_image.webp";
 import seoOptimization from "@/assets/services/SEO_optimization_section_image.webp";
 import technicalSeo from "@/assets/services/technical_SEO_section_image.webp";
 import aiSearchGeo from "@/assets/services/From Web Chaos to AI AAI_search_and_DEO_section_image.webp";
+import marketingStrategy from "@/assets/services/Digital_Strategy_image.webp";
+import advertisingCampaigns from "@/assets/services/advertising_campaigns_image.webp";
+import socialMedia from "@/assets/services/Social_media_image.webp";
 import { appConfig } from "@/lib/config";
 import { messages, serviceDetail } from "@/lib/messages";
 import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
@@ -167,7 +170,7 @@ function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
   </svg>;
 }
 
-const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo } as const;
+const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo, "marketing-strategy": marketingStrategy, "advertising-campaigns": advertisingCampaigns, "social-media": socialMedia } as const;
 
 const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero, "digital-marketing": digitalMarketingDetailHero } as const;
 

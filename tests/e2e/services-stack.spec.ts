@@ -31,7 +31,7 @@ test("digital marketing card uses the supplied artwork and copy in both language
     await expect(card.locator(".services__card-title span").first()).toHaveText(locale === "bg" ? "Дигитален маркетинг" : "Digital marketing");
     await expect(card.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "импулс" : "momentum");
     await expect(card.locator(".services__feature")).toContainText(locale === "bg"
-      ? ["Стратегия", "Performance", "Социални медии"]
+      ? ["Стратегия", "Рекламни кампании", "Социални медии"]
       : ["Strategy", "Performance", "Social Media"]);
     await expect(card.locator(".services__description")).toContainText(locale === "bg" ? "устойчиво развитие" : "sustainable growth");
     await expect(card.locator(".services__learn-more")).toContainText(locale === "bg" ? "Дай импулс" : "Build momentum");

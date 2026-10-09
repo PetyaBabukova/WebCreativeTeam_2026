@@ -206,7 +206,7 @@ describe("public pages", () => {
   it.each([
     [BgService, bgServiceMetadata, "bg"],
     [EnService, enServiceMetadata, "en"],
-  ] as const)("renders the digital marketing intro without unpublished sections %#", async (Page, metadata, locale) => {
+  ] as const)("renders the digital marketing intro and its strategy section %#", async (Page, metadata, locale) => {
     const params = { params: Promise.resolve({ slug: "digital-marketing" }) };
     render(await Page(params));
     const copy = messages[locale];
@@ -217,7 +217,17 @@ describe("public pages", () => {
     expect(within(main).getByText(hero.eyebrow)).toBeInTheDocument();
     expect(within(main).getByText(hero.description)).toBeInTheDocument();
     expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("digital_marketing_intro_image"));
-    expect(main.querySelector(".service-detail__section")).not.toBeInTheDocument();
+    const sections = copy.serviceDetails["digital-marketing"].sections;
+    const headings = within(main).getAllByRole("heading", { level: 2 });
+    expect(headings).toHaveLength(3);
+    sections.forEach((section, index) => {
+      expect(headings[index]).toHaveAccessibleName(section.titleSegments.map((part) => part.text).join(" "));
+      expect(headings[index]).toHaveAttribute("id", ["marketing-strategy", "advertising-campaigns", "social-media"][index]);
+      expect(within(main).getByText(section.eyebrow)).toBeInTheDocument();
+      expect(within(main).getByText(section.body)).toBeInTheDocument();
+      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.stringContaining(["Digital_Strategy_image", "advertising_campaigns_image", "Social_media_image"][index]));
+    });
+    expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
     const links = within(within(main).getByRole("navigation", { name: copy.servicesLabel })).getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));
     expect(links[2]).toHaveAttribute("aria-current", "page");

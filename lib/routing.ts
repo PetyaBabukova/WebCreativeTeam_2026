@@ -18,6 +18,7 @@ export function serviceUrl(slug: ServiceSlug, locale: Locale): string {
 const serviceFeatureSectionIds: Partial<Record<ServiceSlug, readonly string[]>> = {
   "ai-automation": ["business-processes", "ai-assistants", "ai-integrations"],
   "seo-geo": ["seo-optimization", "technical-seo", "ai-search-geo"],
+  "digital-marketing": ["marketing-strategy", "advertising-campaigns", "social-media"],
 };
 
 export function serviceFeatureSectionId(slug: ServiceSlug, index: number): string | undefined {
