@@ -47,6 +47,94 @@ test("navigation links to all five service pages in both languages", async ({ pa
   }
 });
 
+test("web solutions intro and three sections stay readable across widths", async ({ page }) => {
+  for (const locale of locales) {
+    for (const width of [320, 390, 760, 761, 1024, 1366, 1536, 1920]) {
+      await page.setViewportSize({ width, height: width < 761 ? 844 : 900 });
+      await page.goto(serviceUrl("web-solutions", locale));
+      await page.evaluate(() => document.fonts.ready);
+      await expect(page.locator(".service-detail__link[aria-current='page']")).toHaveAttribute("href", serviceUrl("web-solutions", locale));
+      await expect(page.locator(".service-detail__section")).toHaveCount(3);
+      const sectionHeadings = page.locator(".service-detail__section h2");
+      await expect(sectionHeadings.nth(0)).toHaveAttribute("id", "web-development");
+      await expect(sectionHeadings.nth(1)).toHaveAttribute("id", "qa-testing");
+      await expect(sectionHeadings.nth(2)).toHaveAttribute("id", "web-maintenance");
+      for (const sectionArt of await page.locator(".service-detail__section-art img").all()) {
+        await sectionArt.scrollIntoViewIfNeeded();
+        await expect.poll(() => sectionArt.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+      }
+      const layout = await page.evaluate(() => {
+        const title = document.querySelector<HTMLElement>(".service-detail__title")!;
+        const description = document.querySelector<HTMLElement>(".service-detail__hero-description")!;
+        const art = document.querySelector<HTMLElement>(".service-detail__hero-art")!;
+        const image = art.querySelector<HTMLImageElement>("img")!;
+        const links = document.querySelector<HTMLElement>(".service-detail__links")!;
+        const sections = [...document.querySelectorAll<HTMLElement>(".service-detail__section")];
+        const footer = document.querySelector<HTMLElement>("footer")!;
+        const titleRects = [...title.querySelectorAll<HTMLElement>(":scope > span:first-child, .service-typewriter__visual")].flatMap((part) => {
+          const range = document.createRange();
+          range.selectNodeContents(part);
+          return [...range.getClientRects()];
+        });
+        const textRects = [...description.getClientRects(), ...titleRects];
+        const clippedRects = textRects.filter((rect) => rect.left < -1 || rect.right > innerWidth + 1)
+          .map((rect) => ({ left: rect.left, right: rect.right }));
+        const readableRightEdge = innerWidth <= 760 ? innerWidth - 1 : art.getBoundingClientRect().left + art.getBoundingClientRect().width * .18;
+        const overlappingTitleRects = titleRects.filter((rect) => rect.right > readableRightEdge + 1)
+          .map((rect) => ({ left: rect.left, right: rect.right }));
+        const sectionLayouts = sections.map((section, index) => {
+          const heading = section.querySelector<HTMLElement>("h2")!;
+          const eyebrow = section.querySelector<HTMLElement>(".service-detail__eyebrow")!;
+          const art = section.querySelector<HTMLElement>(".service-detail__section-art")!;
+          const body = section.querySelector<HTMLElement>(".service-detail__section-bottom")!;
+          const artRect = art.getBoundingClientRect();
+          const headingRects = [...heading.querySelectorAll<HTMLElement>(":scope > span[aria-hidden='true']")].flatMap((part) => {
+            const range = document.createRange();
+            range.selectNodeContents(part);
+            return [...range.getClientRects()];
+          });
+          const headingFits = headingRects.every((rect) => rect.left >= -1 && rect.right <= innerWidth + 1
+            && (innerWidth <= 760 || (index % 2 === 0 ? rect.right <= artRect.left + 1 : rect.left >= artRect.right - 1)));
+          return {
+            headingFits,
+            titleAboveBody: heading.getBoundingClientRect().bottom <= body.getBoundingClientRect().top + 1,
+            mobileOrder: innerWidth > 760 || (heading.getBoundingClientRect().bottom <= artRect.top + 1
+              && artRect.bottom <= body.getBoundingClientRect().top + 1),
+            desktopAlignment: innerWidth <= 760 || (Math.abs(eyebrow.getBoundingClientRect().top - artRect.top) <= 2
+              && Math.abs(body.getBoundingClientRect().bottom - artRect.bottom) <= 2),
+          };
+        });
+        return {
+          imageLoaded: image.complete && image.naturalWidth > 0,
+          noHorizontalOverflow: document.documentElement.scrollWidth <= innerWidth,
+          clippedRects,
+          overlappingTitleRects,
+          sectionLayouts,
+          footerGap: footer.getBoundingClientRect().top - sections.at(-1)!.getBoundingClientRect().bottom,
+          titleAboveDescription: title.getBoundingClientRect().bottom <= description.getBoundingClientRect().top + 1,
+          mobileOrder: innerWidth > 760 || (title.getBoundingClientRect().bottom <= art.getBoundingClientRect().top + 1
+            && art.getBoundingClientRect().bottom <= description.getBoundingClientRect().top + 1
+            && description.getBoundingClientRect().bottom <= links.getBoundingClientRect().top + 1),
+        };
+      });
+      expect(layout, `${locale} at ${width}px`).toMatchObject({
+        imageLoaded: true,
+        noHorizontalOverflow: true,
+        clippedRects: [],
+        overlappingTitleRects: [],
+        titleAboveDescription: true,
+        mobileOrder: true,
+      });
+      expect(layout.sectionLayouts, `${locale} at ${width}px sections`).toEqual([
+        { headingFits: true, titleAboveBody: true, mobileOrder: true, desktopAlignment: true },
+        { headingFits: true, titleAboveBody: true, mobileOrder: true, desktopAlignment: true },
+        { headingFits: true, titleAboveBody: true, mobileOrder: true, desktopAlignment: true },
+      ]);
+      expect(layout.footerGap, `${locale} at ${width}px footer gap`).toBeGreaterThan(0);
+    }
+  }
+});
+
 test("digital marketing intro and strategy section stay readable across mobile and desktop widths", async ({ page }) => {
   for (const locale of locales) {
     for (const width of [320, 390, 761, 1024, 1366, 1600]) {
@@ -151,21 +239,29 @@ test("AI service detail stays readable and loads its art across viewports", asyn
 });
 
 test("service headings type under both system motion settings", async ({ page }) => {
+  test.setTimeout(60000);
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const reducedMotion of ["no-preference", "reduce"] as const) {
-    await page.emulateMedia({ reducedMotion });
-    await page.goto(serviceUrl("ai-automation", "bg"));
-    const heroCharacters = page.locator(".service-detail__title-accent .service-typewriter__char");
-    await expect(heroCharacters.first()).toHaveCSS("animation-name", "service-typewriter-reveal");
-    await expect.poll(() => heroCharacters.evaluateAll((characters) => characters.filter((character) => getComputedStyle(character).visibility === "visible").length)).toBe(await heroCharacters.count());
+  for (const locale of locales) {
+    for (const reducedMotion of ["no-preference", "reduce"] as const) {
+      await page.emulateMedia({ reducedMotion });
+      await page.goto(serviceUrl("ai-automation", locale));
+      const hero = page.locator(".service-detail__title-accent");
+      const heroCharacters = hero.locator(".service-typewriter__char");
+      await expect(heroCharacters.first()).toHaveCSS("animation-name", "service-typewriter-reveal");
+      await expect.poll(() => heroCharacters.evaluateAll((characters) => characters.filter((character) => getComputedStyle(character).visibility === "visible").length)).toBe(await heroCharacters.count());
+      await expect(hero).toHaveAttribute("data-typewriter-done", "");
+      await expect.poll(() => heroCharacters.evaluateAll((characters) => characters.every((character) => getComputedStyle(character, "::after").content === "none"))).toBe(true);
 
-    const accents = page.locator(".service-detail__section .service-typewriter");
-    await expect(accents).toHaveCount(3);
-    for (const accent of await accents.all()) {
-      await accent.scrollIntoViewIfNeeded();
-      await expect(accent).toHaveAttribute("data-typewriter-active", "");
-      const characters = accent.locator(".service-typewriter__char");
-      await expect.poll(() => characters.evaluateAll((letters) => letters.filter((letter) => getComputedStyle(letter).visibility === "visible").length)).toBe(await characters.count());
+      const accents = page.locator(".service-detail__section .service-typewriter");
+      await expect(accents).toHaveCount(3);
+      for (const accent of await accents.all()) {
+        await accent.scrollIntoViewIfNeeded();
+        await expect(accent).toHaveAttribute("data-typewriter-active", "");
+        const characters = accent.locator(".service-typewriter__char");
+        await expect.poll(() => characters.evaluateAll((letters) => letters.filter((letter) => getComputedStyle(letter).visibility === "visible").length)).toBe(await characters.count());
+        await expect(accent).toHaveAttribute("data-typewriter-done", "");
+        await expect.poll(() => characters.evaluateAll((letters) => letters.every((letter) => getComputedStyle(letter, "::after").content === "none"))).toBe(true);
+      }
     }
   }
 });
@@ -288,7 +384,7 @@ test("mobile service submenu is already open when the menu opens", async ({ brow
   await context.close();
 });
 
-test("all service placeholders respond without JavaScript", async ({ browser }) => {
+test("all service pages respond without JavaScript", async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
   for (const locale of locales) {
@@ -510,11 +606,9 @@ test("home service cards link to their detail pages in the current locale", asyn
       await expect(cards.nth(index).locator(".services__learn-more")).toHaveAttribute("href", serviceUrl(slug, locale));
       await expect(cards.nth(index).locator(".services__card-title a")).toHaveAttribute("href", serviceUrl(slug, locale));
       const featureLinks = cards.nth(index).locator(".services__features a");
-      await expect(featureLinks).toHaveCount(index <= 3 ? 3 : 0);
-      if (index <= 3) {
-        for (const featureIndex of [0, 1, 2]) {
-          await expect(featureLinks.nth(featureIndex)).toHaveAttribute("href", `${serviceUrl(slug, locale)}#${serviceFeatureSectionId(slug, featureIndex)}`);
-        }
+      await expect(featureLinks).toHaveCount(3);
+      for (const featureIndex of [0, 1, 2]) {
+        await expect(featureLinks.nth(featureIndex)).toHaveAttribute("href", `${serviceUrl(slug, locale)}#${serviceFeatureSectionId(slug, featureIndex)}`);
       }
     }
     await cards.first().locator(".services__learn-more").click();
@@ -527,10 +621,16 @@ test("home service cards link to their detail pages in the current locale", asyn
     await expect(page).toHaveURL(new RegExp(`${serviceUrl("ai-automation", locale)}#${serviceFeatureSectionId("ai-automation", 2)}$`));
     await expect(page.locator(`#${serviceFeatureSectionId("ai-automation", 2)}`)).toBeVisible();
     // Every feature link on a card must land on an existing section of its detail page.
-    for (const slug of ["seo-geo", "digital-marketing", "branding"] as const) {
+    for (const slug of ["seo-geo", "digital-marketing", "branding", "web-solutions"] as const) {
       await page.goto(serviceUrl(slug, locale));
       for (const featureIndex of [0, 1, 2]) await expect(page.locator(`#${serviceFeatureSectionId(slug, featureIndex)}`)).toHaveCount(1);
     }
+    await page.goto(pageUrl("home", locale));
+    await page.locator(".services__card").last().locator(".services__features a").last().click();
+    await expect(page).toHaveURL(new RegExp(`${serviceUrl("web-solutions", locale)}#web-maintenance$`));
+    const target = page.locator("#web-maintenance");
+    await expect(target).toBeVisible();
+    await expect.poll(() => target.evaluate((heading) => heading.getBoundingClientRect().top - document.querySelector(".site-header")!.getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(-1);
   }
 });
 

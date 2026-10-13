@@ -7,6 +7,7 @@ import aiDetailHero from "@/assets/services/products_page_intro_image.webp";
 import seoDetailHero from "@/assets/services/SEO_and_Geo_intro_image.webp";
 import digitalMarketingDetailHero from "@/assets/services/digital_marketing_intro_image.webp";
 import brandingDetailHero from "@/assets/services/branding_intro_image.webp";
+import webSolutionsDetailHero from "@/assets/services/web_servicess_intro_image.webp";
 import aiBusinessProcesses from "@/assets/services/products_page_business_proces_section_image.webp";
 import aiAssistants from "@/assets/services/produts_page_AI_assistent_image.webp";
 import aiIntegrations from "@/assets/services/AI_integration_image.webp";
@@ -19,6 +20,9 @@ import socialMedia from "@/assets/services/Social_media_image.webp";
 import brandStrategy from "@/assets/services/branding_strategy_image.webp";
 import visualIdentity from "@/assets/services/branding_identity_image.webp";
 import brandPresence from "@/assets/services/branding_presence_image.webp";
+import webDevelopment from "@/assets/services/web_develpoment_section_image.webp";
+import qaTesting from "@/assets/services/QA_section_image.webp";
+import webMaintenance from "@/assets/services/web_maintanance_section_image.webp";
 import { appConfig } from "@/lib/config";
 import { messages, serviceDetail } from "@/lib/messages";
 import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
@@ -174,9 +178,9 @@ function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
   </svg>;
 }
 
-const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo, "marketing-strategy": marketingStrategy, "advertising-campaigns": advertisingCampaigns, "social-media": socialMedia, "brand-strategy": brandStrategy, "visual-identity": visualIdentity, "brand-presence": brandPresence } as const;
+const serviceSectionImages = { "business-processes": aiBusinessProcesses, "ai-assistants": aiAssistants, "ai-integrations": aiIntegrations, "seo-optimization": seoOptimization, "technical-seo": technicalSeo, "ai-search-geo": aiSearchGeo, "marketing-strategy": marketingStrategy, "advertising-campaigns": advertisingCampaigns, "social-media": socialMedia, "brand-strategy": brandStrategy, "visual-identity": visualIdentity, "brand-presence": brandPresence, "web-development": webDevelopment, "qa-testing": qaTesting, "web-maintenance": webMaintenance } as const;
 
-const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero, "digital-marketing": digitalMarketingDetailHero, branding: brandingDetailHero } as const;
+const serviceDetailHeroImages = { "ai-automation": aiDetailHero, "seo-geo": seoDetailHero, "digital-marketing": digitalMarketingDetailHero, branding: brandingDetailHero, "web-solutions": webSolutionsDetailHero } as const;
 
 function serviceDetailHeroImage(slug: ServiceSlug) {
   if (!(slug in serviceDetailHeroImages)) throw new Error(`Missing service hero image: ${slug}`);

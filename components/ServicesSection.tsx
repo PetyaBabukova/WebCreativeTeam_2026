@@ -21,14 +21,14 @@ type Service = {
   learnMore: string;
 };
 type ServicesCopy = { heading: string; items: Service[] };
-type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "compass" | "fingerprint" | "devices" | "screen" | "refresh";
+type IconKind = "gear" | "robot" | "network" | "search" | "database" | "target" | "chart" | "people" | "compass" | "fingerprint" | "devices" | "screen" | "refresh" | "code" | "shield";
 
 const serviceVisuals = [
   { id: "ai", image: aiAutomationImage, icons: ["gear", "robot", "network"] as IconKind[] },
   { id: "seo-geo", image: seoGeoImage, icons: ["search", "database", "network"] as IconKind[] },
   { id: "digital-marketing", image: digitalMarketingImage, icons: ["target", "chart", "people"] as IconKind[] },
   { id: "branding", image: brandingImage, icons: ["compass", "fingerprint", "devices"] as IconKind[] },
-  { id: "web-design", image: webDesignImage, icons: ["screen", "refresh", "gear"] as IconKind[] },
+  { id: "web-design", image: webDesignImage, icons: ["code", "shield", "gear"] as IconKind[] },
 ];
 
 const rootFontSize = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
@@ -49,6 +49,8 @@ function FeatureIcon({ kind }: { kind: IconKind }) {
                       : kind === "fingerprint" ? <><path d="M9.5 6.5A12 12 0 0 1 28 16.5" /><path d="M4.5 12.5a12 12 0 0 1 2.2-3.7" /><path d="M8 28a17 17 0 0 1-2.5-9.5 10.5 10.5 0 0 1 21 0v1" /><path d="M11.5 29a14 14 0 0 1-2-9.5 6.5 6.5 0 0 1 13 0c0 3.5-.6 6.5-1.8 9" /><path d="M16 19.5c0 3.5-.8 6.8-2.5 9.5" /><path d="M26.5 23.5c-.4 1.6-1 3.2-1.8 4.6" /></>
                         : kind === "devices" ? <><rect x="2" y="5" width="21" height="15" rx="1.5" /><path d="M8 25h7m-3.5-5v5" /><rect x="20" y="12" width="10" height="16" rx="1.8" /><path d="M24 25h2" /></>
                         : kind === "refresh" ? <><path d="M27 12a11 11 0 0 0-19-5L5 10m0-7v7h7M5 20a11 11 0 0 0 19 5l3-3m0 7v-7h-7" /></>
+                          : kind === "code" ? <><path d="m11 9-6 7 6 7m10-14 6 7-6 7m-7 1 4-16" /></>
+                            : kind === "shield" ? <><path d="M16 2 27 6v9c0 8-5 12-11 15C10 27 5 23 5 15V6l11-4Z" /><path d="m11 16 3 3 7-7" /></>
                           : <><rect x="3" y="4" width="26" height="19" rx="2" /><path d="M12 29h8m-4-6v6" /></>}
   </svg>;
 }

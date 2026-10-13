@@ -64,10 +64,11 @@ test("web design card uses the supplied artwork and copy in both languages", asy
     await expect(card.locator(".services__card-title span").first()).toHaveText(locale === "bg" ? "Уеб решения" : "Web solutions");
     await expect(card.locator(".services__card-title span").last()).toHaveText(locale === "bg" ? "които работят" : "that work");
     await expect(card.locator(".services__feature")).toContainText(locale === "bg"
-      ? ["Изработка", "Редизайн", "Поддръжка"]
-      : ["Development", "Redesign", "Support"]);
-    await expect(card.locator(".services__description")).toContainText(locale === "bg" ? "растат заедно с бизнеса" : "grow with your business");
-    await expect(card.locator(".services__learn-more")).toContainText(locale === "bg" ? "Създай своя сайт" : "Build your website");
+      ? ["Разработване", "Тестване", "Поддръжка"]
+      : ["Development", "Testing", "Support"]);
+    await expect(card.locator(".services__description")).toContainText(locale === "bg" ? "надеждна техническа поддръжка" : "reliable technical support");
+    await expect(card.locator(".services__features a")).toHaveCount(3);
+    await expect(card.locator(".services__learn-more")).toContainText(locale === "bg" ? "Открий решение" : "Explore solutions");
     await expect(card.locator(".services__image img")).toHaveAttribute("src", /web-design/);
   }
 });
@@ -329,6 +330,7 @@ test("touch input does not keep service labels in the hover color", async ({ bro
   await page.goto(pageUrl("home", "bg"));
   const feature = page.locator(".services__feature").first();
   const original = await feature.evaluate((element) => getComputedStyle(element).color);
+  await feature.evaluate((element) => element.addEventListener("click", (event) => event.preventDefault(), { once: true }));
   await feature.tap();
   await expect(feature).toHaveCSS("color", original);
   await context.close();

@@ -36,7 +36,11 @@ export default function ServiceTypewriter({ text, locale, className, startOnPain
     }
   }, [inView]);
 
-  return <span ref={ref} className={`${className} service-typewriter${startOnPaint ? " service-typewriter--hero" : ""}`} style={style}>
+  return <span ref={ref} className={`${className} service-typewriter${startOnPaint ? " service-typewriter--hero" : ""}`} style={style} onAnimationEnd={(event) => {
+    if (event.animationName === "service-typewriter-cursor" && (event.target as HTMLElement).matches(".service-typewriter__char:last-child")) {
+      event.currentTarget.dataset.typewriterDone = "";
+    }
+  }}>
     {assistiveText && <span className="sr-only">{text}</span>}
     <span className="service-typewriter__visual" aria-hidden="true">
       {characters.map((character, index) => <span key={index} className="service-typewriter__char" style={{ "--type-index": index } as CSSProperties}>{character}</span>)}

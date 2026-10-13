@@ -131,13 +131,36 @@ describe("public pages", () => {
   it.each([
     [BgService, bgServiceMetadata, "bg"],
     [EnService, enServiceMetadata, "en"],
-  ] as const)("validates localized service routes %#", async (Page, metadata, locale) => {
-    // Web solutions is still a placeholder page without detail copy.
+  ] as const)("renders the web solutions intro and sections in the active locale %#", async (Page, metadata, locale) => {
     const params = { params: Promise.resolve({ slug: "web-solutions" }) };
     render(await Page(params));
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(messages[locale].serviceLinks[4]);
-    expect((await metadata(params)).alternates?.canonical).toBe(serviceUrl("web-solutions", locale));
-    expect((await metadata(params)).description).toBeUndefined();
+    const copy = messages[locale];
+    const hero = copy.serviceDetails["web-solutions"].hero;
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("data-service", "web-solutions");
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName(`${hero.title} ${hero.accent}`);
+    expect(within(main).getByText(hero.eyebrow)).toBeInTheDocument();
+    expect(within(main).getByText(hero.description)).toBeInTheDocument();
+    expect(within(main).getByRole("img", { name: hero.imageAlt })).toHaveAttribute("src", expect.stringContaining("web_servicess_intro_image"));
+    const sections = copy.serviceDetails["web-solutions"].sections;
+    const headings = within(main).getAllByRole("heading", { level: 2 });
+    expect(headings).toHaveLength(3);
+    sections.forEach((section, index) => {
+      expect(headings[index]).toHaveAttribute("id", ["web-development", "qa-testing", "web-maintenance"][index]);
+      expect(headings[index]).toHaveAccessibleName(section.titleSegments.map((part) => part.text).join(" "));
+      expect(within(main).getByText(section.eyebrow)).toBeInTheDocument();
+      expect(within(main).getByText(section.body)).toBeInTheDocument();
+      expect(within(main).getByRole("img", { name: section.imageAlt })).toHaveAttribute("src", expect.stringContaining(["web_develpoment_section_image", "QA_section_image", "web_maintanance_section_image"][index]));
+    });
+    expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
+    const links = within(within(main).getByRole("navigation", { name: copy.servicesLabel })).getAllByRole("link");
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(serviceSlugs.map((slug) => serviceUrl(slug, locale)));
+    expect(links[4]).toHaveAttribute("aria-current", "page");
+    const seo = await metadata(params);
+    expect(seo.title).toBe(`${copy.serviceLinks[4]} | WebCreativeTeam`);
+    expect(seo.alternates?.canonical).toBe(serviceUrl("web-solutions", locale));
+    expect(seo.description).toBe(hero.description);
+    expect(seo.robots).toEqual({ index: false, follow: false });
     const invalid = { params: Promise.resolve({ slug: "unknown" }) };
     await expect(Page(invalid)).rejects.toThrow();
     await expect(metadata(invalid)).rejects.toThrow();

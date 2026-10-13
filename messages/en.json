@@ -142,6 +142,41 @@
           "cta": false
         }
       ]
+    },
+    "web-solutions": {
+      "hero": {
+        "title": "Web solutions",
+        "accent": "without compromise",
+        "eyebrow": "From the first line of code to the final detail",
+        "description": "We build modern websites and bring new life to existing ones. We find and fix issues, test functionality, improve performance and expand their capabilities. From initial development to long-term support, we make sure every web solution is reliable, easy to use and ready to grow with the business.",
+        "imageAlt": "Web screens and tools for building, testing and updating a website"
+      },
+      "sections": [
+        {
+          "eyebrow": "From idea to working reality",
+          "titleSegments": [{ "text": "Development", "accent": false }, { "text": "with the future in mind", "accent": true }],
+          "body": "We create modern, fast and functional websites tailored to business goals and user needs. From design and architecture to development and integrations, we build reliable digital platforms with attention to every detail. We focus on quality code, strong performance and a flexible structure that supports future growth and upgrades.",
+          "image": "web-development",
+          "imageAlt": "Workers and construction cranes assembling a website across a phone, a monitor and a tablet",
+          "cta": false
+        },
+        {
+          "eyebrow": "We find the issues before they become yours",
+          "titleSegments": [{ "text": "QA testing", "accent": false }, { "text": "with an eye for detail", "accent": true }],
+          "body": "We check the functionality, user experience and reliability of websites and applications to find issues that go unnoticed during development. We perform functional, regression and cross-browser testing, check mobile compatibility and document the defects we find. We help resolve them and verify the fixes to ensure more stable and predictable performance.",
+          "image": "qa-testing",
+          "imageAlt": "A QA team checks a website across devices using a magnifying glass, checkmarks and a performance gauge",
+          "cta": false
+        },
+        {
+          "eyebrow": "The next step",
+          "titleSegments": [{ "text": "Web maintenance", "accent": false }, { "text": "that moves you forward", "accent": true }],
+          "body": "We maintain, repair and enhance existing websites so they run reliably, look modern and meet business needs. We identify and fix technical issues, update features, improve performance and modernize outdated solutions. We provide ongoing technical care and room to grow, so your website stays current, stable and ready for what comes next.",
+          "image": "web-maintenance",
+          "imageAlt": "Workers with a wrench, gears and tools repair and update a website on a laptop",
+          "cta": false
+        }
+      ]
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },
@@ -205,9 +240,9 @@
           "eyebrow": "YOUR WEBSITE IS MORE THAN A BUSINESS CARD",
           "title": "Web solutions",
           "highlight": "that work",
-          "features": ["Development", "Redesign", "Support"],
-          "description": "We create fast, modern and thoughtfully designed websites that look distinctive, perform flawlessly and grow with your business.",
-          "learnMore": "Build your website"
+          "features": ["Development", "Testing", "Support"],
+          "description": "We build new websites and improve and expand existing ones. We find and fix issues, test functionality and provide reliable technical support.",
+          "learnMore": "Explore solutions"
         }
       ]
     },
