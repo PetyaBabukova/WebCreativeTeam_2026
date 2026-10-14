@@ -217,7 +217,7 @@
 .service-detail__section h2 { display: flex; flex-direction: column; align-items: flex-start; margin: var(--service-heading-gap) 0 1.5rem; color: var(--color-deep-green-on-light); font-size: clamp(2.275rem, 4.2vw, 4.2rem); font-weight: 700; line-height: .96; letter-spacing: var(--heading-bold-letter-spacing); }
 .service-detail__title-followup { white-space: nowrap; }
 /* These gradient phrases wrap between words inside the narrow text columns. */
-.service-detail__section h2:is(#visual-identity, #web-development, #qa-testing, #web-maintenance) .service-detail__title-followup { white-space: normal; }
+.service-detail__section h2:is(#technical-seo, #visual-identity, #web-development, #qa-testing, #web-maintenance) .service-detail__title-followup { white-space: normal; }
 .service-detail__section-bottom { display: flex; grid-column: 1; grid-row: 2; align-self: end; flex-direction: column; align-items: flex-start; max-width: 36rem; }
 .service-detail__body { max-width: 36ch; margin: 0 0 1.75rem; font-size: clamp(1.05rem, 1.4vw, 1.35rem); line-height: 1.5; }
 .service-detail__section-bottom .service-detail__body:last-child { margin-bottom: 0; }

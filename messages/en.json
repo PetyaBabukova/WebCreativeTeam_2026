@@ -8,30 +8,30 @@
         "title": "AI",
         "accent": "Automation",
         "eyebrow": "Less routine",
-        "description": "We automate repetitive tasks, connect systems and build AI solutions that save time, reduce manual work and free your team to focus on higher-value tasks.",
+        "description": "We automate repetitive tasks, connect systems, and build AI-powered solutions that save time, reduce manual work, and free up teams to focus on higher-value activities",
         "imageAlt": "AI solution connecting documents, CRM and business tools"
       },
       "sections": [
         {
           "eyebrow": "Focus on what matters",
           "titleSegments": [{ "text": "AI", "accent": false }, { "text": "For business processes", "accent": true }],
-          "body": "We analyse everyday processes, remove unnecessary steps and build automations that make work faster, easier to manage and less dependent on manual effort.",
+          "body": "We analyse business processes, eliminate unnecessary steps and implement AI-powered automation that makes workflows faster, easier to manage and less reliant on manual effort",
           "image": "business-processes",
           "imageAlt": "Automation connecting documents with business systems and processes",
           "cta": false
         },
         {
-          "eyebrow": "Support for your team",
+          "eyebrow": "Support your team",
           "titleSegments": [{ "text": "AI", "accent": false }, { "text": "Assistants", "accent": true }],
-          "body": "We create AI assistants for specific tasks - finding and processing information, working with documents, preparing content and handling internal queries. They save time, make everyday work easier and help the team focus on more important tasks.",
+          "body": "We build AI assistants for specific tasks - searching for and processing information, working with documents, creating content and handling internal requests. They save time, simplify daily workflows and help teams focus on higher-value tasks",
           "image": "ai-assistants",
           "imageAlt": "AI assistant at a laptop with icons for documents, search, content and scheduling",
           "cta": false
         },
         {
           "eyebrow": "Everything works together",
-          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "integrations", "accent": true }],
-          "body": "We connect AI with the tools and systems you already use. Data flows between them automatically, actions are triggered when specific conditions are met, and your team works in a more connected, faster and more efficient environment.",
+          "titleSegments": [{ "text": "AI", "accent": false }, { "text": "Integrations", "accent": true }],
+          "body": "We integrate AI with the tools and systems you already use. Data flows automatically between them, actions are triggered based on specific conditions, and your team benefits from a more connected, streamlined and efficient workflow",
           "image": "ai-integrations",
           "imageAlt": "AI hub connecting email, calendars, documents, data and other work tools",
           "cta": false
@@ -41,32 +41,32 @@
     "seo-geo": {
       "hero": {
         "title": "SEO & GEO",
-        "accent": "impact",
+        "accent": "Visibility",
         "eyebrow": "BE DISCOVERABLE",
-        "description": "We build visibility across search engines and AI environments through SEO, Technical SEO and GEO strategies that help your brand be found, understood and preferred wherever people look for solutions.",
+        "description": "We build visibility across search engines and AI-powered search platforms through SEO, Technical SEO and GEO strategies that help your brand get discovered, understood and chosen wherever people search for solutions",
         "imageAlt": "Illuminated globe with a search bar and symbols for analytics, location and AI"
       },
       "sections": [
         {
           "eyebrow": "Closer to what people search for",
-          "titleSegments": [{ "text": "SEO", "accent": false }, { "text": "optimization", "accent": true }],
-          "body": "We improve the structure, content and key pages so search engines can find, understand and rank the site more easily. We focus on relevance, internal linking and search intent to turn visibility into meaningful traffic and business opportunities.",
+          "titleSegments": [{ "text": "SEO", "accent": false }, { "text": "Optimization", "accent": true }],
+          "body": "We improve your website's structure, content and key pages to help search engines discover, understand and rank it more effectively. We focus on relevance, internal linking and search intent to turn visibility into qualified traffic and real business opportunities",
           "image": "seo-optimization",
           "imageAlt": "Search page, rising chart and magnifying glass over a globe representing SEO optimization",
           "cta": false
         },
         {
-          "eyebrow": "Foundation for visibility",
-          "titleSegments": [{ "text": "SEO", "accent": false }, { "text": "architecture", "accent": true }],
-          "body": "We identify and resolve the technical issues that prevent search engines from crawling, understanding and indexing your website correctly. We optimize speed, mobile performance, site structure, canonical tags, sitemaps, redirects and internal links to build a solid foundation for better visibility and sustainable growth.",
+          "eyebrow": "A SOLID FOUNDATION FOR SEARCH VISIBILITY",
+          "titleSegments": [{ "text": "SEO", "accent": false }, { "text": "Technical Optimization", "accent": true }],
+          "body": "We identify and resolve technical issues that make it difficult for search engines to crawl, understand and index your website. We optimize site speed, mobile usability, site structure, canonical tags, XML sitemaps, redirects and internal linking to establish a solid technical foundation for improved search visibility and long-term SEO performance",
           "image": "technical-seo",
           "imageAlt": "Website structure with links, speed and search engine crawlers",
           "cta": false
         },
         {
-          "eyebrow": "Be discoverable by AI, too",
+          "eyebrow": "BE VISIBLE IN AI SEARCH",
           "titleSegments": [{ "text": "AI Search & GEO", "accent": false }, { "text": "the next level", "accent": true }],
-          "body": "We optimize content, structure and brand signals so AI search engines and generative systems can recognize and use them more easily. The goal is for your business to appear not only in traditional search results, but also in the answers, recommendations and summaries shaping the new way people search.",
+          "body": "We optimize your website's content, structure and brand presence to help AI-powered search engines and generative systems discover, understand and reference your information. Our goal is to increase your brand's chances of appearing not only in traditional search results, but also in AI-generated answers, recommendations and summaries that are reshaping how people discover information and make decisions",
           "image": "ai-search-geo",
           "imageAlt": "Content and brand signals flow through an AI system into answers and recommendations",
           "cta": false
@@ -75,33 +75,33 @@
     },
     "digital-marketing": {
       "hero": {
-        "title": "Digital marketing",
-        "accent": "momentum",
+        "title": "Digital Marketing",
+        "accent": "growth",
         "eyebrow": "When ideas become results",
-        "description": "We create digital strategies that connect the right messages with the right audience. We combine creativity, content, advertising and data analysis to build a strong presence, turn interest into action and achieve measurable results.",
+        "description": "We develop digital strategies aligned with your business goals and audience behaviour. We bring together creative ideas, content, advertising campaigns and data-driven insights to attract potential customers, drive meaningful action and deliver measurable marketing results",
         "imageAlt": "Laptop with digital content, advertising panels and performance charts"
       },
       "sections": [
         {
           "eyebrow": "Big ideas need a plan",
           "titleSegments": [{ "text": "Strategy", "accent": false }, { "text": "beyond the obvious", "accent": true }],
-          "body": "We build marketing strategies tailored to business goals, the audience and the competitive landscape. We analyse opportunities, identify the right channels and create a clear action plan that turns ideas into focused campaigns, measurable results and sustainable growth.",
+          "body": "We develop marketing strategies built on a deep understanding of your business, audience and competitive landscape. We uncover opportunities for growth, select the most effective channels and create a clear action plan that aligns marketing efforts with specific goals and measurable outcomes",
           "image": "marketing-strategy",
           "imageAlt": "Screen showing steps from analysis and strategy to execution and results",
           "cta": false
         },
         {
-          "eyebrow": "The right message. The right moment.",
-          "titleSegments": [{ "text": "Advertising campaigns", "accent": false }, { "text": "with impact", "accent": true }],
-          "body": "We create and manage advertising campaigns that reach the right people with the right message at the right moment. We combine strategy, creatives, targeting and continuous optimization to turn the advertising budget into real results, a stronger presence and sustainable growth.",
+          "eyebrow": "THE RIGHT MESSAGE. THE RIGHT MOMENT",
+          "titleSegments": [{ "text": "Advertising campaigns", "accent": false }, { "text": "that perform", "accent": true }],
+          "body": "We create and manage advertising campaigns tailored to your business goals and audience behaviour. We combine compelling messaging, creative ad content and precise targeting. We analyse performance and continuously optimize campaigns to make better use of your advertising budget and attract more potential customers",
           "image": "advertising-campaigns",
           "imageAlt": "Advertising messages reaching different audiences and converging on a shared goal",
           "cta": false
         },
         {
-          "eyebrow": "Build connections, not just posts",
-          "titleSegments": [{ "text": "Social media", "accent": false }, { "text": "beyond the likes", "accent": true }],
-          "body": "We build a recognisable presence on social networks through creative content, consistent communication and engaging stories. We connect brands with their audience, encourage interaction and turn social channels into a space for trust, loyalty and long-term relationships.",
+          "eyebrow": "CONTENT THAT CONNECTS",
+          "titleSegments": [{ "text": "Social Media", "accent": false }, { "text": "beyond likes", "accent": true }],
+          "body": "We strengthen brands' social media presence through strategically planned content, creative ideas and consistent communication. We create posts and campaigns that capture attention, encourage engagement and build trust, turning social media into an effective channel for connecting with your audience",
           "image": "social-media",
           "imageAlt": "Smartphone with posts, social network icons and reactions connected in a shared network",
           "cta": false
@@ -111,32 +111,32 @@
     "branding": {
       "hero": {
         "title": "Branding",
-        "accent": "with identity",
-        "eyebrow": "Leave a mark.",
-        "description": "We build distinctive brands that do more than look good — they create a feeling, tell stories and stay in people’s minds. We combine strategy, creativity and design to turn ideas into a recognisable visual identity and a consistent brand presence across every digital channel.",
+        "accent": "with character",
+        "eyebrow": "LEAVE A MARK",
+        "description": "We create distinctive brands with a clear identity, unique personality and recognisable presence. We combine strategy, creativity and design to build a consistent brand image that reflects your business values, sets you apart from competitors and leaves a lasting impression on your audience",
         "imageAlt": "Brand identity with a logo, colour palette, printed materials and a mobile screen"
       },
       "sections": [
         {
-          "eyebrow": "A strong brand starts with an idea",
+          "eyebrow": "BEHIND EVERY STRONG BRAND IS AN IDEA",
           "titleSegments": [{ "text": "Strategy", "accent": false }, { "text": "with a clear direction", "accent": true }],
-          "body": "We build the strategic foundation of the brand by analysing the market, the audience and the competitive landscape. We define its positioning, values, personality and key messages to create a distinctive identity that builds trust, attracts the right people and stays recognisable over time.",
+          "body": "We build a strong strategic foundation through market, audience and competitor analysis. We define your brand's positioning, values, personality and key messages to establish a clear direction for growth, differentiate your brand from competitors and ensure consistent communication with your audience",
           "image": "brand-strategy",
           "imageAlt": "A compass at the centre, connected to icons for audience, goals, messaging and brand layers",
           "cta": false
         },
         {
-          "eyebrow": "Be recognisable",
-          "titleSegments": [{ "text": "Identity", "accent": false }, { "text": "with its own signature", "accent": true }],
-          "body": "We turn the brand’s character and values into a distinctive visual language. We create the logo, colour palette, typography and graphic elements that work in harmony and build a complete, recognisable identity. Every detail has a role, so the brand stays consistent, memorable and distinct from the competition.",
+          "eyebrow": "BE RECOGNISABLE",
+          "titleSegments": [{ "text": "Identity", "accent": false }, { "text": "with a signature style", "accent": true }],
+          "body": "We translate your brand's personality and values into a distinctive visual language. We design logos, colour palettes, typography and graphic elements that form a cohesive visual identity. Every detail is thoughtfully developed to create a recognisable brand image that stands out from competitors and leaves a lasting impression on your audience",
           "image": "visual-identity",
           "imageAlt": "A logo on a construction grid with a colour palette, typography and visual identity materials",
           "cta": false
         },
         {
-          "eyebrow": "Not just presence. Impact.",
-          "titleSegments": [{ "text": "Presence", "accent": false }, { "text": "without limits", "accent": true }],
-          "body": "We carry the brand’s identity into every digital channel, creating a consistent and recognisable visual presence. From the website and social networks to advertising visuals and digital materials, we build a complete brand experience that connects every touchpoint with the audience and leaves a lasting impression.",
+          "eyebrow": "ONE BRAND. MULTIPLE CHANNELS.",
+          "titleSegments": [{ "text": "Presence", "accent": false }, { "text": "in every detail", "accent": true }],
+          "body": "We bring your brand's visual identity to life across digital channels through consistent design and a recognisable style. From websites and social media to advertising creatives and digital assets, we create cohesive visual communication that preserves your brand's character and ensures consistency across audience touchpoints",
           "image": "brand-presence",
           "imageAlt": "A logo at the centre, connected to a website, a mobile screen, social posts and advertising visuals of one brand",
           "cta": false
@@ -147,31 +147,31 @@
       "hero": {
         "title": "Web solutions",
         "accent": "without compromise",
-        "eyebrow": "From the first line of code to the final detail",
-        "description": "We build modern websites and bring new life to existing ones. We find and fix issues, test functionality, improve performance and expand their capabilities. From initial development to long-term support, we make sure every web solution is reliable, easy to use and ready to grow with the business.",
+        "eyebrow": "FROM THE FIRST IDEA TO THE FINEST DETAIL",
+        "description": "We build modern websites and enhance existing ones through redesign, optimization and new functionality. We combine design, technology and precise development to deliver speed, reliability and a seamless user experience. From development to long-term maintenance, we create web solutions that meet your business needs and evolve alongside your business",
         "imageAlt": "Web screens and tools for building, testing and updating a website"
       },
       "sections": [
         {
-          "eyebrow": "From idea to working reality",
+          "eyebrow": "FROM CONCEPT TO LAUNCH",
           "titleSegments": [{ "text": "Development", "accent": false }, { "text": "with the future in mind", "accent": true }],
-          "body": "We create modern, fast and functional websites tailored to business goals and user needs. From design and architecture to development and integrations, we build reliable digital platforms with attention to every detail. We focus on quality code, strong performance and a flexible structure that supports future growth and upgrades.",
+          "body": "We develop modern websites tailored to business goals and user needs. We combine design, functionality and technology to create reliable, user-friendly digital solutions. From architecture and integrations to clean, maintainable code and performance, we build a solid foundation for future improvements and scalability",
           "image": "web-development",
           "imageAlt": "Workers and construction cranes assembling a website across a phone, a monitor and a tablet",
           "cta": false
         },
         {
-          "eyebrow": "We find the issues before they become yours",
-          "titleSegments": [{ "text": "QA testing", "accent": false }, { "text": "with an eye for detail", "accent": true }],
-          "body": "We check the functionality, user experience and reliability of websites and applications to find issues that go unnoticed during development. We perform functional, regression and cross-browser testing, check mobile compatibility and document the defects we find. We help resolve them and verify the fixes to ensure more stable and predictable performance.",
+          "eyebrow": "CATCH ISSUES EARLY",
+          "titleSegments": [{ "text": "QA Testing", "accent": false }, { "text": "with an eye for detail", "accent": true }],
+          "body": "We test websites and applications to identify defects, verify functionality and evaluate user experience. We perform functional, regression and cross-browser testing, check mobile compatibility and document identified issues. We track defect resolution and retest fixes to reduce the risk of errors and improve product reliability",
           "image": "qa-testing",
           "imageAlt": "A QA team checks a website across devices using a magnifying glass, checkmarks and a performance gauge",
           "cta": false
         },
         {
-          "eyebrow": "The next step",
-          "titleSegments": [{ "text": "Web maintenance", "accent": false }, { "text": "that moves you forward", "accent": true }],
-          "body": "We maintain, repair and enhance existing websites so they run reliably, look modern and meet business needs. We identify and fix technical issues, update features, improve performance and modernize outdated solutions. We provide ongoing technical care and room to grow, so your website stays current, stable and ready for what comes next.",
+          "eyebrow": "EVOLUTION NEVER STOPS",
+          "titleSegments": [{ "text": "Website Maintenance", "accent": false }, { "text": "beyond the basics", "accent": true }],
+          "body": "We provide ongoing website maintenance and improvements to keep your website reliable, up to date and efficient. We resolve technical issues, update systems and features, improve performance and modernize outdated solutions. We focus on keeping your website running smoothly while continuously enhancing its functionality to meet your evolving business needs",
           "image": "web-maintenance",
           "imageAlt": "Workers with a wrench, gears and tools repair and update a website on a laptop",
           "cta": false
