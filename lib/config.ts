@@ -31,6 +31,7 @@ export const appConfig = {
     about: "/about",
     blog: "/blog",
     faq: "/faq",
+    portfolio: "/portfolio",
     contacts: "/contacts",
     services: "/services",
     health: "/healthz",

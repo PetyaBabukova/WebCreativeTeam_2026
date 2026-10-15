@@ -28,6 +28,7 @@ import { messages, serviceDetail } from "@/lib/messages";
 import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
 import FooterLegalButton from "./FooterLegalButton";
 import FooterNewsletter from "./FooterNewsletter";
+import FaqPage from "./FaqPage";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
@@ -158,7 +159,7 @@ export default function SitePage({ locale, page }: { locale: Locale; page: Page 
   const copy = messages[locale];
   return <div className={`site-page site-page--${page}`}>
     <SiteHeader locale={locale} page={page} />
-    {page === "home" ? <HomePage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
+    {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
       {page === "contacts" && <a href={`mailto:${appConfig.contactEmail}`}>{appConfig.contactEmail}</a>}
@@ -204,7 +205,7 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
       <section className="service-detail__hero" aria-labelledby="service-detail-title">
         <div className="container service-detail__hero-inner">
           <div className="service-detail__hero-copy">
-            <div className="service-detail__eyebrow"><p>{detail.hero.eyebrow}</p></div>
+            <div className="service-detail__eyebrow section-eyebrow--rule"><p>{detail.hero.eyebrow}</p></div>
             <h1 id="service-detail-title" className="service-detail__title"><span>{detail.hero.title}</span>{" "}<ServiceTypewriter key={`${locale}-${detail.hero.accent}`} text={detail.hero.accent} locale={locale} className="service-detail__title-accent" startOnPaint /></h1>
           </div>
           <div className="service-detail__hero-art"><Image src={serviceDetailHeroImage(slug)} alt={detail.hero.imageAlt} fill sizes="(max-width: 47.5rem) 100vw, 55vw" priority decoding="sync" /></div>

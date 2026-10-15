@@ -19,7 +19,7 @@ import GlobalNotFound from "@/app/global-not-found";
 import NotFoundPage from "@/components/NotFoundPage";
 import SiteNavigation from "@/components/SiteNavigation";
 import { messages } from "@/lib/messages";
-import { isLocale, canonicalRedirects, localeSwitchUrl, pageUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
+import { isLocale, canonicalRedirects, localeSwitchUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
 
 vi.mock("next/server", () => ({ connection: vi.fn(async () => {}) }));
@@ -56,6 +56,31 @@ function navigationCopy() {
 }
 
 describe("public pages", () => {
+  it.each([[BgFaq, "bg"], [EnFaq, "en"]] as const)("shows 15 initially closed FAQ cards and localized related links %#", (Page, locale) => {
+    render(<Page />);
+    const main = screen.getByRole("main");
+    const cards = main.querySelectorAll<HTMLElement>("[data-faq-index]");
+    expect(cards).toHaveLength(15);
+    expect(main.querySelectorAll(".faq__card--open")).toHaveLength(0);
+    expect(main.querySelectorAll('[aria-expanded="true"]')).toHaveLength(0);
+    expect(main.querySelectorAll(".faq__row")).toHaveLength(3);
+    fireEvent.click(within(cards[2]).getByRole("button"));
+    expect(main.querySelectorAll(".faq__card--open")).toHaveLength(1);
+    expect(cards[2]).toHaveClass("faq__card--open");
+    expect(within(cards[2]).getByRole("button")).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(within(cards[2]).getByRole("button"));
+    expect(cards[2]).toHaveClass("faq__card--open");
+    fireEvent.click(within(cards[9]).getByRole("button"));
+    expect(cards[2]).not.toHaveClass("faq__card--open");
+    expect(cards[9]).toHaveClass("faq__card--open");
+    expect(main.querySelectorAll(".faq__card--open")).toHaveLength(1);
+    expect(cards[14].querySelector(".faq__question-button")).toHaveAttribute("aria-expanded", "false");
+    expect(main.querySelector(".faq__controls")).toBeNull();
+    const related = within(main).getByRole("navigation", { name: messages[locale].faq.relatedLabel });
+    expect(within(related).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      pageUrl("contacts", locale), sectionUrl("services", locale, "faq"), portfolioUrl(locale),
+    ]);
+  });
   it.each([
     [BgHome, "Пауза на въртенето"],
     [EnHome, "Pause logo rotation"],
@@ -114,7 +139,7 @@ describe("public pages", () => {
       title: "Digital Agency for Business Success | WebCreativeTeam",
       description: "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth.",
     };
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : messages[locale][page].title);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : page === "faq" ? messages[locale].faq.headline.join(" ") : messages[locale][page].title);
     const language = within(document.querySelector(".site-header") as HTMLElement).getByRole("navigation", { name: messages[locale].language, hidden: true });
     expect(within(language).getByRole("link", { name: locale.toUpperCase(), hidden: true })).toHaveAttribute("href", url);
     const alternate = locale === "bg" ? "en" : "bg";

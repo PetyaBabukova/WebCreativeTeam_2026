@@ -142,7 +142,7 @@
 .services__card[data-service-art="branding"]::before { background: linear-gradient(90deg, #00130ef5 0%, #00150fe6 28%, #00150f70 48%, transparent 66%); }
 .services__card-content { display: flex; flex-direction: column; align-items: flex-start; width: min(100%, 72rem); min-height: inherit; padding: clamp(clamp(1.6rem, 2.6vw, 2.8rem), min(5vw, calc(2.6vw + 18svh - 9.72rem)), 6rem); }
 .services__eyebrow { display: flex; align-items: center; gap: 1.2rem; margin: 0 0 clamp(1.75rem, 3vw, 3rem); font-size: clamp(.8rem, 1vw, 1rem); font-weight: 500; letter-spacing: .12em; text-transform: uppercase; }
-.services__eyebrow::before, .service-detail__hero-copy .service-detail__eyebrow::before { display: block; flex-shrink: 0; width: 1.89rem; height: 0.125rem; background: var(--color-primary); content: ""; }
+.services__eyebrow::before { display: block; flex-shrink: 0; width: 1.89rem; height: 0.125rem; background: var(--color-primary); content: ""; }
 .services__card-title { display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; margin: 0 0 clamp(1.5rem, 2.5vw, 2.5rem); font-size: clamp(clamp(2.6rem, 4vw, 3.4rem), min(7.1vw, calc(4vw + 18svh - 9.72rem)), 8rem); font-weight: 650; line-height: .88; letter-spacing: var(--heading-bold-letter-spacing); }
 .services__card-title-link { display: flex; flex-direction: column; align-items: flex-start; max-width: 100%; }
 .services__card[data-service-art="digital-marketing"] .services__card-title span:first-child { max-width: min(100%, 9em); }

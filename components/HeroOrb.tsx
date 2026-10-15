@@ -10,6 +10,14 @@ const rotationSpeed = 360 / 24000;
 
 const entranceEase = [.33, 1, .68, 1] as const;
 
+export function headlineReveal(index: number, delay: number) {
+  return {
+    initial: { opacity: 0, y: "105%" },
+    animate: { opacity: 1, y: "0%" },
+    transition: { delay: delay + index * .2, duration: .75, ease: entranceEase },
+  };
+}
+
 // The scroll arrow turns from pointing left to pointing down over the first 40% of a viewport height of scroll.
 const arrowTurnViewportShare = .4;
 
@@ -26,9 +34,7 @@ export default function HeroMotion({ lines, description, rotationPauseLabel }: H
         {lines.map((line, index) => <span className="hero__headline-mask" key={line}>
           <motion.span
             className={`hero__headline-line hero__headline-line--${index}`}
-            initial={{ opacity: 0, y: "105%" }}
-            animate={{ opacity: 1, y: "0%" }}
-            transition={{ delay: 1.15 + index * .2, duration: .75, ease: entranceEase }}
+            {...headlineReveal(index, 1.15)}
           >{line}{index < lines.length - 1 ? " " : null}</motion.span>
         </span>)}
       </p>
