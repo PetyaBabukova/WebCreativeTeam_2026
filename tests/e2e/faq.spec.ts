@@ -87,6 +87,57 @@ test("desktop hover opens a single FAQ card", async ({ page }) => {
   await expect(page.locator(".faq__card--open")).toHaveCount(1);
 });
 
+test("FAQ card surfaces settle correctly and print without the artwork", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/faq/bg", { waitUntil: "domcontentloaded" });
+  const cards = page.locator(".faq__card");
+  const firstSurface = cards.first().locator(".faq__card-surface");
+  const secondSurface = cards.nth(1).locator(".faq__card-surface");
+  await cards.first().scrollIntoViewIfNeeded();
+  await expect(firstSurface).toHaveCSS("opacity", "0");
+
+  await cards.first().getByRole("button").click();
+  await expect(firstSurface).toHaveCSS("opacity", "1");
+  await expect(cards.first().getByRole("button")).toHaveCSS("color", "rgb(13, 41, 48)");
+
+  await cards.nth(1).getByRole("button").click();
+  await expect(firstSurface).toHaveCSS("opacity", "0");
+  await expect(secondSurface).toHaveCSS("opacity", "1");
+  await expect(cards.first().getByRole("button")).toHaveCSS("color", "rgb(255, 255, 255)");
+
+  await page.emulateMedia({ media: "print" });
+  await expect(secondSurface).toBeHidden();
+  await expect(cards.nth(1)).toHaveCSS("color", "rgb(0, 0, 0)");
+
+  await page.emulateMedia({ media: "screen", forcedColors: "active" });
+  await expect(secondSurface).toBeHidden();
+  await expect(cards.nth(1)).toHaveCSS("color", "rgb(0, 0, 0)");
+});
+
+test("FAQ cards animate also when the OS asks for reduced motion (site-wide decision)", async ({ page }) => {
+  // The user's own Windows has "Animation effects" off; the cards must still open smoothly, not jump.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/faq/bg", { waitUntil: "domcontentloaded" });
+  const card = page.locator(".faq__card").first();
+  await card.scrollIntoViewIfNeeded();
+  const widths = await card.getByRole("button").evaluate((button) => new Promise<number[]>((resolve) => {
+    const article = button.closest<HTMLElement>(".faq__card")!;
+    const samples: number[] = [];
+    const start = performance.now();
+    (button as HTMLButtonElement).click();
+    const tick = () => {
+      samples.push(article.getBoundingClientRect().width);
+      if (performance.now() - start < 1200) requestAnimationFrame(tick); else resolve(samples);
+    };
+    requestAnimationFrame(tick);
+  }));
+  const first = widths[0], last = widths[widths.length - 1];
+  const intermediate = widths.filter((width) => width > first + 10 && width < last - 10);
+  expect(last).toBeGreaterThan(first + 100);
+  expect(intermediate.length).toBeGreaterThan(5);
+});
+
 test("mobile FAQ shows questions and keeps only the last tapped answer open", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/faq/bg", { waitUntil: "domcontentloaded" });
@@ -108,6 +159,8 @@ test("mobile FAQ shows questions and keeps only the last tapped answer open", as
   await expect(cards.nth(1)).not.toHaveClass(/faq__card--open/);
   await expect(cards.nth(4)).toHaveClass(/faq__card--open/);
   await expect(page.locator(".faq__card--open")).toHaveCount(1);
+  await expect(cards.nth(1).locator(".faq__card-surface")).toHaveCSS("opacity", "0");
+  await expect(cards.nth(1).getByRole("button")).toHaveCSS("color", "rgb(255, 255, 255)");
   const after = await cards.nth(4).getByRole("button").evaluate((button) => button.getBoundingClientRect().top);
   expect(Math.abs(after - before)).toBeLessThan(6);
   await cards.nth(4).getByRole("button").click();

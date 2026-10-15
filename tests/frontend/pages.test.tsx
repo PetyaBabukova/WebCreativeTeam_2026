@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import BgHome, { generateMetadata as bgHomeMetadata } from "@/app/(bg)/bg/page";
 import EnHome, { generateMetadata as enHomeMetadata } from "@/app/(en)/en/page";
@@ -80,6 +80,34 @@ describe("public pages", () => {
     expect(within(related).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
       pageUrl("contacts", locale), sectionUrl("services", locale, "faq"), portfolioUrl(locale),
     ]);
+    for (const [index, link] of within(related).getAllByRole("link").entries()) {
+      expect(link).toHaveClass("button", "button--outline", "faq__related-button");
+      expect(link).toHaveTextContent(messages[locale].faq.related[index].title);
+      expect(link).not.toHaveTextContent(messages[locale].faq.related[index].description);
+      expect(link.querySelectorAll("svg")).toHaveLength(2);
+    }
+  });
+  it("keeps a tapped FAQ question under the finger while the previous answer collapses, until the visitor scrolls", async () => {
+    // Single-column layout: (width > 68rem) does not match.
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }) });
+    const scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(() => undefined);
+    render(<BgFaq />);
+    const cards = screen.getByRole("main").querySelectorAll<HTMLElement>("[data-faq-index]");
+    fireEvent.click(within(cards[1]).getByRole("button"));
+    // The tapped card starts at 500 px; the collapsing answer above it pulls it up to 320 px.
+    let top = 500;
+    vi.spyOn(cards[4], "getBoundingClientRect").mockImplementation(() => ({ top, bottom: top + 60, left: 0, right: 0, width: 0, height: 60, x: 0, y: top, toJSON: () => ({}) }));
+    fireEvent.click(within(cards[4]).getByRole("button"));
+    expect(cards[4]).toHaveClass("faq__card--open");
+    top = 320;
+    await waitFor(() => expect(scrollBy).toHaveBeenCalledWith(0, -180));
+    // A wheel gesture hands control back to the visitor: no further corrections.
+    fireEvent.wheel(window);
+    scrollBy.mockClear();
+    top = 250;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(scrollBy).not.toHaveBeenCalled();
+    scrollBy.mockRestore();
   });
   it.each([
     [BgHome, "Пауза на въртенето"],

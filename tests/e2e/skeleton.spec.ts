@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { appConfig, testOrigin } from "../../lib/config";
+import bg from "../../messages/bg.json" with { type: "json" };
+import en from "../../messages/en.json" with { type: "json" };
+
+// Expected copy is read from the dictionaries, so tests follow copy edits instead of repeating the text.
+const messages = { bg, en };
 import { locales, pageUrl, serviceFeatureSectionId, serviceSlugs, serviceUrl } from "../../lib/routing";
 
 async function orbAngle(page: import("@playwright/test").Page) {
@@ -43,7 +48,8 @@ test("navigation links to all five service pages in both languages", async ({ pa
     }
     await links.nth(2).click();
     await expect(page).toHaveURL(new RegExp(serviceUrl("digital-marketing", locale) + "$"));
-    await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName(locale === "bg" ? "Дигитален маркетинг импулс" : "Digital marketing momentum");
+    const hero = messages[locale].serviceDetails["digital-marketing"].hero;
+    await expect(page.getByRole("heading", { level: 1 })).toHaveAccessibleName(`${hero.title} ${hero.accent}`);
   }
 });
 
@@ -223,7 +229,8 @@ test("AI service detail stays readable and loads its art across viewports", asyn
           ], section));
         return {
           overflow: document.documentElement.scrollWidth > innerWidth,
-          accentClipped: accent.scrollWidth > accent.clientWidth,
+          // 1 px tolerance: the typewriter cursor briefly sits on the last glyph's edge while the word is being written.
+          accentClipped: accent.scrollWidth > accent.clientWidth + 1,
           imagesLoaded: art.length === 4 && art.every((image) => image.complete && image.naturalWidth > 0),
           equalLinkWidths: widths.every((width) => Math.abs(width - widths[0]) < 1),
           linksDoNotFillContent: widths.every((width) => width < navContentWidth - 1),
@@ -295,7 +302,7 @@ test("FAQs follows Blog and keeps the locale", async ({ page }) => {
     await expect(links.nth(4)).toHaveAttribute("href", pageUrl("about", locale));
     await links.nth(3).click();
     await expect(page).toHaveURL(new RegExp(pageUrl("faq", locale) + "$"));
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(locale === "bg" ? "Въпроси" : "FAQs");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(messages[locale].faq.headline.join(" "));
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(pageUrl("faq", locale) + "$"));
     for (const language of locales) {
