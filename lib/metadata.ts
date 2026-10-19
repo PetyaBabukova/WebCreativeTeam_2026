@@ -23,10 +23,11 @@ export async function pageMetadata(page: Page, locale: Locale): Promise<Metadata
 export async function serviceMetadata(slug: ServiceSlug, locale: Locale): Promise<Metadata> {
   await connection();
   const detail = serviceDetail(locale, slug);
+  const meta = detail && "meta" in detail ? detail.meta as { title: string; description: string } : undefined;
   return {
     metadataBase: siteOrigin(),
-    title: `${messages[locale].serviceLinks[serviceSlugs.indexOf(slug)]} | WebCreativeTeam`,
-    description: detail?.hero.description,
+    title: `${meta?.title ?? messages[locale].serviceLinks[serviceSlugs.indexOf(slug)]} | WebCreativeTeam`,
+    description: meta?.description ?? detail?.hero.description,
     robots: { index: false, follow: false },
     alternates: {
       canonical: serviceUrl(slug, locale),

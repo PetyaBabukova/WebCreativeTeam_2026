@@ -302,7 +302,8 @@ test("FAQs follows Blog and keeps the locale", async ({ page }) => {
     await expect(links.nth(4)).toHaveAttribute("href", pageUrl("about", locale));
     await links.nth(3).click();
     await expect(page).toHaveURL(new RegExp(pageUrl("faq", locale) + "$"));
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(messages[locale].faq.headline.join(" "));
+    // The FAQ eyebrow is the page's h1; the large two-line headline is an h2.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(messages[locale].faq.eyebrow);
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", new RegExp(pageUrl("faq", locale) + "$"));
     for (const language of locales) {
@@ -1001,23 +1002,26 @@ test("the full header stays visible with equal top and bottom padding", async ({
   }
 });
 
-test("header compacts above scrolled content and leaves anchored services visible", async ({ page }) => {
+test("header keeps one compact height while scrolling and leaves anchored services visible", async ({ page }) => {
+  // User decision, 19 October 2026: no tall header at the top of the page; it never grows or shrinks.
   for (const width of [390, 1366]) {
     await page.setViewportSize({ width, height: 800 });
     await page.goto(pageUrl("home", "bg"));
     const header = page.locator(".site-header");
     await expect(header).toHaveAttribute("data-header-ready", "");
-    const expandedHeight = (await header.boundingBox())!.height;
+    const headerHeight = (await header.boundingBox())!.height;
+    expect(headerHeight).toBeLessThan(6 * 16);
     const expandedScrollPadding = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop));
 
     await page.evaluate(() => window.scrollTo(0, innerHeight));
+    // data-compact now only adds the scrolled shadow; the size stays the same.
     await expect(header).toHaveAttribute("data-compact", "");
-    await expect.poll(async () => (await header.boundingBox())!.height).toBeLessThan(expandedHeight * .7);
+    expect(Math.abs((await header.boundingBox())!.height - headerHeight)).toBeLessThan(1);
 
     await page.goto("about:blank");
     await page.goto(`${pageUrl("home", "bg")}#services`);
     await expect(header).toHaveAttribute("data-compact", "");
-    await expect.poll(async () => (await header.boundingBox())!.height).toBeLessThan(expandedHeight * .7);
+    expect(Math.abs((await header.boundingBox())!.height - headerHeight)).toBeLessThan(1);
     const anchorPosition = await page.evaluate(() => ({
       sectionTop: document.querySelector("#services")!.getBoundingClientRect().top,
       headingTop: document.querySelector(".services__heading-stage")!.getBoundingClientRect().top,
@@ -1031,7 +1035,7 @@ test("header compacts above scrolled content and leaves anchored services visibl
 
     await page.evaluate(() => window.scrollTo(0, 0));
     await expect(header).not.toHaveAttribute("data-compact", "");
-    await expect.poll(async () => Math.abs((await header.boundingBox())!.height - expandedHeight)).toBeLessThan(1);
+    expect(Math.abs((await header.boundingBox())!.height - headerHeight)).toBeLessThan(1);
   }
 
   await page.setViewportSize({ width: 844, height: 390 });

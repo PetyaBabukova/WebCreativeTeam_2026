@@ -18,11 +18,10 @@
   --container: 108rem;
   --gutter: clamp(1rem, 3vw, 3rem);
   --ease-out: cubic-bezier(.16, 1, .3, 1);
-  --site-header-base-height: 8rem;
-  --site-header-block-pad: clamp(2rem, 4.5vh, 4rem);
-  --site-header-clearance: calc(var(--site-header-base-height) + var(--site-header-block-pad) + 1rem);
-  --site-header-content-start: calc(var(--site-header-clearance) + clamp(1rem, 2.5vh, 1.5rem));
+  /* User decision, 19 October 2026: the header always has its compact height; there is no tall state to shrink from. */
   --site-header-compact-height: 5.5rem;
+  --site-header-clearance: calc(var(--site-header-compact-height) + 1rem);
+  --site-header-content-start: calc(var(--site-header-clearance) + clamp(1rem, 2.5vh, 1.5rem));
   --site-sticky-top: var(--site-header-clearance);
   --section-gap: clamp(2.75rem, 5vh, 4rem);
   --section-pad-start: clamp(5rem, 9vh, 7rem);
@@ -35,13 +34,11 @@
 }
 
 @media (width <= 47.5rem) {
-  :root { --site-header-base-height: 7rem; --site-header-block-pad: 1.5rem; --site-header-compact-height: 4.5rem; }
+  :root { --site-header-compact-height: 4.5rem; }
 }
 
 * { box-sizing: border-box; }
 html { scroll-behavior: auto; scroll-padding-top: var(--site-header-clearance); }
-html:has(.site-header[data-header-ready]) { --site-sticky-top: calc(var(--site-header-compact-height) + 1rem); }
-html:has(.site-header[data-header-ready][data-compact]) { scroll-padding-top: var(--site-sticky-top); }
 body { margin: 0; background: var(--color-background); color: var(--color-ink); font-family: var(--font-sofia-sans), Arial, Helvetica, sans-serif; line-height: 1.45; }
 img { max-width: 100%; }
 a { color: inherit; text-decoration: none; }
@@ -51,7 +48,7 @@ button, input { font: inherit; }
 .sr-only { position: absolute; width: .0625rem; height: .0625rem; padding: 0; margin: -.0625rem; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .section-eyebrow--rule { display: flex; align-items: center; gap: clamp(.8rem, 1.6vw, 1.5rem); }
 .section-eyebrow--rule::before { display: block; flex: none; width: 1.89rem; height: .125rem; background: var(--color-primary); content: ""; }
-.section-eyebrow--rule p { margin: 0; font-size: clamp(.8rem, 1vw, .95rem); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.section-eyebrow--rule :is(p, h1) { margin: 0; font-size: clamp(.8rem, 1vw, .95rem); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 /* The unscaled service card defines the maximum *inner* width of every content band. */
 .container { width: 100%; max-width: calc(var(--container) + 2 * var(--gutter)); padding-inline: var(--gutter); margin-inline: auto; }
 .button { display: inline-flex; align-items: center; justify-content: center; gap: 1.15rem; min-height: 2.75rem; padding: .7rem 1.45rem; border: .0625rem solid transparent; border-radius: 999em; font-size: .9rem; font-weight: 700; white-space: nowrap; }

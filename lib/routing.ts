@@ -19,6 +19,10 @@ export function portfolioUrl(locale: Locale): string {
   return localizedPath(appConfig.paths.portfolio, locale);
 }
 
+export function offersUrl(): string {
+  return appConfig.paths.offers;
+}
+
 const serviceFeatureSectionIds: Partial<Record<ServiceSlug, readonly string[]>> = {
   "ai-automation": ["business-processes", "ai-assistants", "ai-integrations"],
   "seo-geo": ["seo-optimization", "technical-seo", "ai-search-geo"],

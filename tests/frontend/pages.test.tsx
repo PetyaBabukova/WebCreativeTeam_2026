@@ -19,7 +19,7 @@ import GlobalNotFound from "@/app/global-not-found";
 import NotFoundPage from "@/components/NotFoundPage";
 import SiteNavigation from "@/components/SiteNavigation";
 import { messages } from "@/lib/messages";
-import { isLocale, canonicalRedirects, localeSwitchUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
+import { isLocale, canonicalRedirects, localeSwitchUrl, offersUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
 
 vi.mock("next/server", () => ({ connection: vi.fn(async () => {}) }));
@@ -56,11 +56,16 @@ function navigationCopy() {
 }
 
 describe("public pages", () => {
-  it.each([[BgFaq, "bg"], [EnFaq, "en"]] as const)("shows 15 initially closed FAQ cards and localized related links %#", (Page, locale) => {
+  it.each([[BgFaq, "bg"], [EnFaq, "en"]] as const)("shows 13 initially closed FAQ cards and localized related links %#", (Page, locale) => {
     render(<Page />);
     const main = screen.getByRole("main");
+    expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(within(main).getByRole("heading", { level: 1 })).toHaveTextContent(messages[locale].faq.eyebrow);
+    expect(within(main).getByRole("heading", { level: 2, name: messages[locale].faq.headline.join(" ") })).toBeInTheDocument();
     const cards = main.querySelectorAll<HTMLElement>("[data-faq-index]");
-    expect(cards).toHaveLength(15);
+    expect(cards).toHaveLength(13);
+    expect(Array.from(cards, (card) => card.querySelector(".faq__question-button")?.textContent?.replace(/\u00ad/g, ""))).not.toContain(locale === "bg" ? "Колко време отнема един проект?" : "How long does a project take?");
+    expect(Array.from(cards, (card) => card.querySelector(".faq__question-button")?.textContent)).not.toContain(locale === "bg" ? "С какви бизнеси работите?" : "What types of businesses do you work with?");
     expect(main.querySelectorAll(".faq__card--open")).toHaveLength(0);
     expect(main.querySelectorAll('[aria-expanded="true"]')).toHaveLength(0);
     expect(main.querySelectorAll(".faq__row")).toHaveLength(3);
@@ -74,7 +79,14 @@ describe("public pages", () => {
     expect(cards[2]).not.toHaveClass("faq__card--open");
     expect(cards[9]).toHaveClass("faq__card--open");
     expect(main.querySelectorAll(".faq__card--open")).toHaveLength(1);
-    expect(cards[14].querySelector(".faq__question-button")).toHaveAttribute("aria-expanded", "false");
+    expect(cards[12].querySelector(".faq__question-button")).toHaveAttribute("aria-expanded", "false");
+    expect(cards[12].querySelectorAll(".faq__answer")).toHaveLength(3);
+    expect(cards[6].querySelector(".faq__question-button")?.textContent?.replace(/\u00ad/g, "")).toBe(locale === "bg" ? "Как AI автоматизацията за бизнеса ще ми помогне?" : "How will AI automation for business help me?");
+    expect(cards[8].querySelector(".faq__question-button")?.textContent?.replace(/\u00ad/g, "")).toBe(locale === "bg" ? "Как си измерват маркетинговите резултати?" : "How are marketing results measured?");
+    const offersLink = cards[4].querySelector(".faq__answer-link");
+    expect(offersUrl()).toBe("/servicess/offers");
+    expect(offersLink).toHaveAttribute("href", offersUrl());
+    expect(offersLink).toHaveTextContent(locale === "bg" ? "комбинирани решения" : "combined solutions");
     expect(main.querySelector(".faq__controls")).toBeNull();
     const related = within(main).getByRole("navigation", { name: messages[locale].faq.relatedLabel });
     expect(within(related).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
@@ -167,7 +179,7 @@ describe("public pages", () => {
       title: "Digital Agency for Business Success | WebCreativeTeam",
       description: "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth.",
     };
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : page === "faq" ? messages[locale].faq.headline.join(" ") : messages[locale][page].title);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : page === "faq" ? messages[locale].faq.eyebrow : messages[locale][page].title);
     const language = within(document.querySelector(".site-header") as HTMLElement).getByRole("navigation", { name: messages[locale].language, hidden: true });
     expect(within(language).getByRole("link", { name: locale.toUpperCase(), hidden: true })).toHaveAttribute("href", url);
     const alternate = locale === "bg" ? "en" : "bg";
@@ -228,6 +240,9 @@ describe("public pages", () => {
     const main = screen.getByRole("main");
     expect(within(main).getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName(`${copy.serviceDetails["ai-automation"].hero.title} ${copy.serviceDetails["ai-automation"].hero.accent}`);
+    if (locale === "bg") {
+      expect(within(main).getByRole("heading", { level: 1 })).toHaveAccessibleName("AI Автоматизация");
+    }
     const sections = copy.serviceDetails["ai-automation"].sections;
     const headings = within(main).getAllByRole("heading", { level: 2 });
     expect(headings).toHaveLength(sections.length);
@@ -242,7 +257,13 @@ describe("public pages", () => {
     expect(links[0]).toHaveAttribute("aria-current", "page");
     expect(within(main).queryByRole("link", { name: copy.landing.hero.contact })).not.toBeInTheDocument();
     const seo = await metadata(params);
-    expect(seo.description).toBe(copy.serviceDetails["ai-automation"].hero.description);
+    if (locale === "bg") {
+      expect(seo.title).toBe("AI автоматизация на бизнес процеси | WebCreativeTeam");
+      expect(seo.description).toBe("Автоматизираме бизнес процеси и повтарящи се задачи с AI агенти и интелигентни решения, съобразени с нуждите на вашия бизнес.");
+    } else {
+      expect(seo.title).toBe(`${copy.serviceLinks[0]} | WebCreativeTeam`);
+      expect(seo.description).toBe(copy.serviceDetails["ai-automation"].hero.description);
+    }
     expect(seo.robots).toEqual({ index: false, follow: false });
   });
   it.each([

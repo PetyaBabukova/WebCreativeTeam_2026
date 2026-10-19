@@ -7,7 +7,7 @@ import faqBackgroundDesktop from "@/assets/faq/background-desktop.webp";
 import faqBackgroundMobile from "@/assets/faq/background-mobile.webp";
 import faqCardBackground from "@/assets/faq/card-background.webp";
 import { messages } from "@/lib/messages";
-import { pageUrl, portfolioUrl, sectionUrl, type Locale } from "@/lib/routing";
+import { offersUrl, pageUrl, portfolioUrl, sectionUrl, type Locale } from "@/lib/routing";
 import { headlineReveal } from "./HeroOrb";
 import ServiceTypewriter from "./ServiceTypewriter";
 import "./FaqPage.css";
@@ -57,6 +57,13 @@ function QuestionText({ question }: { question: string }): ReactNode {
   return <>{question.slice(0, at)}<span>Web<wbr />Creative<wbr />Team</span>{question.slice(at + brand.length)}</>;
 }
 
+function AnswerText({ text, linkText }: { text: string; linkText?: string }): ReactNode {
+  if (!linkText) return text;
+  const at = text.indexOf(linkText);
+  if (at < 0) throw new Error(`FAQ answer is missing its link text: ${linkText}`);
+  return <>{text.slice(0, at)}<Link className="faq__answer-link" href={offersUrl()} prefetch={false}>{linkText}</Link>{text.slice(at + linkText.length)}</>;
+}
+
 function FaqCard({
   item, index, locale, active, wide, hydrated, reducedMotion, onSelect, register,
 }: {
@@ -77,6 +84,7 @@ function FaqCard({
   const instant = forcedVisible || reducedMotion;
   const answerId = `faq-answer-${locale}-${index}`;
   const instantCard = reducedMotion ? 0 : undefined;
+  const paragraphs = item.answer.split(/\n\s*\n/).map((paragraph) => paragraph.trim()).filter(Boolean);
 
   return <motion.article
     ref={(element) => { ref.current = element; register(index, element); }}
@@ -127,7 +135,7 @@ function FaqCard({
           : { duration: instantCard ?? answerFadeOut, ease: cardEase },
       }}
     >
-      <p className="faq__answer">{item.answer}</p>
+      {paragraphs.map((paragraph, paragraphIndex) => <p className="faq__answer" key={paragraphIndex}><AnswerText text={paragraph} linkText={paragraphIndex === 0 ? item.linkText : undefined} /></p>)}
     </motion.div>
   </motion.article>;
 }
@@ -209,6 +217,8 @@ export default function FaqPage({ locale, copy }: { locale: Locale; copy: FaqCop
     const moved = Math.hypot(x - lastPointer.current.x, y - lastPointer.current.y);
     lastPointer.current = { x, y };
     if (moved < 3 || Date.now() - lastScrollAt.current < 180 || Date.now() < lockUntil.current) return;
+    const focused = document.activeElement;
+    if (focused instanceof Element && focused.matches(".faq__answer-link") && cardRefs.current[activeIndex ?? -1]?.contains(focused)) return;
     const target = event.target;
     const card = target instanceof Element ? target.closest<HTMLElement>("[data-faq-index]") : null;
     if (!card || !event.currentTarget.contains(card)) return;
@@ -217,6 +227,8 @@ export default function FaqPage({ locale, copy }: { locale: Locale; copy: FaqCop
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     hoverTimer.current = setTimeout(() => {
       if (Date.now() - lastScrollAt.current < 180 || Date.now() < lockUntil.current) return;
+      const stillFocused = document.activeElement;
+      if (stillFocused instanceof Element && stillFocused.matches(".faq__answer-link") && cardRefs.current[activeIndex ?? -1]?.contains(stillFocused)) return;
       const underPointer = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-faq-index]");
       if (underPointer === card) selectCard(index);
     }, 95);
@@ -238,8 +250,8 @@ export default function FaqPage({ locale, copy }: { locale: Locale; copy: FaqCop
         <MotionConfig reducedMotion="never">
           <section className="faq__hero" aria-labelledby="faq-title">
             <div className="faq__hero-copy">
-              <div className="section-eyebrow--rule"><p>{copy.eyebrow}</p></div>
-              <h1 id="faq-title" className="faq__title">{copy.headline.map((line, index) => <span className="faq__title-mask" key={line}><motion.span className={`faq__title-line faq__title-line--${index}`} {...headlineReveal(index, 1.15)} onAnimationComplete={index === copy.headline.length - 1 ? () => setLeadReady(true) : undefined}>{line}</motion.span>{index < copy.headline.length - 1 ? " " : null}</span>)}</h1>
+              <div className="section-eyebrow--rule"><h1>{copy.eyebrow}</h1></div>
+              <h2 id="faq-title" className="faq__title" aria-label={copy.headline.join(" ")}>{copy.headline.map((line, index) => <span className="faq__title-mask" key={line}><motion.span className={`faq__title-line faq__title-line--${index}`} {...headlineReveal(index, 1.15)} onAnimationComplete={index === copy.headline.length - 1 ? () => setLeadReady(true) : undefined}>{line}</motion.span>{index < copy.headline.length - 1 ? " " : null}</span>)}</h2>
               <p className="faq__lead"><ServiceTypewriter text={copy.lead} locale={locale} className="faq__lead-text" mode="motion" play={leadReady} totalDuration={3.75} /></p>
             </div>
           </section>

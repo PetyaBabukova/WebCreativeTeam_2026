@@ -4,7 +4,8 @@
 .faq__stage picture, .faq__stage img { display: block; width: 100%; height: 100%; }
 .faq__stage img { object-fit: cover; object-position: center; }
 .faq__shade { position: absolute; inset: 0; background: linear-gradient(90deg, #0018101a, #00181065 47%, #00181021), linear-gradient(0deg, #00181068, transparent 38%); }
-.faq__content { --gutter: clamp(1.25rem, 3.5vw, 3rem); position: relative; z-index: 1; }
+/* The content uses the site-wide band from .container (styles/globals.css) like every other page; no local gutter or width. */
+.faq__content { position: relative; z-index: 1; }
 .faq__hero { display: flex; min-height: min(66svh, 40rem); padding-top: var(--site-header-content-start); padding-bottom: 2rem; }
 .faq__hero-copy { width: 100%; container-type: inline-size; }
 .faq__hero .section-eyebrow--rule { margin-bottom: clamp(1.5rem, 3vw, 3rem); }
@@ -27,7 +28,12 @@
 .faq__number { display: block; width: max-content; color: var(--color-primary); font-size: 1.15rem; line-height: 1; }
 .faq__question-heading { margin: 1.35rem 0 0; }
 .faq__question-button { display: block; width: 100%; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; text-align: left; }
-.faq__question-text { display: block; width: var(--faq-content-unit); max-width: 100%; font-size: clamp(1.9rem, 2.2vw, 2.3rem); font-weight: 600; line-height: 1.17; overflow-wrap: break-word; }
+/*
+  Desktop: the site-wide content band makes the five cards narrower, so the question size follows the card width.
+  --faq-question-word-budget is the widest whole word of the questions in em (BG "Гарантирано" ≈ 6.0, EN "maintenance?" ≈ 6.2)
+  plus a small margin; the two longer BG words carry soft hyphens (­) in messages/bg.json. Re-measure if the questions change.
+*/
+.faq__question-text { --faq-question-word-budget: 6.3; display: block; width: var(--faq-content-unit); max-width: 100%; font-size: clamp(1rem, calc(var(--faq-content-unit) / var(--faq-question-word-budget)), 2.3rem); font-weight: 600; line-height: 1.17; overflow-wrap: break-word; }
 /*
   The gap above the answer is padding inside the animated shell (not an outer margin toggled by a class),
   so it opens and closes together with the Motion height animation instead of jumping.
@@ -36,6 +42,9 @@
 .faq__answer-shell:not(.faq__answer-shell--open) { height: 0; opacity: 0; }
 .faq__answer-shell--open { visibility: visible; }
 .faq__answer { margin: 0; padding-top: var(--faq-answer-gap); color: #526771; font-size: clamp(1.05rem, 1.4vw, 1.35rem); line-height: 1.5; }
+.faq__answer + .faq__answer { padding-top: .7rem; }
+.faq__answer-link { color: #9d3a00; text-decoration: underline; text-underline-offset: .15em; }
+.faq__answer-link:focus-visible { outline-color: #9d3a00; }
 .faq__question-button:focus-visible { outline-offset: .28rem; }
 .faq__related { display: flex; flex-wrap: wrap; justify-content: center; gap: clamp(.75rem, 2vw, 1.5rem); margin: clamp(2.5rem, 5vw, 4rem) auto 0; }
 .faq__related .faq__related-button { max-width: 100%; gap: .5em; }
@@ -48,9 +57,17 @@
 }
 
 @media (width > 68rem) {
-  .faq__content { --gutter: clamp(1rem, 1.5vw, 2rem); max-width: none; }
   .faq__questions { margin-block: clamp(8rem, 11.75vw, 9.5rem); }
   .faq__related { margin-top: 0; }
+}
+
+@media screen and (width > 68rem) {
+  .faq__row:has(> .faq__card:nth-child(3):last-child)::after {
+    content: "";
+    display: block;
+    flex: 2 1 calc(var(--faq-gap) + var(--faq-card-inset) + var(--faq-card-inset));
+    pointer-events: none;
+  }
 }
 
 @media (width <= 68rem) {
@@ -67,7 +84,6 @@
 @media (width <= 47.5rem) {
   .faq { padding-bottom: 5rem; }
   .faq__shade { background: linear-gradient(0deg, #00181070, transparent 45%), linear-gradient(180deg, #00181026, #00181040 50%, #00181026); }
-  .faq__content { --gutter: clamp(1rem, 4vw, 1.5rem); }
   .faq__hero-copy { text-align: center; }
   .faq__hero .section-eyebrow--rule { justify-content: center; }
   .faq__title-line { margin-inline: auto; }
@@ -87,6 +103,7 @@
   .faq__card { border-color: CanvasText !important; background: Canvas; color: CanvasText !important; }
   .faq__card-surface { display: none !important; }
   .faq__answer { color: CanvasText; }
+  .faq__answer-link { color: LinkText; }
 }
 
 @media print {

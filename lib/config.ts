@@ -34,6 +34,7 @@ export const appConfig = {
     portfolio: "/portfolio",
     contacts: "/contacts",
     services: "/services",
+    offers: "/servicess/offers",
     health: "/healthz",
     api: "/api",
   },
