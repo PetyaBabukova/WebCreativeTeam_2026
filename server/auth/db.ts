@@ -32,6 +32,8 @@ export type AuthSession = {
   absoluteExpiresAt: Date;
   deviceLabel: string;
   csrfSecret: string;
+  reauthUntil?: Date;
+  sensitiveSerial?: number;
 };
 
 export type AuthToken = {
@@ -43,6 +45,8 @@ export type AuthToken = {
   expiresAt: Date;
   consumedAt?: Date;
   createdBy?: ObjectId;
+  mailState?: "queued" | "accepted" | "failed";
+  mailStateAt?: Date;
 };
 
 export type AdminControl = {
@@ -175,6 +179,7 @@ export async function transitionAdminStatus(
   to: AdminStatus,
   actor?: AdminUser,
   onTransition?: (session: ClientSession) => Promise<void>,
+  assertActorSession?: (session: ClientSession) => Promise<void>,
 ): Promise<void> {
   const { client, db } = connection;
   if (from === to) throw new AdminTransitionError("Status must change");
@@ -187,6 +192,7 @@ export async function transitionAdminStatus(
         const actual = await users.countDocuments({ status: "active" }, { session });
         if (!snapshot || snapshot.schemaId !== "wct-auth-v1" || snapshot.activeCount !== actual) throw new AdminTransitionError("Administrator count mismatch");
         if (actor) {
+          if (assertActorSession) await assertActorSession(session);
           const checked = await users.updateOne({ _id: actor._id, status: "active", authGeneration: actor.authGeneration }, { $inc: { authorizationSerial: 1 } }, { session });
           if (checked.modifiedCount !== 1) throw new AdminTransitionError("Acting administrator unavailable");
         }

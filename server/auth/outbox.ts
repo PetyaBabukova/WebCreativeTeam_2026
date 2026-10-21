@@ -8,6 +8,10 @@ import { normalizeEmail, tokenHash } from "./security.ts";
 
 type MailPayload = { to: string; subject: string; text: string };
 const testMailbox: MailPayload[] = [];
+function recipientMatches(value: string | { address?: string }, expected: string): boolean {
+  const address = typeof value === "string" ? value : value.address ?? "";
+  return address.trim().toLowerCase() === expected.trim().toLowerCase();
+}
 
 function decodeKey(value: string | undefined): Buffer {
   const decoded = value ? Buffer.from(value, "base64") : Buffer.alloc(0);
@@ -78,10 +82,33 @@ function transportConfig() {
   return { host, port, secure: port === 465, auth: { user, pass }, from, connectionTimeout: 20_000, greetingTimeout: 20_000, socketTimeout: 30_000 };
 }
 
+async function finishOutboxEntry(entry: AuthOutbox, state?: "accepted" | "failed", sent = false) {
+  const { client, db } = await authConnection();
+  const { outbox, tokens } = authCollections(db);
+  const transaction = client.startSession();
+  try {
+    await transaction.withTransaction(async () => {
+      const token = entry.tokenId ? await tokens.findOne({ _id: entry.tokenId }, { session: transaction }) : null;
+      const invitation = token?.kind === "invitation";
+      const filter = sent ? { _id: entry._id, status: "sent" as const } : { _id: entry._id, status: "leased" as const, leaseId: entry.leaseId };
+      const changed = state === "failed" && !invitation && (!entry.tokenId || token)
+        ? await outbox.updateOne(filter, { $set: { status: "failed" }, $unset: { leaseUntil: "", leaseId: "" } }, { session: transaction })
+        : await outbox.deleteOne(filter, { session: transaction });
+      if ("modifiedCount" in changed ? changed.modifiedCount !== 1 : changed.deletedCount !== 1) return;
+      if (invitation && token && !token.consumedAt && token.expiresAt > new Date() && token.mailState === "queued" && state) {
+        const marked = await tokens.updateOne({ _id: token._id, mailState: "queued", consumedAt: { $exists: false }, expiresAt: { $gt: new Date() } }, { $set: { mailState: state, mailStateAt: new Date() } }, { session: transaction });
+        if (marked.modifiedCount !== 1) throw new Error("Invitation state changed");
+      }
+    }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 10_000 });
+  } finally { await transaction.endSession(); }
+}
+
 export async function runOutboxOnce(): Promise<boolean> {
   const config = transportConfig();
   const { db } = await authConnection();
   const { outbox, tokens } = authCollections(db);
+  const sent = await outbox.findOne({ status: "sent" });
+  if (sent) { await finishOutboxEntry(sent, "accepted", true); return true; }
   const now = new Date();
   const leaseId = randomBytes(16).toString("hex");
   const entry = await outbox.findOneAndUpdate(
@@ -94,28 +121,52 @@ export async function runOutboxOnce(): Promise<boolean> {
   try {
     if (entry.tokenId) {
       const token = await tokens.findOne({ _id: entry.tokenId, consumedAt: { $exists: false }, expiresAt: { $gt: new Date() } });
-      if (!token) { await outbox.deleteOne({ _id: entry._id, leaseId }); return true; }
+      if (!token) { await finishOutboxEntry(entry); return true; }
     }
     const payload = decrypt(entry.encryptedPayload, `${entry._id.toHexString()}:${entry.tokenId ?? ""}`, entry.keyId);
     if (config) {
       const transport = nodemailer.createTransport(config);
-      try { await transport.sendMail({ from: config.from, to: { address: payload.to }, subject: payload.subject, text: payload.text }); }
-      finally { transport.close(); }
+      let renewal: Promise<void> | undefined;
+      let leaseLost = false;
+      const timer = setInterval(() => {
+        if (renewal || leaseLost) return;
+        renewal = outbox.updateOne({ _id: entry._id, status: "leased", leaseId }, { $set: { leaseUntil: new Date(Date.now() + appConfig.auth.outboxLeaseSeconds * 1000) } })
+          .then((result) => { if (result.modifiedCount !== 1) { leaseLost = true; transport.close(); } })
+          .catch(() => { leaseLost = true; transport.close(); })
+          .finally(() => { renewal = undefined; });
+      }, Math.min(60, appConfig.auth.outboxLeaseSeconds / 3) * 1000);
+      timer.unref();
+      try {
+        const result = await transport.sendMail({ from: config.from, to: { address: payload.to }, subject: payload.subject, text: payload.text });
+        if (renewal) await renewal;
+        if (!result.accepted?.some((address) => recipientMatches(address, payload.to)) || result.rejected?.some((address) => recipientMatches(address, payload.to))) {
+          throw Object.assign(new Error("Recipient rejected"), { recipientRejected: true, responseCode: 550 });
+        }
+      }
+      finally { clearInterval(timer); if (renewal) await renewal; transport.close(); }
     } else {
       testMailbox.push(payload);
     }
     delivered = true;
-    await outbox.updateOne({ _id: entry._id, leaseId, status: "leased" }, { $set: { status: "sent" }, $unset: { leaseUntil: "", leaseId: "" } });
-    await outbox.deleteOne({ _id: entry._id, status: "sent" });
-  } catch {
+    const marked = await outbox.updateOne({ _id: entry._id, leaseId, status: "leased" }, { $set: { status: "sent" }, $unset: { leaseUntil: "", leaseId: "" } });
+    if (marked.modifiedCount !== 1) throw new Error("Outbox lease changed after SMTP acceptance");
+    await finishOutboxEntry(entry, "accepted", true);
+  } catch (error) {
     if (delivered) {
       console.error("Authentication mail sent but outbox finalization failed");
       return true;
     }
     const attempts = entry.attempts;
-    const failed = attempts >= 5;
-    await outbox.updateOne({ _id: entry._id, status: "leased", leaseId }, {
-      $set: { status: failed ? "failed" : "pending", availableAt: new Date(Date.now() + Math.min(60_000 * 2 ** attempts, 3_600_000)) },
+    const responseCode = error && typeof error === "object" && "responseCode" in error ? Number(error.responseCode) : 0;
+    const command = error && typeof error === "object" && "command" in error ? String(error.command) : "";
+    const rejected = error && typeof error === "object" && "recipientRejected" in error && error.recipientRejected === true;
+    const failed = attempts >= 5 || rejected || [550, 551, 553].includes(responseCode) && command.startsWith("RCPT");
+    if (failed) {
+      console.error("Authentication mail permanently failed", { id: entry._id.toHexString(), attempts, responseCode });
+      await finishOutboxEntry(entry, "failed");
+    }
+    else await outbox.updateOne({ _id: entry._id, status: "leased", leaseId }, {
+      $set: { status: "pending", availableAt: new Date(Date.now() + Math.min(60_000 * 2 ** attempts, 3_600_000)) },
       $unset: { leaseUntil: "", leaseId: "" },
     });
   }

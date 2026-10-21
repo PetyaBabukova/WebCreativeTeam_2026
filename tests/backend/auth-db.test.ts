@@ -2,12 +2,13 @@ import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { MongoClient, ObjectId, type Db } from "mongodb";
+import { appConfig } from "../../lib/config.js";
 import {
   assertAdminCount, authCollections, createAuthIndexes, ensureAdminControl, transitionAdminStatus,
-  type AdminUser,
+  type AdminUser, type AuthSession,
 } from "../../server/auth/db.js";
 import { authCookieConfig, authDatabaseConfig, authPublicOrigin, authTrustedProxies } from "../../server/auth/config.js";
-import { clientIpBucket } from "../../server/auth/security.js";
+import { clientIpBucket, hasRecentReauth, isSessionCurrent } from "../../server/auth/security.js";
 
 describe("authentication configuration", () => {
   it("buckets IP addresses in the actual Node ESM runtime", () => {
@@ -19,7 +20,12 @@ describe("authentication configuration", () => {
       if (clientIpBucket("2001:db8:abcd:1234::1") !== clientIpBucket("2001:db8:abcd:1234::ffff")) throw new Error("IPv6 /64 bucket failed");
       if (clientIpBucket("not-an-ip") !== "unknown" || clientIpBucket(undefined) !== "unknown") throw new Error("Unknown bucket failed");
     `;
-    expect(() => execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { timeout: 10_000 })).not.toThrow();
+    try {
+      execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { timeout: 10_000 });
+    } catch (error) {
+      const childError = error as Error & { stderr?: Buffer };
+      throw new Error(childError.stderr?.toString() || childError.message, { cause: error });
+    }
   }, 20_000);
 
   it("requires an explicit MongoDB target and keeps the cookie host-only in production", () => {
@@ -53,6 +59,41 @@ describe("authentication configuration", () => {
     expect(authCookieConfig({ NODE_ENV: "development" })).toMatchObject({
       name: "wct_admin_dev", secure: false,
     });
+  });
+
+  it("caps new and previously issued sessions at two days from sign-in", () => {
+    const now = new Date("2026-10-21T12:00:00.000Z");
+    const twoDays = appConfig.auth.absoluteSeconds * 1000;
+    const session: AuthSession = {
+      _id: "test-session", userId: new ObjectId(), authGeneration: 0,
+      createdAt: new Date(now.getTime() - twoDays + 1), lastSeenAt: now,
+      idleExpiresAt: new Date(now.getTime() + 60_000),
+      absoluteExpiresAt: new Date(now.getTime() + 12 * 24 * 60 * 60 * 1000),
+      deviceLabel: "test", csrfSecret: "test",
+    };
+    expect(appConfig.auth.absoluteSeconds).toBe(2 * 24 * 60 * 60);
+    expect(authCookieConfig({ NODE_ENV: "development" }).maxAge).toBe(twoDays);
+    expect(isSessionCurrent(session, now)).toBe(true);
+    session.reauthUntil = new Date(now.getTime() + 1);
+    expect(hasRecentReauth(session, now)).toBe(true);
+    session.reauthUntil = now;
+    expect(hasRecentReauth(session, now)).toBe(false);
+    session.createdAt = new Date(now.getTime() - twoDays);
+    expect(isSessionCurrent(session, now)).toBe(false);
+    session.createdAt = new Date(now.getTime() - twoDays + 1);
+    session.idleExpiresAt = now;
+    expect(isSessionCurrent(session, now)).toBe(false);
+    session.idleExpiresAt = new Date(now.getTime() + 60_000);
+    session.absoluteExpiresAt = now;
+    expect(isSessionCurrent(session, now)).toBe(false);
+    session.absoluteExpiresAt = new Date(now.getTime() + 60_000);
+    session.createdAt = new Date(now.getTime() + 30_000);
+    expect(isSessionCurrent(session, now)).toBe(true);
+    session.createdAt = new Date(now.getTime() + 60_001);
+    expect(isSessionCurrent(session, now)).toBe(false);
+    session.createdAt = new Date(Number.NaN);
+    expect(isSessionCurrent(session, now)).toBe(false);
+    expect(isSessionCurrent({ ...session, createdAt: "invalid" } as unknown as AuthSession, now)).toBe(false);
   });
 });
 

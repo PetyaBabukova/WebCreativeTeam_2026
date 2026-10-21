@@ -5,7 +5,7 @@ import { AdminTransitionError, authCollections, authConnection, transitionAdminS
 import { acceptInvitation, acceptReactivation, audit, AuthFlowError, cancelInvitation, completePasswordReset, confirmEmailChange, deleteAdministrator, inviteAdministrator, notifyAdministrators, requestEmailChange, requestPasswordReset, requestReactivation, revokeUserTokens, validateOneTimeToken } from "./service.ts";
 import { hashPassword, verifyPassword, verifyUnknownPassword } from "./password.ts";
 import {
-  clearSessionCookie, clientIpBucket, createSession, csrfToken, enforceLimit, hasSessionCookie, normalizeEmail, privateResponse,
+  assertRecentReauth, clearSessionCookie, clientIpBucket, createSession, csrfToken, enforceLimit, hasRecentReauth, isSessionCurrent, normalizeEmail, privateResponse, randomToken, ReauthRequiredError, tokenHash,
   readSessionCookie, resetLimit, setSessionCookie, validCsrf, validOrigin, validateUsername,
   verifySession, type VerifiedSession,
 } from "./security.ts";
@@ -26,6 +26,7 @@ function safeRoute(handler: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response) => { void handler(req, res).catch((error: unknown) => {
     if (res.headersSent) return;
     if (error instanceof InputError) { fail(res, 400, "Invalid input"); return; }
+    if (error instanceof ReauthRequiredError) { fail(res, 428, "reauth_required"); return; }
     if (error instanceof AuthFlowError) { fail(res, 409, "Account changed; try again"); return; }
     console.error("Authentication request failed", { name: error instanceof Error ? error.name : "Unknown" });
     fail(res, 503, "Authentication temporarily unavailable");
@@ -58,12 +59,48 @@ async function recheckPassword(req: Request, res: Response, user: AdminUser): Pr
   return true;
 }
 
+function requireRecentReauth(verified: VerifiedSession, res: Response): boolean {
+  if (hasRecentReauth(verified.session)) return true;
+  fail(res, 428, "reauth_required");
+  return false;
+}
+
+authRouter.post("/reauth", safeRoute(async (req, res) => {
+  if (!requireOrigin(req, res)) return;
+  const verified = await current(req, res);
+  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  const { client, db } = await authConnection();
+  const { users, sessions } = authCollections(db);
+  const transaction = client.startSession();
+  let rotated: { raw: string; session: typeof verified.session } | undefined;
+  try {
+    rotated = await transaction.withTransaction(async () => {
+      const now = new Date();
+      const actor = await users.updateOne({ _id: verified.user._id, status: "active", authGeneration: verified.session.authGeneration, passwordHash: verified.user.passwordHash }, { $inc: { authorizationSerial: 1 } }, { session: transaction });
+      if (actor.modifiedCount !== 1) throw new AuthFlowError("Account changed");
+      const old = await sessions.deleteOne({ _id: verified.session._id, userId: verified.user._id, authGeneration: verified.session.authGeneration, absoluteExpiresAt: { $gt: now }, idleExpiresAt: { $gt: now }, createdAt: { $gt: new Date(now.getTime() - appConfig.auth.absoluteSeconds * 1000) } }, { session: transaction });
+      if (old.deletedCount !== 1) throw new AuthFlowError("Session changed");
+      const raw = randomToken();
+      const session = { ...verified.session, _id: tokenHash(raw), csrfSecret: randomToken(), lastSeenAt: now,
+        idleExpiresAt: new Date(Math.min(now.getTime() + appConfig.auth.idleSeconds * 1000, verified.session.absoluteExpiresAt.getTime(), verified.session.createdAt.getTime() + appConfig.auth.absoluteSeconds * 1000)),
+        reauthUntil: new Date(Math.min(now.getTime() + appConfig.auth.reauthSeconds * 1000, verified.session.absoluteExpiresAt.getTime(), verified.session.createdAt.getTime() + appConfig.auth.absoluteSeconds * 1000)) };
+      await sessions.insertOne(session, { session: transaction });
+      await audit("session-reauth", "success", verified.user._id, verified.user._id, transaction);
+      return { raw, session };
+    }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 10_000 });
+  } finally { await transaction.endSession(); }
+  if (!rotated) throw new AuthFlowError("Session changed");
+  const remaining = Math.min(rotated.session.absoluteExpiresAt.getTime(), rotated.session.createdAt.getTime() + appConfig.auth.absoluteSeconds * 1000) - Date.now();
+  setSessionCookie(res, rotated.raw, Math.max(1, remaining));
+  res.json({ csrf: csrfToken(rotated.session, "private") });
+}));
+
 authRouter.get("/status", safeRoute(async (req, res) => {
   const raw = readSessionCookie(req);
-  if (!raw) { if (hasSessionCookie(req)) clearSessionCookie(res); res.json({ authenticated: false }); return; }
+  if (!raw) { res.json({ authenticated: false }); return; }
   if (!await enforceLimit(`status:${clientIpBucket(req.ip)}`, 200)) { fail(res, 429, "Too many attempts"); return; }
   const verified = await verifySession(req);
-  if (!verified) { clearSessionCookie(res); res.json({ authenticated: false }); return; }
+  if (!verified) { res.json({ authenticated: false }); return; }
   res.json({ authenticated: true, username: verified.user.username, logoutCsrf: csrfToken(verified.session, "logout") });
 }));
 
@@ -184,28 +221,28 @@ authRouter.get("/me", safeRoute(async (req, res) => {
 authRouter.post("/invite", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
-  try { await inviteAdministrator(bodyString(req, "email"), verified.user); res.json({ ok: true }); }
+  if (!verified || !requireRecentReauth(verified, res)) return;
+  try { await inviteAdministrator(bodyString(req, "email"), verified.user, verified); res.json({ ok: true }); }
   catch (error) { if (error instanceof AuthFlowError || error instanceof InputError || error instanceof Error && error.message.startsWith("Invalid")) fail(res, 400, "Invitation could not be created"); else throw error; }
 }));
 
 authRouter.get("/administrators", safeRoute(async (req, res) => {
-  const verified = await verifySession(req, true);
+  const verified = await verifySession(req);
   if (!verified) { fail(res, 401, "Sign in required"); return; }
   const { db } = await authConnection();
   const { users, tokens } = authCollections(db);
   const records = await users.find({}, { projection: { email: 1, username: 1, status: 1, createdAt: 1 } }).toArray();
-  const invitations = await tokens.find({ kind: "invitation", consumedAt: { $exists: false }, expiresAt: { $gt: new Date() } }, { projection: { email: 1, createdAt: 1, expiresAt: 1 } }).toArray();
-  res.json({ administrators: records.map((item) => ({ id: item._id.toHexString(), email: item.email, username: item.username, status: item.status })), invitations: invitations.map((item) => ({ id: item._id, email: item.email, expiresAt: item.expiresAt })) });
+  const invitations = await tokens.find({ kind: "invitation", consumedAt: { $exists: false }, expiresAt: { $gt: new Date() } }, { projection: { email: 1, createdAt: 1, expiresAt: 1, mailState: 1, mailStateAt: 1 } }).toArray();
+  res.json({ administrators: records.map((item) => ({ id: item._id.toHexString(), email: item.email, username: item.username, status: item.status })), invitations: invitations.map((item) => ({ id: item._id, email: item.email, expiresAt: item.expiresAt, createdAt: item.createdAt, mailState: item.mailState, mailStateAt: item.mailStateAt })) });
 }));
 
 authRouter.post("/invite/cancel", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified || !requireRecentReauth(verified, res)) return;
   const id = bodyString(req, "id");
   if (!/^[a-f0-9]{64}$/.test(id)) { fail(res, 400, "Invalid input"); return; }
-  await cancelInvitation(id, verified.user);
+  await cancelInvitation(id, verified.user, verified);
   res.json({ ok: true });
 }));
 
@@ -238,7 +275,7 @@ authRouter.post("/password/change", safeRoute(async (req, res) => {
 authRouter.post("/username", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified) return;
   let username: string;
   try { username = validateUsername(bodyString(req, "username")); } catch { fail(res, 400, "Invalid username"); return; }
   const { client, db } = await authConnection();
@@ -265,37 +302,41 @@ authRouter.get("/sessions", safeRoute(async (req, res) => {
   const verified = await verifySession(req, true);
   if (!verified) { fail(res, 401, "Sign in required"); return; }
   const { db } = await authConnection();
-  const records = await authCollections(db).sessions.find({ userId: verified.user._id, absoluteExpiresAt: { $gt: new Date() } }, { projection: { csrfSecret: 0 } }).toArray();
+  const now = new Date();
+  const records = (await authCollections(db).sessions.find({ userId: verified.user._id, absoluteExpiresAt: { $gt: now } }, { projection: { csrfSecret: 0 } }).toArray()).filter((item) => isSessionCurrent(item, now));
   res.json({ sessions: records.map((item) => ({ id: item._id, deviceLabel: item.deviceLabel, createdAt: item.createdAt, lastSeenAt: item.lastSeenAt, current: item._id === verified.session._id })) });
 }));
 
 authRouter.post("/sessions/revoke", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified || !requireRecentReauth(verified, res)) return;
   const id = bodyString(req, "id");
-  if (!/^[a-f0-9]{64}$/.test(id)) { fail(res, 400, "Invalid input"); return; }
+  if (id !== "current" && !/^[a-f0-9]{64}$/.test(id)) { fail(res, 400, "Invalid input"); return; }
+  const targetId = id === "current" ? verified.session._id : id;
   const { client, db } = await authConnection();
   const transaction = client.startSession();
   try {
     await transaction.withTransaction(async () => {
-      const changed = await authCollections(db).sessions.deleteOne({ _id: id, userId: verified.user._id }, { session: transaction });
+      await assertRecentReauth(verified, transaction);
+      const changed = await authCollections(db).sessions.deleteOne({ _id: targetId, userId: verified.user._id }, { session: transaction });
       if (changed.deletedCount === 1) await audit("session-revoked", "success", verified.user._id, verified.user._id, transaction);
     }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 10_000 });
   } finally { await transaction.endSession(); }
-  if (id === verified.session._id) clearSessionCookie(res);
+  if (targetId === verified.session._id) clearSessionCookie(res);
   res.json({ ok: true });
 }));
 
 authRouter.post("/sessions/revoke-all", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified || !requireRecentReauth(verified, res)) return;
   const { client, db } = await authConnection();
   const { users, sessions } = authCollections(db);
   const transaction = client.startSession();
   try {
     await transaction.withTransaction(async () => {
+      await assertRecentReauth(verified, transaction);
       const changed = await users.updateOne({ _id: verified.user._id, status: "active", authGeneration: verified.user.authGeneration }, { $inc: { authGeneration: 1 } }, { session: transaction });
       if (changed.modifiedCount !== 1) throw new AuthFlowError("Session changed");
       await revokeUserTokens(verified.user._id, transaction);
@@ -310,7 +351,7 @@ authRouter.post("/sessions/revoke-all", safeRoute(async (req, res) => {
 authRouter.post("/administrators/disable", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified || !requireRecentReauth(verified, res)) return;
   const id = bodyString(req, "id");
   if (!ObjectId.isValid(id) || id.length !== 24) { fail(res, 400, "Invalid input"); return; }
   const connection = await authConnection();
@@ -319,7 +360,7 @@ authRouter.post("/administrators/disable", safeRoute(async (req, res) => {
     await transitionAdminStatus(connection, targetId, "active", "disabled", verified.user, async (session) => {
       await notifyAdministrators("WebCreativeTeam administrator disabled", "An administrator account was disabled.", session);
       await audit("administrator-disabled", "success", verified.user._id, targetId, session);
-    });
+    }, (session) => assertRecentReauth(verified, session));
   }
   catch (error) { if (error instanceof AdminTransitionError) { fail(res, 409, "Administrator could not be disabled"); return; } throw error; }
   if (id === verified.user._id.toHexString()) clearSessionCookie(res);
@@ -329,20 +370,20 @@ authRouter.post("/administrators/disable", safeRoute(async (req, res) => {
 authRouter.post("/administrators/reactivate", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified || !requireRecentReauth(verified, res)) return;
   const id = bodyString(req, "id");
   if (!ObjectId.isValid(id) || id.length !== 24) { fail(res, 400, "Invalid input"); return; }
-  try { await requestReactivation(new ObjectId(id), verified.user); res.json({ ok: true }); }
+  try { await requestReactivation(new ObjectId(id), verified.user, verified); res.json({ ok: true }); }
   catch (error) { if (error instanceof AuthFlowError) fail(res, 400, "Reactivation unavailable"); else throw error; }
 }));
 
 authRouter.post("/administrators/delete", safeRoute(async (req, res) => {
   if (!requireOrigin(req, res)) return;
   const verified = await current(req, res);
-  if (!verified || !await recheckPassword(req, res, verified.user)) return;
+  if (!verified || !requireRecentReauth(verified, res)) return;
   const id = bodyString(req, "id");
   if (!ObjectId.isValid(id) || id.length !== 24) { fail(res, 400, "Invalid input"); return; }
-  try { await deleteAdministrator(new ObjectId(id), bodyString(req, "confirmation"), verified.user); res.json({ ok: true }); }
+  try { await deleteAdministrator(new ObjectId(id), bodyString(req, "confirmation"), verified.user, verified); res.json({ ok: true }); }
   catch (error) { if (error instanceof AuthFlowError) fail(res, 400, "Deletion unavailable"); else throw error; }
 }));
 

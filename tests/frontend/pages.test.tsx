@@ -18,6 +18,7 @@ import EnLayout from "@/app/(en)/layout";
 import GlobalNotFound from "@/app/global-not-found";
 import NotFoundPage from "@/components/NotFoundPage";
 import SiteNavigation from "@/components/SiteNavigation";
+import AuthScreen from "@/components/AuthScreen";
 import { messages } from "@/lib/messages";
 import { isLocale, canonicalRedirects, localeSwitchUrl, offersUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
@@ -43,6 +44,56 @@ const originalVisibility = Object.getOwnPropertyDescriptor(document, "visibility
 beforeEach(() => {
   document.cookie = `${appConfig.localeCookie.name}=; Max-Age=0; Path=/`;
   window.location.hash = "";
+});
+
+describe("administrator confirmation", () => {
+  it("prompts once, clears a cancelled password, and retries an invitation with the rotated CSRF token", async () => {
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    const originalFetch = globalThis.fetch;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+    const calls: Array<{ path: string; csrf: string | null; body?: Record<string, string> }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      const body = options?.body ? JSON.parse(String(options.body)) as Record<string, string> : undefined;
+      calls.push({ path, csrf: new Headers(options?.headers).get("x-csrf-token"), body });
+      if (path.endsWith("/administrators")) return Response.json({ administrators: [], invitations: [] });
+      if (path.endsWith("/invite")) return calls.filter((call) => call.path.endsWith("/invite")).length < 3 ? Response.json({ error: "reauth_required" }, { status: 428 }) : Response.json({ ok: true });
+      if (path.endsWith("/reauth")) return Response.json({ csrf: "rotated-csrf" });
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="administrators" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "initial-csrf" }} />);
+      expect(screen.getByRole("link", { name: "Здравей, Петя" })).toHaveAttribute("href", "/admin/profile");
+      const inviteSection = screen.getByRole("heading", { name: "Покани администратор" }).closest("section")!;
+      expect(within(inviteSection).queryByLabelText("Текуща парола")).toBeNull();
+      fireEvent.change(within(inviteSection).getByLabelText("Имейл"), { target: { value: "partner@example.test" } });
+      const send = within(inviteSection).getByRole("button", { name: "Изпрати линк" });
+      send.focus();
+      fireEvent.click(send);
+      const dialog = screen.getByRole("dialog", { hidden: true });
+      await waitFor(() => expect(dialog).toHaveAttribute("open"));
+      fireEvent.change(within(dialog).getByLabelText("Текуща парола"), { target: { value: "temporary secret" } });
+      fireEvent(dialog, new Event("cancel", { cancelable: true }));
+      await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
+      expect(within(dialog).getByLabelText("Текуща парола")).toHaveValue("");
+      expect(calls.filter((call) => call.path.endsWith("/reauth"))).toHaveLength(0);
+      fireEvent.click(send);
+      await waitFor(() => expect(dialog).toHaveAttribute("open"));
+      fireEvent.change(within(dialog).getByLabelText("Текуща парола"), { target: { value: "correct horse battery staple" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Продължи" }));
+      await waitFor(() => expect(screen.getByText("Поканата е изпратена.")).toBeVisible());
+      const inviteCalls = calls.filter((call) => call.path.endsWith("/invite"));
+      expect(inviteCalls).toHaveLength(3);
+      expect(inviteCalls[2]).toMatchObject({ csrf: "rotated-csrf", body: { email: "partner@example.test" } });
+      expect(within(dialog).getByLabelText("Текуща парола")).toHaveValue("");
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
 });
 
 afterEach(() => {

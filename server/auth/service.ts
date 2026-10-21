@@ -3,7 +3,7 @@ import { appConfig } from "../../lib/config.ts";
 import { authCollections, authConnection, type AdminUser, type AuthAudit, type AuthToken, type TokenKind } from "./db.ts";
 import { mailLink, queueMail } from "./outbox.ts";
 import { hashPassword } from "./password.ts";
-import { normalizeEmail, randomToken, tokenHash, validateUsername } from "./security.ts";
+import { assertRecentReauth, normalizeEmail, randomToken, tokenHash, validateUsername, type VerifiedSession } from "./security.ts";
 
 const transactionOptions = { readConcern: { level: "snapshot" as const }, writeConcern: { w: "majority" as const }, readPreference: "primary" as const, timeoutMS: 10_000 };
 export class AuthFlowError extends Error {}
@@ -60,6 +60,7 @@ async function issueToken(kind: TokenKind, email: string, userId: ObjectId | und
   const token: AuthToken = {
     _id: tokenHash(raw), kind, email, userId, createdBy, createdAt: new Date(),
     expiresAt: expiry(kind === "reset" ? appConfig.auth.resetSeconds : appConfig.auth.invitationSeconds),
+    ...(kind === "invitation" ? { mailState: "queued" as const, mailStateAt: new Date() } : {}),
   };
   await authCollections(db).tokens.insertOne(token, { session });
   const path = kind === "reset" ? `${appConfig.paths.admin}/reset` : kind === "email-change" ? `${appConfig.paths.admin}/email` : `${appConfig.paths.admin}/invite`;
@@ -90,13 +91,14 @@ export async function bootstrapOwner(rawEmail: string) {
   } finally { await session.endSession(); }
 }
 
-export async function inviteAdministrator(rawEmail: string, actor: AdminUser) {
+export async function inviteAdministrator(rawEmail: string, actor: AdminUser, verified: VerifiedSession) {
   const email = normalizeEmail(rawEmail);
   const { client, db } = await authConnection();
   const { users, control } = authCollections(db);
   const session = client.startSession();
   try {
     await session.withTransaction(async () => {
+      await assertRecentReauth(verified, session);
       await assertActiveActor(actor, session);
       const marker = await control.updateOne({ _id: "singleton", schemaId: "wct-auth-v1" }, { $inc: { tokenSerial: 1 } }, { session });
       if (marker.matchedCount !== 1) throw new AuthFlowError("Administrator control unavailable");
@@ -109,12 +111,13 @@ export async function inviteAdministrator(rawEmail: string, actor: AdminUser) {
   } finally { await session.endSession(); }
 }
 
-export async function cancelInvitation(id: string, actor: AdminUser) {
+export async function cancelInvitation(id: string, actor: AdminUser, verified: VerifiedSession) {
   const { client, db } = await authConnection();
   const { tokens, outbox } = authCollections(db);
   const session = client.startSession();
   try {
     await session.withTransaction(async () => {
+      await assertRecentReauth(verified, session);
       await assertActiveActor(actor, session);
       const removed = await tokens.deleteOne({ _id: id, kind: "invitation" }, { session });
       if (removed.deletedCount !== 1) return;
@@ -251,12 +254,13 @@ export async function confirmEmailChange(raw: string) {
   } finally { await session.endSession(); }
 }
 
-export async function requestReactivation(userId: ObjectId, actor: AdminUser) {
+export async function requestReactivation(userId: ObjectId, actor: AdminUser, verified: VerifiedSession) {
   const { client, db } = await authConnection();
   const { users, tokens, outbox } = authCollections(db);
   const session = client.startSession();
   try {
     await session.withTransaction(async () => {
+      await assertRecentReauth(verified, session);
       await assertActiveActor(actor, session);
       const target = await users.findOne({ _id: userId, status: "disabled" }, { session });
       if (!target) throw new AuthFlowError("Administrator unavailable");
@@ -295,12 +299,13 @@ export async function acceptReactivation(raw: string, password: string) {
   } finally { await session.endSession(); }
 }
 
-export async function deleteAdministrator(userId: ObjectId, confirmation: string, actor: AdminUser) {
+export async function deleteAdministrator(userId: ObjectId, confirmation: string, actor: AdminUser, verified: VerifiedSession) {
   const { client, db } = await authConnection();
   const { control, users, sessions, tokens, outbox } = authCollections(db);
   const session = client.startSession();
   try {
     await session.withTransaction(async () => {
+      await assertRecentReauth(verified, session);
       await assertActiveActor(actor, session);
       const state = await control.findOne({ _id: "singleton" }, { session });
       const target = await users.findOne({ _id: userId, status: "disabled" }, { session });

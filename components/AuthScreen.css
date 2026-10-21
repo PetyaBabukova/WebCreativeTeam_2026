@@ -2,8 +2,9 @@
 .auth-header { background: var(--color-deep); color: var(--color-white); }
 .auth-header__inner { display: flex; align-items: center; justify-content: space-between; min-height: var(--site-header-compact-height); gap: 1rem; }
 .auth-header img { display: block; width: clamp(7.25rem, 14vw, 12rem); height: auto; }
-.auth-header__actions { display: flex; align-items: center; gap: 1rem; }
+.auth-header__actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .4rem 1rem; }
 .auth-header__actions button { min-height: 2.75rem; border: 0; background: transparent; color: var(--color-white); cursor: pointer; }
+.auth-header__actions a { color: inherit; overflow-wrap: anywhere; }
 .auth-main { display: grid; min-height: calc(100svh - var(--site-header-compact-height)); align-items: start; justify-items: center; padding-block: clamp(2rem, 7vh, 5rem); }
 .auth-panel { width: min(100%, 38rem); padding: clamp(1.25rem, 3vw, 2.5rem); border: .0625rem solid #bfd2c3; border-radius: 1rem; background: var(--color-white); box-shadow: 0 .7rem 2rem #00251715; }
 .auth-panel h1 { margin: 0 0 1.5rem; color: var(--color-deep-green-on-light); font-size: clamp(2rem, 4vw, 3rem); line-height: 1.1; }
@@ -16,3 +17,7 @@
 .auth-list { display: grid; gap: .7rem; padding: 0; margin: 0 0 1rem; list-style: none; }
 .auth-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem 0; border-bottom: .0625rem solid #d8e4da; overflow-wrap: anywhere; }
 .auth-list button { border: .0625rem solid var(--color-primary); border-radius: .5rem; padding: .35rem .65rem; background: transparent; color: #9b3a00; cursor: pointer; }
+.auth-mail-failed { color: #9b3a00; }
+.auth-reauth { width: min(calc(100% - 2rem), 28rem); padding: clamp(1.25rem, 3vw, 2rem); border: .0625rem solid #bfd2c3; border-radius: 1rem; color: var(--color-deep-green-on-light); background: var(--color-white); box-shadow: 0 .7rem 2rem #00251740; }
+.auth-reauth::backdrop { background: #001d16aa; }
+.auth-reauth__actions { display: flex; flex-wrap: wrap; gap: .75rem; }

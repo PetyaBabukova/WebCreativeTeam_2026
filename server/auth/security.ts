@@ -42,6 +42,33 @@ export function readSessionCookie(req: Request): string | undefined { return ses
 export function hasSessionCookie(req: Request): boolean { return cookieValue(req.get("cookie"), authCookieConfig().name) !== undefined; }
 
 export type VerifiedSession = { session: AuthSession; user: AdminUser };
+export class ReauthRequiredError extends Error {}
+export function hasRecentReauth(session: AuthSession, now = new Date()): boolean {
+  return isSessionCurrent(session, now) && session.reauthUntil instanceof Date && session.reauthUntil > now;
+}
+
+export async function assertRecentReauth(verified: VerifiedSession, transaction: ClientSession): Promise<void> {
+  const now = new Date();
+  if (!hasRecentReauth(verified.session, now)) throw new ReauthRequiredError("Reauthentication required");
+  const { db } = await authConnection();
+  const result = await authCollections(db).sessions.updateOne({
+    _id: verified.session._id, userId: verified.user._id, authGeneration: verified.user.authGeneration,
+    reauthUntil: { $gt: now }, idleExpiresAt: { $gt: now }, absoluteExpiresAt: { $gt: now },
+    createdAt: { $gt: new Date(now.getTime() - appConfig.auth.absoluteSeconds * 1000) },
+  }, { $inc: { sensitiveSerial: 1 } }, { session: transaction });
+  if (result.modifiedCount !== 1) throw new ReauthRequiredError("Reauthentication required");
+}
+export function isSessionCurrent(session: AuthSession, now = new Date()): boolean {
+  if (!(session.createdAt instanceof Date) || !(session.absoluteExpiresAt instanceof Date) || !(session.idleExpiresAt instanceof Date)) return false;
+  const createdAt = session.createdAt.getTime();
+  const absoluteExpiresAt = session.absoluteExpiresAt.getTime();
+  const idleExpiresAt = session.idleExpiresAt.getTime();
+  const nowMs = now.getTime();
+  return Number.isFinite(createdAt) && Number.isFinite(absoluteExpiresAt) && Number.isFinite(idleExpiresAt)
+    && createdAt <= nowMs + 60_000
+    && Math.min(absoluteExpiresAt, createdAt + appConfig.auth.absoluteSeconds * 1000, idleExpiresAt) > nowMs;
+}
+
 export async function verifySessionCookie(cookieHeader: string | undefined, touch = false): Promise<VerifiedSession | null> {
   const raw = sessionCookieFromHeader(cookieHeader);
   if (!raw) return null;
@@ -49,11 +76,11 @@ export async function verifySessionCookie(cookieHeader: string | undefined, touc
   const { sessions, users } = authCollections(db);
   const session = await sessions.findOne({ _id: tokenHash(raw) });
   const now = new Date();
-  if (!session || session.absoluteExpiresAt <= now || session.idleExpiresAt <= now) return null;
+  if (!session || !isSessionCurrent(session, now)) return null;
   const user = await users.findOne({ _id: session.userId, status: "active" });
   if (!user || session.authGeneration !== user.authGeneration) return null;
   if (touch && now.getTime() - session.lastSeenAt.getTime() >= appConfig.auth.activityWriteSeconds * 1000) {
-    const idleExpiresAt = new Date(Math.min(now.getTime() + appConfig.auth.idleSeconds * 1000, session.absoluteExpiresAt.getTime()));
+    const idleExpiresAt = new Date(Math.min(now.getTime() + appConfig.auth.idleSeconds * 1000, session.absoluteExpiresAt.getTime(), session.createdAt.getTime() + appConfig.auth.absoluteSeconds * 1000));
     await sessions.updateOne({ _id: session._id, idleExpiresAt: { $gt: now } }, { $set: { lastSeenAt: now, idleExpiresAt } });
   }
   return { session, user };
@@ -91,8 +118,9 @@ export async function createSession(userId: ObjectId, authGeneration: number, de
   return raw;
 }
 
-export function setSessionCookie(res: Response, raw: string) {
-  res.cookie(authCookieConfig().name, raw, authCookieConfig());
+export function setSessionCookie(res: Response, raw: string, maxAgeMilliseconds?: number) {
+  const config = authCookieConfig();
+  res.cookie(config.name, raw, { ...config, maxAge: maxAgeMilliseconds ?? config.maxAge });
 }
 
 export function clearSessionCookie(res: Response) {
