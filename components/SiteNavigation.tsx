@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { appConfig } from "@/lib/config";
 import { locales, localeSwitchUrl, pageUrl, sectionUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
+import { HeaderAuthStatus } from "./HeaderAuthStatus";
 
 type NavigationCopy = {
   menu: string;
@@ -126,6 +127,7 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
       <span aria-hidden="true" className="site-menu__bars"><span /><span /></span>
     </summary>
     <div className="site-menu__panel">
+      <HeaderAuthStatus locale={locale} mobile />
       <nav aria-label={copy.navigation}>
         <Link href={pageUrl("home", locale)} aria-current={page === "home" ? "page" : undefined} onClick={closeMenus}>{copy.home}</Link>
         <div className="site-menu__services">

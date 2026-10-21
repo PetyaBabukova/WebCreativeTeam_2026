@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToReadableStream } from "react-dom/server";
 import BgHome, { generateMetadata as bgHomeMetadata } from "@/app/(bg)/bg/page";
 import EnHome, { generateMetadata as enHomeMetadata } from "@/app/(en)/en/page";
 import BgAbout, { generateMetadata as bgAboutMetadata } from "@/app/(bg)/about/bg/page";
@@ -23,6 +23,11 @@ import { isLocale, canonicalRedirects, localeSwitchUrl, offersUrl, pageUrl, port
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
 
 vi.mock("next/server", () => ({ connection: vi.fn(async () => {}) }));
+vi.mock("next/headers", () => ({ headers: vi.fn(async () => new Headers()) }));
+
+async function renderDocument(element: React.ReactNode) {
+  return new Response(await renderToReadableStream(element)).text();
+}
 vi.mock("@/assets/services/products_page_background.webp", () => ({
   default: {
     src: "/assets/services/products_page_background.webp",
@@ -367,14 +372,14 @@ describe("public pages", () => {
     expect(seo.alternates?.canonical).toBe(serviceUrl("digital-marketing", locale));
     expect(seo.alternates?.languages).toEqual({ bg: serviceUrl("digital-marketing", "bg"), en: serviceUrl("digital-marketing", "en") });
   });
-  it.each([[BgLayout, "bg"], [EnLayout, "en"]] as const)("provides one complete locale document %#", (Layout, lang) => {
-    const html = renderToStaticMarkup(<Layout><main id="main">Content</main></Layout>);
+  it.each([[BgLayout, "bg"], [EnLayout, "en"]] as const)("provides one complete locale document %#", async (Layout, lang) => {
+    const html = await renderDocument(<Layout><main id="main">Content</main></Layout>);
     expect(html).toContain(`<html lang="${lang}">`);
     expect(html).toContain('href="#main"');
     expect(html.match(/<html/g)).toHaveLength(1);
   });
-  it("renders a complete global 404 and translated fallback content", () => {
-    expect(renderToStaticMarkup(<GlobalNotFound />)).toContain('<html lang="bg">');
+  it("renders a complete global 404 and translated fallback content", async () => {
+    expect(await renderDocument(<GlobalNotFound />)).toContain('<html lang="bg">');
     render(<NotFoundPage locale="en" />);
     expect(screen.getByRole("heading")).toHaveTextContent("Page not found");
     expect(screen.getByRole("link")).toHaveAttribute("href", "/en");

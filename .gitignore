@@ -68,6 +68,58 @@ web_modules/
 # dotenv environment variable files
 .env
 .env.*
+*.env
+*.env.*
+.envrc
+.envrc.*
+
+# Private configuration, credentials and keys
+.npmrc
+.yarnrc.yml
+.pypirc
+.netrc
+secrets/
+.secrets/
+credentials/
+.credentials/
+*secret*.json
+*credential*.json
+*service-account*.json
+*private-key*.json
+*.secret
+*.secret.*
+*.secrets
+*.secrets.*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+.ssh/
+.aws/
+.kube/
+.docker/config.json
+.vercel/
+.netlify/
+
+# Local data and diagnostic exports may contain personal data or tokens
+backups/
+dumps/
+*.bson
+*.dump
+*.sqlite
+*.sqlite3
+*.db
+*.bak
+*.backup
+*.har
+*.trace.zip
+playwright/.auth/
+*storage-state*.json
 
 # Local design references and project notes
 /doc/
@@ -146,6 +198,7 @@ vite.config.ts.timestamp-*
 .vite/
 
 # Browser test artifacts
+.playwright-tmp/
 playwright-report/
 test-results/
 .tmp/

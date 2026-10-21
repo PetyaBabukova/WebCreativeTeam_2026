@@ -26,8 +26,9 @@ This repository is used on Windows. Prefer commands that work in Windows shells.
 
 ## Secrets and env files
 
-- Do not read or print `.env`, `.env.local`, `.env.*`, or other secret-bearing environment files unless the user explicitly asks for that exact file.
-- When checking configuration, prefer verifying variable names, presence, or whether values look local/production without exposing secret values.
+- Follow [`AGENT_SECRET_ACCESS.md`](./AGENT_SECRET_ACCESS.md) for every task in this repository. It prohibits agents from opening any secret-bearing file, even during authentication work.
+- Do not read or print `.env`, `.env.local`, `.env.*`, or other secret-bearing files. If a task needs their contents, arrange a safer workflow with the user.
+- When checking configuration, use variable names in application source and check only file presence or Git tracking status; do not inspect secret values.
 - Never include secrets such as passwords, tokens, API keys, JWT secrets, email app passwords, or unsubscribe secrets in chat, logs, review prompts, or copied command output.
 
 ## Architecture and reuse

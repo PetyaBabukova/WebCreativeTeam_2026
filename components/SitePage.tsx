@@ -34,6 +34,7 @@ import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
 import ServiceTypewriter from "./ServiceTypewriter";
 import SiteNavigation from "./SiteNavigation";
+import { HeaderAuthProvider, HeaderAuthStatus } from "./HeaderAuthStatus";
 import "./SitePage.css";
 
 type HeaderProps = { locale: Locale } & (
@@ -49,7 +50,8 @@ function SiteHeader(props: HeaderProps) {
       <Link href={pageUrl("home", locale)} className="site-header__brand">
         <Image src={appConfig.brandLogoPath} alt="WebCreativeTeam" width={280} height={77} priority unoptimized />
       </Link>
-      <div className="container site-header__actions">
+      <HeaderAuthProvider locale={locale}><div className="container site-header__actions">
+        <HeaderAuthStatus locale={locale} />
         <Link className="button button--outline site-header__cta" href={pageUrl("contacts", locale)}>{copy.landing.hero.contact}</Link>
         <SiteNavigation {...props} copy={{
           menu: copy.landing.menu,
@@ -64,7 +66,7 @@ function SiteHeader(props: HeaderProps) {
           faq: copy.faqLabel,
           contact: copy.contactLabel,
         }} />
-      </div>
+      </div></HeaderAuthProvider>
     </div>
   </header>;
 }

@@ -1,8 +1,12 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
 import { pathToFileURL } from "node:url";
 import next from "next";
+import nextEnv from "@next/env";
 import { createApp } from "./app.js";
 import { appConfig } from "../lib/config.js";
+import { startOutboxWorker } from "./auth/outbox.js";
+
+const { loadEnvConfig } = nextEnv;
 
 export function parsePort(value: string | undefined): number {
   if (value === undefined) return appConfig.defaultPort;
@@ -25,17 +29,21 @@ export async function startServer(options: {
   makeNext?: (dev: boolean) => NextApplication;
   shutdownMs?: number;
 }): Promise<{ server: Server; stop: () => Promise<void> }> {
+  loadEnvConfig(process.cwd(), options.dev);
   const app = (options.makeNext ?? ((dev) => createNext({ dev })))(options.dev);
   let ready = false;
+  let stopOutbox = () => {};
   const handler = app.getRequestHandler();
   const server = createServer(createApp(async (req, res) => { await handler(req, res); }, () => ready));
   try {
     await app.prepare();
+    stopOutbox = startOutboxWorker();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(options.port, appConfig.listenHost, () => { server.off("error", reject); ready = true; resolve(); });
     });
   } catch (error) {
+    stopOutbox();
     await app.close();
     throw error;
   }
@@ -43,6 +51,7 @@ export async function startServer(options: {
   function stop() {
     if (stopping) return stopping;
     ready = false;
+    stopOutbox();
     stopping = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => { server.closeAllConnections(); reject(new Error("Shutdown deadline exceeded")); }, options.shutdownMs ?? 5000);
       server.close((error) => {
@@ -57,6 +66,7 @@ export async function startServer(options: {
 
 export async function main() {
   try {
+    loadEnvConfig(process.cwd(), process.env.NODE_ENV === "development");
     const { stop } = await startServer({ port: parsePort(process.env.PORT), dev: process.env.NODE_ENV === "development" });
     console.info("WebCreativeTeam server ready");
     const onSignal = () => { void stop().then(() => process.exit(0), () => process.exit(1)); };

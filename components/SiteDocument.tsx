@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { headers } from "next/headers";
 import { Sofia_Sans } from "next/font/google";
 import { messages } from "@/lib/messages";
 import type { Locale } from "@/lib/routing";
@@ -17,9 +18,10 @@ const sofiaSans = Sofia_Sans({ subsets: ["latin", "cyrillic"], display: "swap", 
 const reloadStartsAtTop = `(()=>{try{if(!("scrollRestoration" in history))return;const events=["wheel","touchstart","pointerdown","keydown"];const useAuto=()=>{history.scrollRestoration="auto";events.forEach((e)=>removeEventListener(e,useAuto,true))};events.forEach((e)=>addEventListener(e,useAuto,{capture:true,passive:true}));addEventListener("pagehide",()=>{if(!location.hash)history.scrollRestoration="manual"});addEventListener("pageshow",(e)=>{if(e.persisted)history.scrollRestoration="auto"})}catch(e){}})()`;
 const noScriptHeroVisibility = ".hero__headline-line,.hero__lede,.hero-orb__entrance{opacity:1!important;transform:none!important}.hero-orb__control{display:none!important}";
 
-export default function SiteDocument({ locale, children }: { locale: Locale; children: ReactNode }) {
+export default async function SiteDocument({ locale, children }: { locale: Locale; children: ReactNode }) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return <html lang={locale}><body className={sofiaSans.variable}>
-    <script dangerouslySetInnerHTML={{ __html: reloadStartsAtTop }} />
+    <script nonce={nonce} dangerouslySetInnerHTML={{ __html: reloadStartsAtTop }} />
     <noscript><style>{noScriptHeroVisibility}</style></noscript>
     <a className="skip-link" href="#main">{messages[locale].skip}</a>
     {children}

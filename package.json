@@ -17,13 +17,20 @@
     "test": "vitest run --config vitest.frontend.config.ts && vitest run --config vitest.backend.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.frontend.config.ts && vitest run --coverage --config vitest.backend.config.ts",
     "test:e2e:install": "playwright install chromium",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "auth:operator": "node dist/server/auth/operator.js",
+    "auth:operator:dev": "tsx server/auth/operator.ts"
   },
   "dependencies": {
+    "@next/env": "16.3.6",
+    "argon2": "0.45.1",
     "cross-env": "10.1.0",
     "express": "5.2.1",
+    "ipaddr.js": "2.2.0",
+    "mongodb": "7.7.0",
     "motion": "13.4.6",
     "next": "16.3.6",
+    "nodemailer": "10.1.7",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "sharp": "0.35.5"
@@ -36,6 +43,7 @@
     "@testing-library/react": "16.3.3",
     "@types/express": "5.0.6",
     "@types/node": "22.20.4",
+    "@types/nodemailer": "8.0.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@types/supertest": "7.2.1",

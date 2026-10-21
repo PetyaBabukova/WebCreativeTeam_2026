@@ -13,6 +13,12 @@
 .site-header__brand img { display: block; width: clamp(7.25rem, 14vw, 12rem); height: auto; }
 .site-header__actions { position: absolute; top: 50%; inset-inline: 0; display: flex; align-items: center; justify-content: flex-end; gap: .75rem; transform: translateY(-50%); pointer-events: none; }
 .site-header__actions > * { pointer-events: auto; }
+.site-auth { display: flex; align-items: center; gap: .55rem; font-size: .88rem; color: var(--color-white); }
+.site-auth__name { display: inline-block; max-width: 10rem; overflow: hidden; vertical-align: bottom; text-overflow: ellipsis; white-space: nowrap; }
+.site-auth button { border: 0; padding: .25rem; background: none; color: var(--color-white); cursor: pointer; }
+.site-auth__error { position: absolute; top: 100%; right: var(--gutter); max-width: 18rem; padding: .5rem; border-radius: .35rem; background: var(--color-deep); }
+.site-auth--mobile { display: none; }
+@media (width <= 47.5rem) { .site-auth--desktop { display: none; } .site-auth--mobile { display: flex; flex-wrap: wrap; padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: .0625rem solid #ffffff40; } .site-auth--mobile .site-auth__name { max-width: none; white-space: normal; } }
 .site-menu { position: relative; }
 .site-menu > summary { display: grid; place-items: center; width: 2.65rem; height: 2.65rem; padding: 0; border-radius: 50%; list-style: none; cursor: pointer; }
 .site-menu summary::-webkit-details-marker { display: none; }
