@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../server/app.js";
 import { appConfig } from "../../lib/config.js";
@@ -37,6 +37,123 @@ describe("Express HTTP boundaries", () => {
     expect(response.headers["x-powered-by"]).toBeUndefined();
     ready = false;
     await request(app).get(appConfig.paths.health).expect(503, { status: "unavailable" });
+  });
+  it("reports CSP in test mode and enforces it with HSTS on a production HTTPS origin", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const app = () => createApp((_req, res) => { res.send("next"); }, () => true);
+      vi.stubEnv("NODE_ENV", "test");
+      vi.stubEnv("AUTH_CSP_ENFORCE", "");
+      vi.stubEnv("SITE_URL", "");
+      const local = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(local.headers["content-security-policy-report-only"]).toContain("frame-ancestors 'none'");
+      expect(local.headers["content-security-policy"]).toBeUndefined();
+      expect(local.headers["strict-transport-security"]).toBeUndefined();
+
+      vi.stubEnv("AUTH_CSP_ENFORCE", "1");
+      const forced = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(forced.headers["content-security-policy"]).toContain("'strict-dynamic'");
+      expect(forced.headers["content-security-policy-report-only"]).toBeUndefined();
+      expect(forced.headers["strict-transport-security"]).toBeUndefined();
+      const second = await request(app()).get(appConfig.paths.health).expect(200);
+      const nonce = (policy: string) => policy.match(/'nonce-([^']+)'/)?.[1];
+      expect(nonce(forced.headers["content-security-policy"])).toBeTruthy();
+      expect(nonce(second.headers["content-security-policy"])).not.toBe(nonce(forced.headers["content-security-policy"]));
+
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("AUTH_CSP_ENFORCE", "");
+      vi.stubEnv("SITE_URL", "http://example.test");
+      const plainHttp = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(plainHttp.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+      expect(plainHttp.headers["content-security-policy-report-only"]).toBeUndefined();
+      expect(plainHttp.headers["strict-transport-security"]).toBeUndefined();
+
+      vi.stubEnv("SITE_URL", "https://example.test");
+      const production = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(production.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+      expect(production.headers["content-security-policy-report-only"]).toBeUndefined();
+      expect(production.headers["strict-transport-security"]).toBe("max-age=31536000");
+      expect(production.headers["x-frame-options"]).toBe("DENY");
+      expect(production.headers["x-content-type-options"]).toBe("nosniff");
+
+      for (const origin of ["HTTPS://example.test", " https://example.test", ""]) {
+        vi.stubEnv("SITE_URL", origin);
+        const response = await request(app()).get(appConfig.paths.health).expect(200);
+        expect(response.headers["content-security-policy"]).toContain("'strict-dynamic'");
+        expect(response.headers["content-security-policy-report-only"]).toBeUndefined();
+        expect(response.headers["strict-transport-security"]).toBe(origin ? "max-age=31536000" : undefined);
+      }
+
+      vi.stubEnv("SITE_URL", "https://example.test");
+      vi.stubEnv("AUTH_DEPLOYMENT_STAGE", "");
+      vi.stubEnv("AUTH_CSP_ENFORCE", "0");
+      expect(() => app()).toThrow("Invalid CSP configuration");
+      vi.stubEnv("AUTH_DEPLOYMENT_STAGE", "staging");
+      vi.stubEnv("AUTH_CSP_STAGING_ORIGIN", "https://other.example.test");
+      expect(() => app()).toThrow("Invalid CSP configuration");
+      vi.stubEnv("AUTH_CSP_STAGING_ORIGIN", "https://example.test");
+      const stagingApp = app();
+      expect(warning).toHaveBeenCalledWith("CSP report-only observation is active on staging");
+      const staging = await request(stagingApp).get(appConfig.paths.health).expect(200);
+      expect(staging.headers["content-security-policy"]).toBe("frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+      expect(staging.headers["content-security-policy-report-only"]).toContain("'strict-dynamic'");
+      expect(staging.headers["strict-transport-security"]).toBe(production.headers["strict-transport-security"]);
+      expect(staging.headers["x-frame-options"]).toBe(production.headers["x-frame-options"]);
+      expect(staging.headers["x-content-type-options"]).toBe(production.headers["x-content-type-options"]);
+      const forbidden = await request(stagingApp).post("/api/auth/login").send({ email: "test@example.test", password: "test" }).expect(403);
+      expect(forbidden.headers["content-security-policy"]).toBe(staging.headers["content-security-policy"]);
+      const admin = await request(stagingApp).get("/admin/unknown").expect(200);
+      expect(admin.headers["content-security-policy"]).toBe(staging.headers["content-security-policy"]);
+      expect(admin.headers["x-frame-options"]).toBe("DENY");
+      expect(admin.headers["cache-control"]).toBe("private, no-store");
+      expect(admin.headers["referrer-policy"]).toBe("no-referrer");
+      const nextPage = await request(stagingApp).get("/about/bg").expect(200);
+      expect(nextPage.headers["content-security-policy"]).toBe(staging.headers["content-security-policy"]);
+      expect(nextPage.headers["x-frame-options"]).toBe("DENY");
+
+      vi.stubEnv("AUTH_CSP_ENFORCE", "");
+      const enforcedAgain = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(enforcedAgain.headers["content-security-policy"]).toContain("'strict-dynamic'");
+      expect(enforcedAgain.headers["content-security-policy-report-only"]).toBeUndefined();
+      vi.stubEnv("AUTH_CSP_ENFORCE", "off");
+      expect(() => app()).toThrow("Invalid CSP configuration");
+    } finally {
+      warning.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("rejects incomplete staging settings and keeps other modes protected", async () => {
+    const app = () => createApp((_req, res) => { res.send("next"); }, () => true);
+    try {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("AUTH_DEPLOYMENT_STAGE", "staging");
+      vi.stubEnv("AUTH_CSP_ENFORCE", "0");
+      for (const [origin, stagingOrigin] of [
+        ["http://example.test", "http://example.test"],
+        ["https://example.test", ""],
+        ["https://example.test", "https://example.test/app"],
+        ["https://example.test", "not-a-url"],
+      ]) {
+        vi.stubEnv("SITE_URL", origin);
+        vi.stubEnv("AUTH_CSP_STAGING_ORIGIN", stagingOrigin);
+        expect(() => app()).toThrow("Invalid CSP configuration");
+      }
+
+      vi.stubEnv("AUTH_CSP_ENFORCE", "");
+      vi.stubEnv("SITE_URL", "https://example.test/app");
+      const invalidOrigin = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(invalidOrigin.headers["content-security-policy"]).toContain("'strict-dynamic'");
+      expect(invalidOrigin.headers["content-security-policy-report-only"]).toBeUndefined();
+      expect(invalidOrigin.headers["strict-transport-security"]).toBeUndefined();
+
+      vi.stubEnv("NODE_ENV", "development");
+      vi.stubEnv("AUTH_CSP_ENFORCE", "0");
+      const local = await request(app()).get(appConfig.paths.health).expect(200);
+      expect(local.headers["content-security-policy-report-only"]).toContain("'strict-dynamic'");
+      expect(local.headers["content-security-policy"]).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
   it.each([appConfig.paths.api, `${appConfig.paths.api}/unknown`])("returns a JSON 404 for %s", async (path) => {
     const app = createApp(() => { throw new Error("should not reach Next"); }, () => true);

@@ -58,6 +58,18 @@ describe("server lifecycle", () => {
     vi.stubEnv("PORT", "invalid"); const log = vi.spyOn(console, "error").mockImplementation(() => {});
     await main(); expect(process.exitCode).toBe(1); expect(log).toHaveBeenCalledWith("Server startup failed");
   });
+  it("reports a CSP configuration failure without logging environment values", async () => {
+    vi.stubEnv("PORT", "3000");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SITE_URL", "https://example.test");
+    vi.stubEnv("AUTH_CSP_ENFORCE", "0");
+    vi.stubEnv("AUTH_DEPLOYMENT_STAGE", "");
+    mockNext.mockReturnValue(nextApp());
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await main();
+    expect(process.exitCode).toBe(1);
+    expect(log).toHaveBeenCalledExactlyOnceWith("Server startup failed: CSP_CONFIG");
+  });
   it("main installs signal handlers and exits after cleanup", async () => {
     const probe = createServer(); await new Promise<void>((r) => probe.listen(0, r));
     const port = (probe.address() as AddressInfo).port; await new Promise<void>((r) => probe.close(() => r()));

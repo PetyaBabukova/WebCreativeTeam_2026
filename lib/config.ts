@@ -46,6 +46,8 @@ export const appConfig = {
     idleSeconds: 12 * 60 * 60,
     absoluteSeconds: 2 * 24 * 60 * 60,
     activityWriteSeconds: 5 * 60,
+    statusRetryMilliseconds: 10 * 1000,
+    statusRetryMaxMilliseconds: 2 * 60 * 1000,
     reauthSeconds: 5 * 60,
     invitationStatusPollMilliseconds: 30 * 1000,
     invitationStatusPollMaxMilliseconds: 2 * 60 * 1000,

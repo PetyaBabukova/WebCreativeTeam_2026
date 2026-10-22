@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, within, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { renderToReadableStream } from "react-dom/server";
 import BgHome, { generateMetadata as bgHomeMetadata } from "@/app/(bg)/bg/page";
 import EnHome, { generateMetadata as enHomeMetadata } from "@/app/(en)/en/page";
@@ -84,6 +84,7 @@ describe("administrator confirmation", () => {
       fireEvent.change(within(dialog).getByLabelText("Текуща парола"), { target: { value: "correct horse battery staple" } });
       fireEvent.click(within(dialog).getByRole("button", { name: "Продължи" }));
       await waitFor(() => expect(screen.getByText("Поканата е изпратена.")).toBeVisible());
+      await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
       const inviteCalls = calls.filter((call) => call.path.endsWith("/invite"));
       expect(inviteCalls).toHaveLength(3);
       expect(inviteCalls[2]).toMatchObject({ csrf: "rotated-csrf", body: { email: "partner@example.test" } });
@@ -92,6 +93,298 @@ describe("administrator confirmation", () => {
       vi.stubGlobal("fetch", originalFetch);
       HTMLDialogElement.prototype.showModal = originalShow;
       HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
+
+  it("refreshes auth after a stale background response and announces only a new mail failure", async () => {
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    const calls: string[] = [];
+    let administratorReads = 0;
+    let staleNext = false;
+    let recovered = false;
+    const oldFailure = { id: "old", email: "old@example.test", createdAt: new Date().toISOString(), mailState: "failed" };
+    const newInvitation = { id: "new", email: "new@example.test", createdAt: new Date().toISOString(), mailState: "queued" };
+    const unseenFailure = { id: "unseen", email: "unseen@example.test", createdAt: new Date().toISOString(), mailState: "failed" };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = new URL(url, "http://localhost").pathname;
+      calls.push(path);
+      if (path.endsWith("/administrators")) {
+        administratorReads += 1;
+        if (staleNext) { staleNext = false; recovered = true; return Response.json({ error: "Sign in required" }, { status: 401 }); }
+        return Response.json({ administrators: [], invitations: recovered ? [oldFailure, { ...newInvitation, mailState: "failed" }, unseenFailure] : [oldFailure, newInvitation] });
+      }
+      if (path.endsWith("/status")) return Response.json({ authenticated: true });
+      if (path.endsWith("/csrf")) return Response.json({ csrf: "current-csrf" });
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="administrators" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "old-csrf" }} />);
+      const pending = screen.getByRole("heading", { name: "Чакащи покани" }).closest("section")!;
+      await waitFor(() => expect(within(pending).getByText("Чака изпращане")).toBeInTheDocument());
+      expect(within(pending).getByRole("status", { hidden: true })).toBeEmptyDOMElement();
+      expect(document.hidden).toBe(false);
+      await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+      expect(within(pending).getByRole("status")).toBeEmptyDOMElement();
+
+      const readsBeforeStaleCheck = administratorReads;
+      staleNext = true;
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(staleNext).toBe(false));
+      await waitFor(() => expect(calls.filter((path) => path.endsWith("/csrf"))).toHaveLength(1));
+      expect(calls.filter((path) => path.endsWith("/status"))).toHaveLength(1);
+      expect(administratorReads).toBe(readsBeforeStaleCheck + 2);
+      await waitFor(() => expect(within(pending).getByRole("status")).toHaveTextContent("Изпращането на покана не успя."));
+      expect(within(pending).getAllByText("Изпращането не успя — изпратете нова покана")).toHaveLength(3);
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
+  it("ignores an older invitation response after a newer failure is shown", async () => {
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    const invitation = { id: "new", email: "new@example.test", createdAt: new Date().toISOString(), mailState: "queued" };
+    const stillQueued = { id: "other", email: "other@example.test", createdAt: new Date().toISOString(), mailState: "queued" };
+    let phase: "initial" | "defer" | "failed" = "initial";
+    let resolveOld: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (!path.endsWith("/administrators")) throw new Error(`Unexpected request ${path}`);
+      if (phase === "defer") return new Promise<Response>((resolve) => { resolveOld = resolve; });
+      return Response.json({ administrators: [], invitations: [{ ...invitation, mailState: phase === "failed" ? "failed" : "queued" }, stillQueued] });
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="administrators" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "csrf" }} />);
+      const pending = screen.getByRole("heading", { name: "Чакащи покани" }).closest("section")!;
+      await waitFor(() => expect(within(pending).getAllByText("Чака изпращане")).toHaveLength(2));
+      phase = "defer";
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(resolveOld).toBeDefined());
+      phase = "failed";
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(within(pending).getByRole("status")).toHaveTextContent("Изпращането на покана не успя."));
+      const announcement = within(pending).getByRole("status").querySelector("span");
+      await act(async () => { resolveOld!(Response.json({ administrators: [], invitations: [invitation, stillQueued] })); });
+      expect(within(pending).getByText("Изпращането не успя — изпратете нова покана")).toBeInTheDocument();
+      await act(async () => { fireEvent(document, new Event("visibilitychange")); });
+      expect(within(pending).getByRole("status").querySelector("span")).toBe(announcement);
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
+  it("discards an in-flight poll during confirmation and resumes after cancellation", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    const invitation = { id: "pending", email: "pending@example.test", createdAt: new Date().toISOString(), mailState: "queued" };
+    let holdNext = false;
+    let afterCancel = false;
+    let resolveHeld: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (path.endsWith("/administrators")) {
+        if (holdNext) { holdNext = false; return new Promise<Response>((resolve) => { resolveHeld = resolve; }); }
+        return Response.json({ administrators: [], invitations: [{ ...invitation, mailState: afterCancel ? "failed" : "queued" }] });
+      }
+      if (path.endsWith("/status")) return Response.json({ authenticated: true });
+      if (path.endsWith("/csrf")) return Response.json({ csrf: "current-csrf" });
+      if (path.endsWith("/invite")) return Response.json({ error: "reauth_required" }, { status: 428 });
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="administrators" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "csrf" }} />);
+      const pending = screen.getByRole("heading", { name: "Чакащи покани" }).closest("section")!;
+      await waitFor(() => expect(within(pending).getByText("Чака изпращане")).toBeInTheDocument());
+      holdNext = true;
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(resolveHeld).toBeDefined());
+      const invite = screen.getByRole("heading", { name: "Покани администратор" }).closest("section")!;
+      fireEvent.change(within(invite).getByLabelText("Имейл"), { target: { value: "another@example.test" } });
+      fireEvent.click(within(invite).getByRole("button", { name: "Изпрати линк" }));
+      const dialog = screen.getByRole("dialog", { hidden: true });
+      await waitFor(() => expect(dialog).toHaveAttribute("open"));
+      const main = screen.getByRole("main");
+      fireEvent(window, new Event("pagehide"));
+      fireEvent(window, new Event("pageshow"));
+      expect(main.style.visibility).toBe("hidden");
+      await act(async () => { resolveHeld!(Response.json({ administrators: [], invitations: [{ ...invitation, mailState: "failed" }] })); });
+      expect(within(pending).getByText("Чака изпращане")).toBeInTheDocument();
+      expect(within(pending).getByRole("status", { hidden: true })).toBeEmptyDOMElement();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Отказ" }));
+      await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
+      await waitFor(() => expect(main.style.visibility).toBe(""));
+      afterCancel = true;
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(within(pending).getByRole("status")).toHaveTextContent("Изпращането на покана не успя."));
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
+
+  it("keeps the rotated CSRF token when an older background refresh finishes later", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    const invitation = { id: "pending", email: "pending@example.test", createdAt: new Date().toISOString(), mailState: "queued" };
+    const inviteCsrf: Array<string | null> = [];
+    let staleNext = false;
+    let resolveOldCsrf: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (path.endsWith("/administrators")) {
+        if (staleNext) { staleNext = false; return Response.json({ error: "Sign in required" }, { status: 401 }); }
+        return Response.json({ administrators: [], invitations: [invitation] });
+      }
+      if (path.endsWith("/status")) return Response.json({ authenticated: true });
+      if (path.endsWith("/csrf")) return new Promise<Response>((resolve) => { resolveOldCsrf = resolve; });
+      if (path.endsWith("/invite")) {
+        inviteCsrf.push(new Headers(options?.headers).get("x-csrf-token"));
+        return inviteCsrf.length === 1 ? Response.json({ error: "reauth_required" }, { status: 428 }) : Response.json({ ok: true });
+      }
+      if (path.endsWith("/reauth")) return Response.json({ csrf: "rotated-csrf" });
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="administrators" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "old-csrf" }} />);
+      await waitFor(() => expect(screen.getByText("Чака изпращане")).toBeInTheDocument());
+      staleNext = true;
+      fireEvent(document, new Event("visibilitychange"));
+      await waitFor(() => expect(resolveOldCsrf).toBeDefined());
+      const invite = screen.getByRole("heading", { name: "Покани администратор" }).closest("section")!;
+      fireEvent.change(within(invite).getByLabelText("Имейл"), { target: { value: "first@example.test" } });
+      fireEvent.click(within(invite).getByRole("button", { name: "Изпрати линк" }));
+      const dialog = screen.getByRole("dialog", { hidden: true });
+      await waitFor(() => expect(dialog).toHaveAttribute("open"));
+      fireEvent.change(within(dialog).getByLabelText("Текуща парола"), { target: { value: "test password" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Продължи" }));
+      await waitFor(() => expect(inviteCsrf).toHaveLength(2));
+      expect(inviteCsrf[1]).toBe("rotated-csrf");
+      await act(async () => { resolveOldCsrf!(Response.json({ csrf: "stale-csrf" })); });
+      fireEvent.change(within(invite).getByLabelText("Имейл"), { target: { value: "second@example.test" } });
+      fireEvent.click(within(invite).getByRole("button", { name: "Изпрати линк" }));
+      await waitFor(() => expect(inviteCsrf).toHaveLength(3));
+      expect(inviteCsrf[2]).toBe("rotated-csrf");
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
+
+  it("refreshes CSRF from another tab without polling while confirmation is open", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalChannel = globalThis.BroadcastChannel;
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+    class TestChannel {
+      static current: TestChannel;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      constructor() { TestChannel.current = this; }
+      postMessage() {}
+      close() {}
+    }
+    vi.stubGlobal("BroadcastChannel", TestChannel);
+    let administratorReads = 0;
+    let csrfReads = 0;
+    const reauthCsrf: Array<string | null> = [];
+    const inviteCsrf: Array<string | null> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (path.endsWith("/administrators")) { administratorReads += 1; return Response.json({ administrators: [], invitations: [] }); }
+      if (path.endsWith("/status")) return Response.json({ authenticated: true });
+      if (path.endsWith("/csrf")) { csrfReads += 1; return Response.json({ csrf: "other-tab-csrf" }); }
+      if (path.endsWith("/invite")) {
+        inviteCsrf.push(new Headers(options?.headers).get("x-csrf-token"));
+        return inviteCsrf.length === 1 ? Response.json({ error: "reauth_required" }, { status: 428 }) : Response.json({ ok: true });
+      }
+      if (path.endsWith("/reauth")) { reauthCsrf.push(new Headers(options?.headers).get("x-csrf-token")); return Response.json({ csrf: "new-csrf" }); }
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="administrators" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "initial-csrf" }} />);
+      await waitFor(() => expect(administratorReads).toBe(1));
+      const invite = screen.getByRole("heading", { name: "Покани администратор" }).closest("section")!;
+      fireEvent.change(within(invite).getByLabelText("Имейл"), { target: { value: "other@example.test" } });
+      fireEvent.click(within(invite).getByRole("button", { name: "Изпрати линк" }));
+      const dialog = screen.getByRole("dialog", { hidden: true });
+      await waitFor(() => expect(dialog).toHaveAttribute("open"));
+      await act(async () => { TestChannel.current.onmessage?.({ data: "session-rotated" } as MessageEvent); });
+      await waitFor(() => expect(csrfReads).toBe(1));
+      expect(administratorReads).toBe(1);
+      fireEvent.change(within(dialog).getByLabelText("Текуща парола"), { target: { value: "a test password" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Продължи" }));
+      await waitFor(() => expect(inviteCsrf).toHaveLength(2));
+      expect(reauthCsrf).toEqual(["other-tab-csrf"]);
+      expect(inviteCsrf[1]).toBe("new-csrf");
+      await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+      vi.stubGlobal("BroadcastChannel", originalChannel);
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
+
+  it("restores a verified private page when the CSRF refresh is temporarily unavailable", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (path.endsWith("/status")) return Response.json({ authenticated: true });
+      if (path.endsWith("/csrf")) return Response.json({ error: "Temporary failure" }, { status: 503 });
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    try {
+      render(<AuthScreen locale="bg" view="home" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "csrf" }} />);
+      const main = screen.getByRole("main");
+      fireEvent(window, new Event("pagehide"));
+      await waitFor(() => expect(main.style.visibility).toBe("hidden"));
+      fireEvent(window, new Event("pageshow"));
+      await waitFor(() => expect(main.style.visibility).toBe(""));
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
+  it("retries a temporary status failure after restoring a private page", async () => {
+    const originalFetch = globalThis.fetch;
+    let statusReads = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = new URL(url, "http://localhost").pathname;
+      if (path.endsWith("/status")) return ++statusReads === 1 ? Response.json({ error: "Temporary failure" }, { status: 503 }) : Response.json({ authenticated: true });
+      if (path.endsWith("/csrf")) return Response.json({ csrf: "current-csrf" });
+      throw new Error(`Unexpected request ${path}`);
+    }));
+    vi.useFakeTimers();
+    try {
+      render(<AuthScreen locale="bg" view="home" base="/admin" returnTo="/admin" user={{ id: "operator", username: "Петя", email: "owner@example.test", csrf: "csrf" }} />);
+      const main = screen.getByRole("main");
+      fireEvent(window, new Event("pagehide"));
+      fireEvent(window, new Event("pageshow"));
+      await act(async () => { await Promise.resolve(); });
+      expect(main.style.visibility).toBe("hidden");
+      expect(statusReads).toBe(1);
+      fireEvent.click(screen.getByRole("button", { name: "English" }));
+      expect(main.style.visibility).toBe("hidden");
+      await act(async () => { await vi.advanceTimersByTimeAsync(appConfig.auth.statusRetryMilliseconds - 1); });
+      expect(statusReads).toBe(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(statusReads).toBe(2);
+      expect(main.style.visibility).toBe("");
+    } finally {
+      vi.useRealTimers();
+      vi.stubGlobal("fetch", originalFetch);
     }
   });
 });

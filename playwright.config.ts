@@ -8,7 +8,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "node dist/server/index.js",
-    env: { NODE_ENV: "production", PORT: String(appConfig.testPort), SITE_URL: testOrigin, AUTH_CSP_ENFORCE: "1" },
+    env: { NODE_ENV: "production", PORT: String(appConfig.testPort), SITE_URL: testOrigin, AUTH_CSP_ENFORCE: "1", AUTH_MONGODB_URI: "" },
     url: new URL(appConfig.paths.health, testOrigin).href, reuseExistingServer: false, timeout: 60000,
     gracefulShutdown: process.platform === "win32" ? undefined : { signal: "SIGTERM", timeout: 7000 },
   },

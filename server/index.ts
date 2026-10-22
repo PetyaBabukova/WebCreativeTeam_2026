@@ -75,7 +75,7 @@ export async function main() {
   } catch (error) {
     // Keep arbitrary framework/configuration error text out of production logs.
     const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-    console.error(code === "EADDRINUSE" || code === "EACCES" ? `Server startup failed: ${code}` : "Server startup failed");
+    console.error(code === "EADDRINUSE" || code === "EACCES" || code === "CSP_CONFIG" ? `Server startup failed: ${code}` : "Server startup failed");
     process.exitCode = 1;
   }
 }

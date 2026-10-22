@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import nodemailer from "nodemailer";
 import request from "supertest";
 import { appConfig } from "../../lib/config.js";
 import { createApp } from "../../server/app.js";
@@ -10,6 +11,7 @@ import { recoverOwner } from "../../server/auth/service.js";
 import { ObjectId } from "mongodb";
 import { drainTestMailbox, queueMail, runOutboxOnce } from "../../server/auth/outbox.js";
 import { createSession, tokenHash } from "../../server/auth/security.js";
+import { hashPassword } from "../../server/auth/password.js";
 
 const integration = process.env.AUTH_TEST_MONGODB_URI ? describe : describe.skip;
 
@@ -84,6 +86,20 @@ integration("administrator invitation, sign in, and sign out", () => {
     await request(app).get("/api/auth/status").set("Cookie", cookie).expect(200, { authenticated: false });
   });
 
+  it("changes a display name without a password but still requires CSRF and valid input", async () => {
+    const password = "correct horse battery staple";
+    const login = await request(app).post("/api/auth/login").set("Origin", origin).send({ email: "owner@example.test", password }).expect(200);
+    const cookie = login.headers["set-cookie"][0].split(";")[0];
+    const me = await request(app).get("/api/auth/me").set("Cookie", cookie).expect(200);
+    await request(app).post("/api/auth/username").set("Origin", origin).set("Cookie", cookie).send({ username: "Owner Two" }).expect(403);
+    await request(app).post("/api/auth/username").set("Origin", origin).set("Cookie", cookie).set("x-csrf-token", me.body.csrf).send({ username: "" }).expect(400);
+    await request(app).post("/api/auth/email/change").set("Origin", origin).set("Cookie", cookie).set("x-csrf-token", me.body.csrf).send({ email: "owner-new@example.test" }).expect(400);
+    await request(app).post("/api/auth/password/change").set("Origin", origin).set("Cookie", cookie).set("x-csrf-token", me.body.csrf).send({ newPassword: "a different secure password" }).expect(400);
+    const changed = await request(app).post("/api/auth/username").set("Origin", origin).set("Cookie", cookie).set("x-csrf-token", me.body.csrf).send({ username: "Owner Two" }).expect(200);
+    expect(changed.body.username).toBe("Owner Two");
+    expect((await request(app).get("/api/auth/status").set("Cookie", cookie).expect(200)).body.username).toBe("Owner Two");
+  });
+
   it("rotates only the current session for a five-minute confirmation without extending its expiry", async () => {
     const password = "correct horse battery staple";
     const login = await request(app).post("/api/auth/login").set("Origin", origin).send({ email: "owner@example.test", password }).expect(200);
@@ -108,6 +124,37 @@ integration("administrator invitation, sign in, and sign out", () => {
     await request(app).post("/api/auth/sessions/revoke").set("Origin", origin).set("Cookie", authorized.cookie).set("x-csrf-token", authorized.csrf).send({ id: "a".repeat(64) }).expect(200);
     await authCollections(db).sessions.updateOne({ _id: session!._id }, { $set: { reauthUntil: new Date(Date.now() - 1) } });
     await request(app).post("/api/auth/sessions/revoke").set("Origin", origin).set("Cookie", authorized.cookie).set("x-csrf-token", authorized.csrf).send({ id: "a".repeat(64) }).expect(428);
+  });
+
+  it("allows only one concurrent reauthorization and keeps background reads from extending idle time", async () => {
+    const password = "correct horse battery staple";
+    const login = await request(app).post("/api/auth/login").set("Origin", origin).send({ email: "owner@example.test", password }).expect(200);
+    const cookie = login.headers["set-cookie"][0].split(";")[0];
+    const me = await request(app).get("/api/auth/me").set("Cookie", cookie).expect(200);
+    const attempts = await Promise.all([1, 2].map(() => request(app).post("/api/auth/reauth").set("Origin", origin).set("Cookie", cookie).set("x-csrf-token", me.body.csrf).send({ currentPassword: password })));
+    const successful = attempts.filter((result) => result.status === 200);
+    expect(successful).toHaveLength(1);
+    expect(attempts.filter((result) => result.status !== 200).every((result) => [401, 409].includes(result.status))).toBe(true);
+    await request(app).get("/api/auth/me").set("Cookie", cookie).expect(401);
+    const rotatedCookie = successful[0].headers["set-cookie"][0].split(";")[0];
+    const { db } = await authConnection();
+    const sessions = authCollections(db).sessions;
+    const sessionId = tokenHash(rotatedCookie.split("=")[1]);
+    await sessions.updateOne({ _id: sessionId }, { $set: {
+      lastSeenAt: new Date(Date.now() - (appConfig.auth.activityWriteSeconds + 60) * 1000),
+      idleExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    } });
+    const before = await sessions.findOne({ _id: sessionId });
+    await request(app).get("/api/auth/administrators").set("Cookie", rotatedCookie).expect(200);
+    const after = await sessions.findOne({ _id: before!._id });
+    expect(after?.lastSeenAt).toEqual(before?.lastSeenAt);
+    expect(after?.idleExpiresAt).toEqual(before?.idleExpiresAt);
+    expect(after?.reauthUntil).toEqual(before?.reauthUntil);
+    await request(app).get("/api/auth/sessions").set("Cookie", rotatedCookie).expect(200);
+    const touched = await sessions.findOne({ _id: sessionId });
+    expect(touched!.lastSeenAt.getTime()).toBeGreaterThan(before!.lastSeenAt.getTime());
+    expect(touched!.idleExpiresAt.getTime()).toBeGreaterThan(before!.idleExpiresAt.getTime());
+    expect(touched?.reauthUntil).toEqual(before?.reauthUntil);
   });
 
   it("ends the rotated current session after the confirmation dialog flow", async () => {
@@ -174,6 +221,8 @@ integration("administrator invitation, sign in, and sign out", () => {
     const partnerLink = await nextLink();
     const delivered = await request(app).get("/api/auth/administrators").set("Cookie", ownerAuth.cookie).expect(200);
     expect(delivered.body.invitations.find((item: { email: string }) => item.email === "partner@example.test")?.mailState).toBe("accepted");
+    expect(JSON.stringify(delivered.body)).not.toContain(new URL(partnerLink).hash.slice(7));
+    expect(JSON.stringify(delivered.body)).not.toContain("encryptedPayload");
     await request(app).post("/api/auth/invite/accept").set("Origin", origin).send({ token: new URL(partnerLink).hash.slice(7), username: "Partner", password }).expect(200);
     const partnerLogin = await request(app).post("/api/auth/login").set("Origin", origin).send({ email: "partner@example.test", password }).expect(200);
     const partnerCookie = partnerLogin.headers["set-cookie"][0].split(";")[0];
@@ -201,8 +250,11 @@ integration("administrator invitation, sign in, and sign out", () => {
     expect(await authCollections(mailDb).outbox.countDocuments({ recipientHash: tokenHash("partner@example.test") })).toBeGreaterThan(0);
     await request(app).get("/api/auth/me").set("Cookie", oldCookie).expect(401);
     await request(app).post("/api/auth/login").set("Origin", origin).send({ email: "partner@example.test", password }).expect(401);
-    await request(app).post("/api/auth/forgot").set("Origin", origin).send({ email: "missing@example.test" }).expect(200, { ok: true });
-    await request(app).post("/api/auth/forgot").set("Origin", origin).send({ email: "new@example.test" }).expect(200, { ok: true });
+    const resetJobsBefore = await authCollections(mailDb).outbox.countDocuments({ recipientHash: tokenHash("missing@example.test") });
+    await request(app).post("/api/auth/forgot").set("Origin", origin).send({ email: "Missing@Example.test" }).expect(200, { ok: true });
+    expect(await authCollections(mailDb).outbox.countDocuments({ recipientHash: tokenHash("missing@example.test") })).toBe(resetJobsBefore);
+    expect(await authCollections(mailDb).tokens.countDocuments({ kind: "reset", email: "missing@example.test" })).toBe(0);
+    await request(app).post("/api/auth/forgot").set("Origin", origin).send({ email: "NEW@Example.test" }).expect(200, { ok: true });
     const resetLink = await nextLink();
     await request(app).post("/api/auth/reset").set("Origin", origin).send({ token: new URL(resetLink).hash.slice(7), password: nextPassword }).expect(200);
     await request(app).post("/api/auth/reset").set("Origin", origin).send({ token: new URL(resetLink).hash.slice(7), password: nextPassword }).expect(400);
@@ -263,6 +315,8 @@ integration("administrator invitation, sign in, and sign out", () => {
     const { db } = await authConnection();
     const active = await db.collection("authTokens").countDocuments({ kind: "reset", email: "recovered@example.test", consumedAt: { $exists: false } });
     expect(active).toBe(1);
+    await nextLink("/admin/reset");
+    expect(await authCollections(db).outbox.countDocuments({})).toBe(0);
   });
 
   it("rejects a session inserted after password rotation with a stale generation", async () => {
@@ -322,5 +376,113 @@ integration("administrator invitation, sign in, and sign out", () => {
     expect((await tokens.findOne({ _id: id }))?.mailState).toBe("accepted");
     expect(await outbox.countDocuments({ tokenId: id })).toBe(0);
     expect(drainTestMailbox()).toEqual([]);
+  });
+
+  it("retries a temporary SMTP refusal and records final and recipient refusals", async () => {
+    const { db } = await authConnection();
+    const { tokens, outbox } = authCollections(db);
+    for (let attempt = 0; attempt < 20 && await runOutboxOnce(); attempt += 1) drainTestMailbox();
+    expect(await outbox.countDocuments({})).toBe(0);
+    const send = vi.fn();
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail: send, close: () => {} } as unknown as ReturnType<typeof nodemailer.createTransport>);
+    vi.stubEnv("AUTH_MAIL_TRANSPORT", "");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "sender@example.test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test-only-placeholder");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    const firstId = tokenHash("temporary-smtp-fixture");
+    const secondId = tokenHash("rejected-recipient-fixture");
+    try {
+      const now = new Date();
+      await tokens.insertOne({ _id: firstId, kind: "invitation", email: "temp@example.test", createdAt: now, expiresAt: new Date(now.getTime() + 60_000), mailState: "queued", mailStateAt: now });
+      await queueMail({ to: "temp@example.test", subject: "Test", text: "Test" }, firstId);
+      send.mockRejectedValueOnce(Object.assign(new Error("Temporary SMTP refusal"), { responseCode: 450, command: "RCPT TO" }));
+      expect(await runOutboxOnce()).toBe(true);
+      expect((await tokens.findOne({ _id: firstId }))?.mailState).toBe("queued");
+      const waiting = await outbox.findOne({ tokenId: firstId });
+      expect(waiting?.status).toBe("pending");
+      expect(waiting!.availableAt.getTime()).toBeGreaterThan(Date.now());
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: { address: "temp@example.test" } }));
+      await outbox.updateOne({ tokenId: firstId }, { $set: { availableAt: new Date(0) } });
+      send.mockRejectedValueOnce(Object.assign(new Error("Permanent SMTP refusal"), { responseCode: 550, command: "RCPT TO" }));
+      expect(await runOutboxOnce()).toBe(true);
+      expect((await tokens.findOne({ _id: firstId }))?.mailState).toBe("failed");
+      expect(await outbox.countDocuments({ tokenId: firstId })).toBe(0);
+
+      await tokens.insertOne({ _id: secondId, kind: "invitation", email: "rejected@example.test", createdAt: now, expiresAt: new Date(now.getTime() + 60_000), mailState: "queued", mailStateAt: now });
+      await queueMail({ to: "rejected@example.test", subject: "Test", text: "Test" }, secondId);
+      send.mockResolvedValueOnce({ accepted: ["rejected@example.test"], rejected: ["rejected@example.test"] });
+      expect(await runOutboxOnce()).toBe(true);
+      expect((await tokens.findOne({ _id: secondId }))?.mailState).toBe("failed");
+      expect(await outbox.countDocuments({ tokenId: secondId })).toBe(0);
+    } finally {
+      await outbox.deleteMany({ tokenId: { $in: [firstId, secondId] } });
+      await tokens.deleteMany({ _id: { $in: [firstId, secondId] } });
+      transport.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("drops mail jobs for cancelled and expired invitations without sending", async () => {
+    const { db } = await authConnection();
+    const { tokens, outbox } = authCollections(db);
+    expect(await outbox.countDocuments({})).toBe(0);
+    drainTestMailbox();
+    const now = new Date();
+    const cancelledId = tokenHash("cancelled-mail-fixture");
+    const expiredId = tokenHash("expired-mail-fixture");
+    await tokens.insertMany([
+      { _id: cancelledId, kind: "invitation", email: "cancelled@example.test", createdAt: now, expiresAt: new Date(now.getTime() + 60_000), mailState: "queued", mailStateAt: now },
+      { _id: expiredId, kind: "invitation", email: "expired@example.test", createdAt: now, expiresAt: new Date(now.getTime() - 1), mailState: "queued", mailStateAt: now },
+    ]);
+    await queueMail({ to: "cancelled@example.test", subject: "Test", text: "Test" }, cancelledId);
+    await queueMail({ to: "expired@example.test", subject: "Test", text: "Test" }, expiredId);
+    await tokens.deleteOne({ _id: cancelledId });
+    expect(await runOutboxOnce()).toBe(true);
+    expect(await runOutboxOnce()).toBe(true);
+    expect(await outbox.countDocuments({ tokenId: { $in: [cancelledId, expiredId] } })).toBe(0);
+    expect((await tokens.findOne({ _id: expiredId }))?.mailState).toBe("queued");
+    expect(drainTestMailbox()).toEqual([]);
+  });
+
+  it("removes a cancelled invitation and its queued mail before creating a fresh one", async () => {
+    const password = "an independent cancellation test password";
+    const operatorEmail = "cancel-operator@example.test";
+    const email = "cancel-and-resend@example.test";
+    const operatorId = new ObjectId();
+    const { db } = await authConnection();
+    const { users, control, sessions, tokens, outbox } = authCollections(db);
+    const now = new Date();
+    const existingOutboxIds = await outbox.distinct("_id");
+    let inserted = false;
+    let incremented = false;
+    try {
+      await users.insertOne({ _id: operatorId, email: operatorEmail, username: "Cancellation tester", passwordHash: await hashPassword(password), authGeneration: 0, status: "active", createdAt: now, updatedAt: now });
+      inserted = true;
+      await control.updateOne({ _id: "singleton" }, { $inc: { activeCount: 1 } });
+      incremented = true;
+      const login = await request(app).post("/api/auth/login").set("Origin", origin).send({ email: operatorEmail, password }).expect(200);
+      const cookie = login.headers["set-cookie"][0].split(";")[0];
+      const authorized = await reauthorize(cookie, password);
+      await request(app).post("/api/auth/invite").set("Origin", origin).set("Cookie", authorized.cookie).set("x-csrf-token", authorized.csrf).send({ email }).expect(200);
+      const firstList = await request(app).get("/api/auth/administrators").set("Cookie", authorized.cookie).expect(200);
+      const firstId = firstList.body.invitations.find((item: { email: string }) => item.email === email)?.id as string;
+      expect(firstId).toMatch(/^[a-f0-9]{64}$/);
+      await request(app).post("/api/auth/invite/cancel").set("Origin", origin).set("Cookie", authorized.cookie).set("x-csrf-token", authorized.csrf).send({ id: firstId }).expect(200);
+      expect(await tokens.findOne({ _id: firstId })).toBeNull();
+      expect(await outbox.countDocuments({ tokenId: firstId })).toBe(0);
+      await request(app).post("/api/auth/invite").set("Origin", origin).set("Cookie", authorized.cookie).set("x-csrf-token", authorized.csrf).send({ email }).expect(200);
+      const secondList = await request(app).get("/api/auth/administrators").set("Cookie", authorized.cookie).expect(200);
+      const secondId = secondList.body.invitations.find((item: { email: string }) => item.email === email)?.id as string;
+      expect(secondId).toMatch(/^[a-f0-9]{64}$/);
+      expect(secondId).not.toBe(firstId);
+      expect(await outbox.countDocuments({ tokenId: secondId })).toBe(1);
+    } finally {
+      await outbox.deleteMany({ _id: { $nin: existingOutboxIds } });
+      await tokens.deleteMany({ email });
+      if (inserted) { await sessions.deleteMany({ userId: operatorId }); await users.deleteOne({ _id: operatorId }); }
+      if (incremented) await control.updateOne({ _id: "singleton" }, { $inc: { activeCount: -1 } });
+    }
   });
 });

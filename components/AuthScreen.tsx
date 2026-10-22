@@ -64,6 +64,11 @@ export default function AuthScreen({ locale: initialLocale, view, base, returnTo
   const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const pendingActionRef = useRef<(() => Promise<void>) | null>(null);
+  const reauthActiveRef = useRef(false);
+  const privateReadSequenceRef = useRef(0);
+  const authRefreshGenerationRef = useRef(0);
+  const checkPrivateSessionRef = useRef<() => void>(() => {});
+  const privateHiddenRef = useRef(false);
   const [reauthOpen, setReauthOpen] = useState(false);
   const [reauthError, setReauthError] = useState("");
   const [displayName, setDisplayName] = useState(user?.username ?? "");
@@ -122,23 +127,47 @@ export default function AuthScreen({ locale: initialLocale, view, base, returnTo
     return () => { cancelled = true; controller.abort(); };
   }, [view]);
 
+  const refreshAfterStaleSession = useCallback(async () => {
+    const generation = authRefreshGenerationRef.current;
+    const status = await api("/status");
+    if (generation !== authRefreshGenerationRef.current) return "superseded";
+    if (!status.response.ok) return "unavailable";
+    if (status.data.authenticated === false) { window.location.replace(`${base}/login`); return "invalid"; }
+    if (status.data.authenticated !== true) return "unavailable";
+    try {
+      const csrf = await api("/csrf");
+      if (generation === authRefreshGenerationRef.current && csrf.response.ok && typeof csrf.data.csrf === "string") csrfRef.current = csrf.data.csrf;
+    } catch { /* A transient CSRF failure does not invalidate a verified page. */ }
+    return generation === authRefreshGenerationRef.current ? "valid" : "superseded";
+  }, [base]);
+
   const loadPrivate = useCallback(async () => {
-    if (view === "administrators") {
-      const result = await api("/administrators");
-      if (result.response.ok) {
+    if (reauthActiveRef.current || view !== "administrators" && view !== "profile") return;
+    const sequence = ++privateReadSequenceRef.current;
+    try {
+      const path = view === "administrators" ? "/administrators" : "/sessions";
+      let result = await api(path);
+      if (reauthActiveRef.current || sequence !== privateReadSequenceRef.current) return;
+      if (result.response.status === 401) {
+        if (await refreshAfterStaleSession() !== "valid" || reauthActiveRef.current || sequence !== privateReadSequenceRef.current) return;
+        result = await api(path);
+        if (reauthActiveRef.current || sequence !== privateReadSequenceRef.current) return;
+      }
+      if (!result.response.ok) return;
+      if (view === "administrators") {
         setAdmins(result.data.administrators);
         const next = result.data.invitations as Invitation[];
         const previous = seenInvitationsRef.current;
-        if (previous && next.some((item) => item.mailState === "failed" && previous.get(item.id) === "queued")) { setMailAnnouncement(words[locale].mailFailureLive); setMailAnnouncementVersion((version) => version + 1); }
+        if (previous && next.some((item) => item.mailState === "failed" && previous.get(item.id) !== "failed")) { setMailAnnouncement(words[locale].mailFailureLive); setMailAnnouncementVersion((version) => version + 1); }
         seenInvitationsRef.current = new Map(next.map((item) => [item.id, item.mailState]));
         setInvitations(next);
+      } else {
+        setDevices(result.data.sessions);
       }
-    }
-    if (view === "profile") {
-      const result = await api("/sessions");
-      if (result.response.ok) setDevices(result.data.sessions);
-    }
-  }, [view, locale]);
+    } catch { /* Keep the current view on a transient background failure. */ }
+  }, [view, locale, refreshAfterStaleSession]);
+  const loadPrivateRef = useRef(loadPrivate);
+  loadPrivateRef.current = loadPrivate;
 
   useEffect(() => { if (isPrivate) void loadPrivate(); }, [isPrivate, loadPrivate]);
   useEffect(() => {
@@ -157,40 +186,61 @@ export default function AuthScreen({ locale: initialLocale, view, base, returnTo
   }, [view, reauthOpen, invitations, loadPrivate]);
   useEffect(() => {
     if (!isPrivate) return;
-    const hide = () => setPrivateVisible(false);
-    const check = () => {
-      void api("/status").then(({ data }) => {
-        if (!data.authenticated) window.location.replace(`${base}/login`);
-        else { setPrivateVisible(true); void api("/csrf").then(({ data: csrf }) => { if (typeof csrf.csrf === "string") csrfRef.current = csrf.csrf; }); }
-      }).catch(() => setPrivateVisible(false));
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let checkSequence = 0;
+    let retryDelay = appConfig.auth.statusRetryMilliseconds;
+    const hide = () => {
+      checkSequence += 1;
+      if (retryTimer) clearTimeout(retryTimer);
+      privateHiddenRef.current = true;
+      setPrivateVisible(false);
     };
+    const check = (retrying = false) => {
+      const sequence = ++checkSequence;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (!retrying) retryDelay = appConfig.auth.statusRetryMilliseconds;
+      const retry = () => {
+        if (sequence !== checkSequence) return;
+        retryTimer = setTimeout(() => check(true), retryDelay);
+        retryDelay = Math.min(retryDelay * 2, appConfig.auth.statusRetryMaxMilliseconds);
+      };
+      if (reauthActiveRef.current) { retry(); return; }
+      void refreshAfterStaleSession().then((result) => {
+        if (sequence !== checkSequence) return;
+        if (result === "valid") { privateHiddenRef.current = false; setPrivateVisible(true); void loadPrivateRef.current(); }
+        else if (result !== "invalid") retry();
+      }).catch(retry);
+    };
+    checkPrivateSessionRef.current = () => check();
     window.addEventListener("pagehide", hide);
-    window.addEventListener("pageshow", check);
+    const onPageShow = () => check();
+    window.addEventListener("pageshow", onPageShow);
     let channel: BroadcastChannel | undefined;
     try {
       channel = new BroadcastChannel("wct-admin");
       authChannelRef.current = channel;
       channel.onmessage = (event) => {
-        if (event.data === "session-rotated") void api("/csrf").then(({ data }) => { if (typeof data.csrf === "string") csrfRef.current = data.csrf; }).catch(() => {});
+        authRefreshGenerationRef.current += 1;
+        if (event.data === "session-rotated") {
+          if (reauthActiveRef.current) void refreshAfterStaleSession().catch(() => {});
+          else check();
+        }
         else { if (dialogRef.current?.open) cancelReauth(); hide(); check(); }
       };
     } catch { /* unsupported browser */ }
-    return () => { window.removeEventListener("pagehide", hide); window.removeEventListener("pageshow", check); channel?.close(); authChannelRef.current = null; };
-  }, [isPrivate, base]);
+    if (privateHiddenRef.current) check();
+    return () => { checkSequence += 1; checkPrivateSessionRef.current = () => {}; if (retryTimer) clearTimeout(retryTimer); window.removeEventListener("pagehide", hide); window.removeEventListener("pageshow", onPageShow); channel?.close(); authChannelRef.current = null; };
+  }, [isPrivate, refreshAfterStaleSession]);
 
   function messageFor(status: number) { return status === 429 ? t.limited : status === 503 ? t.unavailable : t.error; }
-
-  async function refreshAfterStaleSession() {
-    const status = await api("/status");
-    if (!status.data.authenticated) { window.location.replace(`${base}/login`); return; }
-    const csrf = await api("/csrf");
-    if (typeof csrf.data.csrf === "string") csrfRef.current = csrf.data.csrf;
-  }
 
   async function sensitiveRequest(path: string, values: Record<string, unknown>, success: () => void, replay = false) {
     const { response } = await api(path, values, csrfRef.current);
     if (response.status === 428 && !replay) {
       pendingActionRef.current = () => sensitiveRequest(path, values, success, true);
+      reauthActiveRef.current = true;
+      privateReadSequenceRef.current += 1;
+      authRefreshGenerationRef.current += 1;
       setReauthError("");
       setReauthOpen(true);
       return;
@@ -213,8 +263,11 @@ export default function AuthScreen({ locale: initialLocale, view, base, returnTo
       const { response, data } = await api("/reauth", { currentPassword }, csrfRef.current);
       if (response.status === 401 || response.status === 409 || response.status === 403 && data.error !== "Invalid password") await refreshAfterStaleSession();
       if (!response.ok || typeof data.csrf !== "string") { setReauthError(messageFor(response.status)); return; }
+      authRefreshGenerationRef.current += 1;
       csrfRef.current = data.csrf;
+      reauthActiveRef.current = false;
       setReauthOpen(false);
+      if (privateHiddenRef.current) checkPrivateSessionRef.current();
       authChannelRef.current?.postMessage("session-rotated");
       const pending = pendingActionRef.current;
       pendingActionRef.current = null;
@@ -228,8 +281,11 @@ export default function AuthScreen({ locale: initialLocale, view, base, returnTo
     const input = dialogRef.current?.querySelector<HTMLInputElement>('input[name="currentPassword"]');
     if (input) input.value = "";
     pendingActionRef.current = null;
+    reauthActiveRef.current = false;
+    authRefreshGenerationRef.current += 1;
     setReauthError("");
     setReauthOpen(false);
+    if (privateHiddenRef.current) checkPrivateSessionRef.current();
     returnFocusRef.current?.focus();
   }
 
