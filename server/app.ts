@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { appConfig, isLocale, localizedPath, siteOrigin, type Locale } from "../lib/config.js";
 import { authRouter } from "./auth/routes.js";
 import { authTrustedProxies } from "./auth/config.js";
+import { contactRouter } from "./contact/routes.js";
 
 const localeRedirectPaths: ReadonlyArray<string> = [appConfig.paths.root, appConfig.paths.faq, appConfig.paths.contacts];
 
@@ -44,9 +45,10 @@ export function createApp(nextHandler: RequestHandler, isReady: () => boolean) {
   app.use((req, res, next) => {
     const nonce = randomBytes(16).toString("base64");
     const policy = [
-      "default-src 'self'", `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+      "default-src 'self'", `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${appConfig.contact.captchaCspScriptSources.join(" ")}`,
       "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'",
-      "connect-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
+      `connect-src 'self' ${appConfig.contact.captchaCspConnectSources.join(" ")}`, `frame-src ${appConfig.contact.captchaCspFrameSources.join(" ")}`,
+      "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
     ].join("; ");
     req.headers["content-security-policy"] = policy;
     req.headers["x-nonce"] = nonce;
@@ -74,6 +76,7 @@ export function createApp(nextHandler: RequestHandler, isReady: () => boolean) {
     res.set("Cache-Control", "no-store").status(ready ? 200 : 503).json({ status: ready ? "ok" : "unavailable" });
   });
   app.use(appConfig.paths.authApi, authRouter);
+  app.use(appConfig.paths.contactApi, contactRouter);
   app.use(appConfig.paths.admin, (_req, res, next) => {
     res.set("Cache-Control", "private, no-store");
     res.set("X-Robots-Tag", "noindex, nofollow, noarchive");

@@ -19,6 +19,7 @@ import GlobalNotFound from "@/app/global-not-found";
 import NotFoundPage from "@/components/NotFoundPage";
 import SiteNavigation from "@/components/SiteNavigation";
 import AuthScreen from "@/components/AuthScreen";
+import ContactPage from "@/components/ContactPage";
 import { messages } from "@/lib/messages";
 import { isLocale, canonicalRedirects, localeSwitchUrl, offersUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
@@ -486,6 +487,184 @@ describe("public pages", () => {
     expect(control).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(control);
     expect(control).toHaveAttribute("aria-pressed", "false");
+  });
+  it.each([[BgContacts, "bg"], [EnContacts, "en"]] as const)("shows the centered contact form and direct contacts %#", (Page, locale) => {
+    render(<Page />);
+    const copy = messages[locale];
+    const main = screen.getByRole("main");
+    expect(within(main).getByRole("heading", { level: 1, name: copy.contacts.title })).toBeVisible();
+    expect(within(main).getByRole("heading", { level: 2, name: copy.contacts.headline.join(" ") })).toBeVisible();
+    expect(main.querySelector(".contact__notice")).toBeNull();
+    expect(main.querySelector(".contact__intro [data-motion-typewriter]")).toBeInTheDocument();
+    expect(copy.contacts.intro).toContain("\n");
+    expect(main.querySelector(".contact__section-number")).toBeNull();
+    expect(main.querySelector("form")).toBeInTheDocument();
+    expect(main.querySelector(".contact__panel h3")).toBeNull();
+    const interests = within(main).getByRole("group", { name: copy.contacts.interest });
+    expect(interests).toHaveAccessibleDescription(copy.contacts.interestHint);
+    expect(within(interests).getAllByRole("checkbox")).toHaveLength(6);
+    const diagnostic = within(interests).getByRole("checkbox", { name: copy.contacts.diagnostic });
+    expect(diagnostic).toHaveAccessibleDescription(copy.contacts.diagnosticHint);
+    fireEvent.click(diagnostic);
+    expect(diagnostic).toBeChecked();
+    expect(within(main).getByRole("textbox", { name: copy.contacts.phone })).not.toHaveAttribute("required");
+    expect(within(main).getByRole("textbox", { name: copy.contacts.budget })).not.toHaveAttribute("required");
+    const message = within(main).getByRole("textbox", { name: `${copy.contacts.message} *` });
+    fireEvent.change(message, { target: { value: "A short idea" } });
+    expect(within(main).getByText("12 / 2000")).toBeVisible();
+    expect(within(message.closest(".contact__message-field") as HTMLElement).getByRole("status")).toBeEmptyDOMElement();
+    fireEvent.change(message, { target: { value: "x".repeat(2000) } });
+    expect(within(main).getByText("2000 / 2000")).toBeVisible();
+    expect(within(message.closest(".contact__message-field") as HTMLElement).getByRole("status")).toHaveTextContent(copy.contacts.limitReached);
+    expect(within(main).getByRole("checkbox", { name: copy.contacts.newsletter })).toBeEnabled();
+    expect(within(main).getByRole("checkbox", { name: copy.contacts.privacy })).toBeRequired();
+    expect(within(main).getByRole("button", { name: copy.contacts.send })).toBeEnabled();
+    expect(main.querySelector(".contact__direct a")).toBeNull();
+    expect(within(main).getByRole("button", { name: `${copy.contacts.copy} ${appConfig.contactEmail}` })).toBeEnabled();
+    expect(main.querySelector(".contact__direct h3, .contact__direct p")).toBeNull();
+    expect(within(main).getAllByRole("button").filter((button) => button.classList.contains("contact__method-action") && button.textContent !== appConfig.contactEmail).map((button) => button.textContent)).toEqual(
+      appConfig.contactPhones.map((phone) => locale === "en" ? `${appConfig.contactPhoneCountryCode}${phone.slice(1)}` : phone),
+    );
+  });
+  it("queues a valid submission until CAPTCHA is ready", async () => {
+    let resolveConfig: (response: Response) => void = () => {};
+    const config = new Promise<Response>((resolve) => { resolveConfig = resolve; });
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => options?.method === "POST"
+      ? Promise.resolve(Response.json({ ok: true })) : config);
+    let completeCaptcha: ((token: string) => void) | undefined;
+    const captcha = {
+      render: vi.fn((_container: HTMLElement, options: { callback: (token: string) => void }) => {
+        completeCaptcha = options.callback;
+        return 0;
+      }),
+      execute: vi.fn(() => completeCaptcha?.("test-token")),
+      reset: vi.fn(),
+    };
+    const previousFetch = globalThis.fetch;
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    captchaWindow.grecaptcha = captcha;
+    try {
+      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      const form = screen.getByRole("form", { name: messages.bg.contacts.title });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.message} *` }), { target: { value: "Please contact me about my project." } });
+      fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
+      fireEvent.submit(form);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => { resolveConfig(Response.json({ siteKey: "test-site-key" })); });
+      await waitFor(() => expect(captcha.execute).toHaveBeenCalledOnce());
+      await waitFor(() => expect(within(form).getAllByRole("status").at(-1)).toHaveTextContent(messages.bg.contacts.sent));
+      expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ captchaToken: "test-token", name: "Visitor" });
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
+  });
+  it("sends the current form values after a delayed CAPTCHA challenge", async () => {
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => Promise.resolve(options?.method === "POST"
+      ? Response.json({ ok: true }) : Response.json({ siteKey: "test-site-key" })));
+    let completeCaptcha: ((token: string) => void) | undefined;
+    const captcha = {
+      render: vi.fn((_container: HTMLElement, options: { callback: (token: string) => void }) => {
+        completeCaptcha = options.callback;
+        return 0;
+      }),
+      execute: vi.fn(),
+      reset: vi.fn(),
+    };
+    const previousFetch = globalThis.fetch;
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    captchaWindow.grecaptcha = captcha;
+    try {
+      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      const form = screen.getByRole("form", { name: messages.bg.contacts.title });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
+      const message = within(form).getByRole("textbox", { name: `${messages.bg.contacts.message} *` });
+      fireEvent.change(message, { target: { value: "Please review the first draft." } });
+      fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
+      fireEvent.submit(form);
+      await waitFor(() => expect(captcha.execute).toHaveBeenCalledOnce());
+      fireEvent.change(message, { target: { value: "Please review the revised draft." } });
+      await act(async () => { completeCaptcha?.("test-token"); });
+      await waitFor(() => expect(within(form).getAllByRole("status").at(-1)).toHaveTextContent(messages.bg.contacts.sent));
+      const post = fetchMock.mock.calls.find((call) => call[1]?.method === "POST");
+      expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ message: "Please review the revised draft." });
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
+  });
+  it("rejects whitespace-only contact fields before CAPTCHA execution", async () => {
+    const captcha = { render: vi.fn(() => 0), execute: vi.fn(), reset: vi.fn() };
+    const previousFetch = globalThis.fetch;
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    globalThis.fetch = vi.fn(async () => Response.json({ siteKey: "test-site-key" })) as unknown as typeof fetch;
+    captchaWindow.grecaptcha = captcha;
+    try {
+      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      const form = screen.getByRole("form", { name: messages.bg.contacts.title });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "  A" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.message} *` }), { target: { value: "Please contact me about my project." } });
+      fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
+      fireEvent.submit(form);
+      expect(captcha.execute).not.toHaveBeenCalled();
+      expect(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` })).toBeInvalid();
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
+  });
+  it("retries loading reCAPTCHA after the script fails", async () => {
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => Promise.resolve(options?.method === "POST"
+      ? Response.json({ ok: true }) : Response.json({ siteKey: "test-site-key" })));
+    let completeCaptcha: ((token: string) => void) | undefined;
+    const captcha = {
+      render: vi.fn((_container: HTMLElement, options: { callback: (token: string) => void }) => {
+        completeCaptcha = options.callback;
+        return 0;
+      }),
+      execute: vi.fn(() => completeCaptcha?.("test-token")),
+      reset: vi.fn(),
+    };
+    const previousFetch = globalThis.fetch;
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha; __wctRecaptchaLoaded?: () => void };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    delete captchaWindow.grecaptcha;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    try {
+      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      const form = screen.getByRole("form", { name: messages.bg.contacts.title });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.message} *` }), { target: { value: "Please contact me about my project." } });
+      fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
+      fireEvent.submit(form);
+      await waitFor(() => expect(document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)).not.toBeNull());
+      await act(async () => { document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)?.dispatchEvent(new Event("error")); });
+      await waitFor(() => expect(within(form).getAllByRole("status").at(-1)).toHaveTextContent(messages.bg.contacts.captchaError));
+      expect(document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)).toBeNull();
+      fireEvent.submit(form);
+      await waitFor(() => expect(document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)).not.toBeNull());
+      captchaWindow.grecaptcha = captcha;
+      await act(async () => { captchaWindow.__wctRecaptchaLoaded?.(); });
+      await waitFor(() => expect(within(form).getAllByRole("status").at(-1)).toHaveTextContent(messages.bg.contacts.sent));
+      expect(captcha.execute).toHaveBeenCalledOnce();
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
   });
   it.each([[BgContacts, "bg"], [EnContacts, "en"]] as const)("routes footer and header links through the active locale %#", (Page, locale) => {
     render(<Page />);

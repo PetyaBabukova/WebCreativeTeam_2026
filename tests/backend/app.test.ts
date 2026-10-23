@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
+import nodemailer from "nodemailer";
 import { createApp } from "../../server/app.js";
 import { appConfig } from "../../lib/config.js";
 
@@ -53,6 +54,8 @@ describe("Express HTTP boundaries", () => {
       vi.stubEnv("AUTH_CSP_ENFORCE", "1");
       const forced = await request(app()).get(appConfig.paths.health).expect(200);
       expect(forced.headers["content-security-policy"]).toContain("'strict-dynamic'");
+      expect(forced.headers["content-security-policy"]).toContain(`frame-src ${appConfig.contact.captchaCspFrameSources.join(" ")}`);
+      expect(forced.headers["content-security-policy"]).toContain(`connect-src 'self' ${appConfig.contact.captchaCspConnectSources.join(" ")}`);
       expect(forced.headers["content-security-policy-report-only"]).toBeUndefined();
       expect(forced.headers["strict-transport-security"]).toBeUndefined();
       const second = await request(app()).get(appConfig.paths.health).expect(200);
@@ -97,6 +100,7 @@ describe("Express HTTP boundaries", () => {
       const staging = await request(stagingApp).get(appConfig.paths.health).expect(200);
       expect(staging.headers["content-security-policy"]).toBe("frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
       expect(staging.headers["content-security-policy-report-only"]).toContain("'strict-dynamic'");
+      expect(staging.headers["content-security-policy-report-only"]).toContain(`frame-src ${appConfig.contact.captchaCspFrameSources.join(" ")}`);
       expect(staging.headers["strict-transport-security"]).toBe(production.headers["strict-transport-security"]);
       expect(staging.headers["x-frame-options"]).toBe(production.headers["x-frame-options"]);
       expect(staging.headers["x-content-type-options"]).toBe(production.headers["x-content-type-options"]);
@@ -170,5 +174,315 @@ describe("Express HTTP boundaries", () => {
     const app = createApp(async () => { throw new Error("private failure"); }, () => true);
     const response = await request(app).get("/bg").expect(500);
     expect(response.body).toEqual({ error: "Internal server error" });
+  });
+  it("validates contact submissions on the server before attempting email", async () => {
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("AUTH_SMTP_HOST", "");
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const payload = {
+        locale: "bg", services: [appConfig.contact.diagnosticSlug], name: "Visitor",
+        email: "visitor@example.test", phone: "", website: "", budget: "",
+        message: "I would like a website assessment.", newsletter: false, privacy: true, captchaToken: "test-token",
+      };
+      const send = (body: Record<string, unknown>, origin = "http://localhost:3000") =>
+        request(app).post(appConfig.paths.contactApi).set("Origin", origin).send(body);
+      await send(payload, "http://another.test").expect(403);
+      await send({ ...payload, email: "invalid" }).expect(400);
+      await send({ ...payload, email: "visitor,other@example.test" }).expect(400);
+      await send({ ...payload, email: "Visitor <visitor@example.test>" }).expect(400);
+      await send({ ...payload, name: "Vis\u202eitor" }).expect(400);
+      await send({ ...payload, name: " A" }).expect(400);
+      await send({ ...payload, website: "https://example.test/\u200bhidden" }).expect(400);
+      await send({ ...payload, budget: "5 000\u0080" }).expect(400);
+      await send({ ...payload, phone: "     " }).expect(400);
+      await send({ ...payload, privacy: false }).expect(400);
+      await send({ ...payload, services: ["unknown"] }).expect(400);
+      await send({ ...payload, website: "javascript:alert(1)" }).expect(400);
+      await send({ ...payload, budget: "x".repeat(appConfig.contact.budgetMaxLength + 1) }).expect(400);
+      await send({ ...payload, message: "short" }).expect(400);
+      await send({ ...payload, message: "          a" }).expect(400);
+      await request(app).post(appConfig.paths.contactApi).send(payload).expect(403);
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").set("Sec-Fetch-Site", "cross-site").send(payload).expect(403);
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").set("Content-Type", "text/plain").send("hello").expect(415);
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").set("Content-Type", "application/json").send("{").expect(400);
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").set("Content-Type", "application/json").send(JSON.stringify({ ...payload, message: "x".repeat(17000) })).expect(413);
+      await send(payload).expect(503, { error: "Mail unavailable" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  it("sends a validated contact submission to the configured contact inbox", async () => {
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const verify = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ success: true, hostname: "localhost" }));
+    const sendMail = vi.fn().mockResolvedValue({ accepted: [appConfig.contactEmail], rejected: [] });
+    const close = vi.fn();
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail, close } as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const publicConfig = await request(app).get(appConfig.paths.contactApi).expect(200);
+      expect(publicConfig.body).toEqual({ siteKey: "public-test-key" });
+      expect(publicConfig.headers["cache-control"]).toBe("no-store");
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").send({
+        locale: "bg", services: [appConfig.contact.diagnosticSlug], name: "Visitor",
+        email: "visitor@example.test", phone: "", website: "", budget: "5 000 лв.",
+        message: "I would like a website assessment.\r\nPlease help.", newsletter: true, privacy: true, captchaToken: "test-token",
+      }).expect(200, { ok: true });
+      expect(verify).toHaveBeenCalledOnce();
+      const verificationBody = verify.mock.calls[0][1]?.body;
+      expect(verificationBody).toBeInstanceOf(URLSearchParams);
+      expect((verificationBody as URLSearchParams).get("response")).toBe("test-token");
+      expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
+        to: appConfig.contactEmail,
+        replyTo: { name: "Visitor", address: "visitor@example.test" },
+        text: expect.stringContaining("Newsletter interest: yes"),
+      }));
+      expect(sendMail.mock.calls[0][0].text).toContain("Budget: 5 000 лв.");
+      expect(sendMail.mock.calls[0][0].text).toContain("I would like a website assessment.\nPlease help.");
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      verify.mockRestore();
+      transport.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("rejects missing, wrong-host, and unavailable CAPTCHA responses without sending mail", async () => {
+    const time = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60 * 60 * 1000);
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const verify = vi.spyOn(globalThis, "fetch");
+    const sendMail = vi.fn();
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail, close: vi.fn() } as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const body = {
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "",
+        website: "", budget: "", message: `Start\r\n${"x".repeat(1994)}`, newsletter: false, privacy: true,
+      };
+      const submit = (payload: Record<string, unknown>) => request(app).post(appConfig.paths.contactApi)
+        .set("Origin", "http://localhost:3000").send(payload);
+      await submit({ ...body, email: "bad", captchaToken: "" }).expect(400, { error: "Invalid form data" });
+      await submit(body).expect(400, { error: "captcha" });
+      await submit({ ...body, captchaToken: "x".repeat(appConfig.contact.captchaTokenMaxLength + 1) }).expect(400, { error: "captcha" });
+      expect(verify).not.toHaveBeenCalled();
+      vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "");
+      await request(app).get(appConfig.paths.contactApi).expect(503);
+      await submit({ ...body, captchaToken: "token" }).expect(503);
+      vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+      verify.mockResolvedValueOnce(Response.json({ success: true, hostname: "wrong.example" }));
+      await submit({ ...body, captchaToken: "wrong-host" }).expect(400, { error: "captcha" });
+      verify.mockResolvedValueOnce(Response.json({ success: true, hostname: "localhost", "error-codes": ["over-quota"] }));
+      await submit({ ...body, captchaToken: "quota" }).expect(503);
+      verify.mockRejectedValueOnce(new Error("network unavailable"));
+      await submit({ ...body, captchaToken: "network" }).expect(503);
+      verify.mockImplementation(async () => Response.json({ success: false, hostname: "localhost" }));
+      for (let index = 3; index < appConfig.contact.captchaAttemptLimit; index += 1) {
+        await submit({ ...body, captchaToken: `invalid-${index}` }).expect(400, { error: "captcha" });
+      }
+      await submit({ ...body, captchaToken: "attempt-over-limit" }).expect(429);
+      expect(verify).toHaveBeenCalledTimes(appConfig.contact.captchaAttemptLimit);
+      expect(sendMail).not.toHaveBeenCalled();
+    } finally {
+      time.mockRestore();
+      verify.mockRestore();
+      transport.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("reserves contact slots before parallel CAPTCHA checks", async () => {
+    const time = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 2 * 60 * 60 * 1000);
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const waiting: Array<(reply: Response) => void> = [];
+    const verify = vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise<Response>((resolve) => waiting.push(resolve)));
+    const sendMail = vi.fn().mockResolvedValue({ accepted: [appConfig.contactEmail] });
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail, close: vi.fn() } as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const body = {
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "",
+        website: "", budget: "", message: "Please review my website.", newsletter: false, privacy: true,
+      };
+      const sends = Array.from({ length: appConfig.contact.rateLimit + 1 }, (_, index) => request(app)
+        .post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000")
+        .send({ ...body, captchaToken: `token-${index}` }).then((response) => response));
+      await vi.waitFor(() => expect(waiting).toHaveLength(appConfig.contact.rateLimit));
+      waiting.forEach((resolve) => resolve(Response.json({ success: true, hostname: "localhost" })));
+      const replies = await Promise.all(sends);
+      expect(replies.filter((reply) => reply.status === 200)).toHaveLength(appConfig.contact.rateLimit);
+      expect(replies.filter((reply) => reply.status === 429)).toHaveLength(1);
+      expect(sendMail).toHaveBeenCalledTimes(appConfig.contact.rateLimit);
+    } finally {
+      time.mockRestore();
+      verify.mockRestore();
+      transport.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("caps Google verification attempts across rotating client addresses and resets after the window", async () => {
+    const base = Date.now() + 10 * 60 * 60 * 1000;
+    const time = vi.spyOn(Date, "now").mockReturnValue(base);
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("RENDER", "true");
+    vi.stubEnv("RENDER_SERVICE_TYPE", "web");
+    vi.stubEnv("AUTH_TRUSTED_PROXY_IPS", "");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const verify = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ success: false }));
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const body = {
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "",
+        website: "", budget: "", message: "Please review my website.", newsletter: false, privacy: true, captchaToken: "token",
+      };
+      const send = (index: number) => request(app).post(appConfig.paths.contactApi)
+        .set("Origin", "http://localhost:3000").set("X-Forwarded-For", `198.51.100.${index + 1}`).send(body);
+      for (let index = 0; index < appConfig.contact.captchaGlobalAttemptLimit; index += 1) await send(index).expect(400, { error: "captcha" });
+      await send(appConfig.contact.captchaGlobalAttemptLimit).expect(429);
+      expect(verify).toHaveBeenCalledTimes(appConfig.contact.captchaGlobalAttemptLimit);
+      time.mockReturnValue(base + appConfig.contact.rateWindowMilliseconds + 1);
+      await send(appConfig.contact.captchaGlobalAttemptLimit + 1).expect(400, { error: "captcha" });
+    } finally {
+      time.mockRestore();
+      verify.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("caps SMTP attempts after valid CAPTCHA across rotating client addresses", async () => {
+    const base = Date.now() + 15 * 60 * 60 * 1000;
+    const time = vi.spyOn(Date, "now").mockReturnValue(base);
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("RENDER", "true");
+    vi.stubEnv("RENDER_SERVICE_TYPE", "web");
+    vi.stubEnv("AUTH_TRUSTED_PROXY_IPS", "");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const verify = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ success: true, hostname: "localhost" }));
+    const sendMail = vi.fn().mockResolvedValue({ accepted: [appConfig.contactEmail] });
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail, close: vi.fn() } as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const body = {
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "",
+        website: "", budget: "", message: "Please review my website.", newsletter: false, privacy: true, captchaToken: "token",
+      };
+      const send = (index: number) => request(app).post(appConfig.paths.contactApi)
+        .set("Origin", "http://localhost:3000").set("X-Forwarded-For", `198.51.100.${index + 1}`).send(body);
+      for (let index = 0; index < appConfig.contact.contactGlobalSendLimit; index += 1) await send(index).expect(200, { ok: true });
+      await send(appConfig.contact.contactGlobalSendLimit).expect(429);
+      expect(verify).toHaveBeenCalledTimes(appConfig.contact.contactGlobalSendLimit + 1);
+      expect(sendMail).toHaveBeenCalledTimes(appConfig.contact.contactGlobalSendLimit);
+    } finally {
+      time.mockRestore();
+      verify.mockRestore();
+      transport.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("limits simultaneous Google checks across different client addresses", async () => {
+    const base = Date.now() + 20 * 60 * 60 * 1000;
+    const time = vi.spyOn(Date, "now").mockReturnValue(base);
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("RENDER", "true");
+    vi.stubEnv("RENDER_SERVICE_TYPE", "web");
+    vi.stubEnv("AUTH_TRUSTED_PROXY_IPS", "");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const waiting: Array<(response: Response) => void> = [];
+    const verify = vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise<Response>((resolve) => waiting.push(resolve)));
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const body = {
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "",
+        website: "", budget: "", message: "Please review my website.", newsletter: false, privacy: true, captchaToken: "token",
+      };
+      const sends = Array.from({ length: appConfig.contact.captchaConcurrentLimit + 1 }, (_, index) => request(app)
+        .post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000")
+        .set("X-Forwarded-For", `198.51.100.${index + 1}`).send(body).then((response) => response));
+      await vi.waitFor(() => expect(waiting).toHaveLength(appConfig.contact.captchaConcurrentLimit));
+      waiting.forEach((resolve) => resolve(Response.json({ success: false })));
+      const replies = await Promise.all(sends);
+      expect(replies.filter((reply) => reply.status === 429)).toHaveLength(1);
+      expect(replies.filter((reply) => reply.status === 400)).toHaveLength(appConfig.contact.captchaConcurrentLimit);
+    } finally {
+      time.mockRestore();
+      verify.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("keeps IP limiter tables bounded while admitting a new address", async () => {
+    const base = Date.now() + 25 * 60 * 60 * 1000;
+    const time = vi.spyOn(Date, "now").mockReturnValue(base);
+    const limits = appConfig.contact as unknown as { captchaBucketLimit: number; captchaAttemptLimit: number };
+    const oldBucketLimit = limits.captchaBucketLimit;
+    const oldAttemptLimit = limits.captchaAttemptLimit;
+    limits.captchaBucketLimit = 2;
+    limits.captchaAttemptLimit = 1;
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("RENDER", "true");
+    vi.stubEnv("RENDER_SERVICE_TYPE", "web");
+    vi.stubEnv("AUTH_TRUSTED_PROXY_IPS", "");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const verify = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({ success: false }));
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const body = {
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "",
+        website: "", budget: "", message: "Please review my website.", newsletter: false, privacy: true, captchaToken: "token",
+      };
+      const send = (lastOctet: number) => request(app).post(appConfig.paths.contactApi)
+        .set("Origin", "http://localhost:3000").set("X-Forwarded-For", `198.51.100.${lastOctet}`).send(body);
+      await send(1).expect(400, { error: "captcha" });
+      await send(2).expect(400, { error: "captcha" });
+      await send(3).expect(400, { error: "captcha" });
+      await send(1).expect(400, { error: "captcha" });
+      expect(verify).toHaveBeenCalledTimes(4);
+    } finally {
+      limits.captchaBucketLimit = oldBucketLimit;
+      limits.captchaAttemptLimit = oldAttemptLimit;
+      time.mockRestore();
+      verify.mockRestore();
+      vi.unstubAllEnvs();
+    }
   });
 });

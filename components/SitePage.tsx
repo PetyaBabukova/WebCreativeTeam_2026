@@ -29,6 +29,7 @@ import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Local
 import FooterLegalButton from "./FooterLegalButton";
 import FooterNewsletter from "./FooterNewsletter";
 import FaqPage from "./FaqPage";
+import ContactPage from "./ContactPage";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
@@ -161,10 +162,9 @@ export default function SitePage({ locale, page }: { locale: Locale; page: Page 
   const copy = messages[locale];
   return <div className={`site-page site-page--${page}`}>
     <SiteHeader locale={locale} page={page} />
-    {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : <main id="main" className="container standard-page" tabIndex={-1}>
+    {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
-      {page === "contacts" && <a href={`mailto:${appConfig.contactEmail}`}>{appConfig.contactEmail}</a>}
     </main>}
     <SiteFooter locale={locale} route={{ page }} />
   </div>;

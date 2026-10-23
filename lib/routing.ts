@@ -3,7 +3,7 @@ import { appConfig, localizedPath, locales, type Locale } from "./config";
 export { isLocale, locales } from "./config";
 export type { Locale } from "./config";
 export type Page = "home" | "about" | "blog" | "faq" | "contacts";
-export const serviceSlugs = ["ai-automation", "seo-geo", "digital-marketing", "branding", "web-solutions"] as const;
+export const serviceSlugs = appConfig.contact.serviceSlugs;
 export type ServiceSlug = (typeof serviceSlugs)[number];
 export type SiteRoute = { page: Page; serviceSlug?: never } | { page: "service"; serviceSlug: ServiceSlug };
 

@@ -7,6 +7,28 @@ import en from "../../messages/en.json" with { type: "json" };
 const messages = { bg, en };
 import { locales, pageUrl, serviceFeatureSectionId, serviceSlugs, serviceUrl } from "../../lib/routing";
 
+const captchaTestScript = `
+  window.grecaptcha = {
+    render(_container, options) { window.__wctCaptchaOptions = options; return 0; },
+    execute() { window.__wctCaptchaOptions.callback("test-token"); },
+    reset() {}
+  };
+  window.__wctRecaptchaLoaded();
+`;
+
+async function mockContactCaptcha(page: import("@playwright/test").Page) {
+  await page.route(`**${appConfig.paths.contactApi}`, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ siteKey: "test-site-key" }) });
+    } else await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Test request not mocked" }) });
+  });
+  await page.route((url) => url.href.startsWith(appConfig.contact.captchaScriptUrl), async (route) => {
+    await route.fulfill({ status: 200, contentType: "text/javascript", body: captchaTestScript });
+  });
+}
+
+test.beforeEach(async ({ page }) => { await mockContactCaptcha(page); });
+
 async function orbAngle(page: import("@playwright/test").Page) {
   return page.locator(".hero-orb__spin").evaluate((element) => {
     const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
@@ -34,6 +56,282 @@ test("SSR serves both locales without JavaScript", async ({ browser }) => {
     await expect(page.locator(".services__card")).toHaveCount(5);
   }
   await context.close();
+});
+
+test("contact form is readable and usable at all viewports", async ({ page }) => {
+  for (const locale of locales) {
+    for (const width of [320, 390, 768, 1280, 1920]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto(pageUrl("contacts", locale));
+      const copy = messages[locale].contacts;
+      const main = page.locator("main.contact");
+      await expect(main.getByRole("heading", { level: 1 })).toHaveText(copy.title);
+      await expect(main.getByRole("heading", { level: 2 })).toHaveAccessibleName(copy.headline.join(" "));
+      const headlineFit = await main.locator(".contact__headline-mask").evaluateAll((lines) => lines.map((line) => ({
+        clipped: line.scrollWidth - line.clientWidth > 1,
+        top: Math.round(line.getBoundingClientRect().top),
+      })));
+      expect(headlineFit.some((line) => line.clipped), `${locale} at ${width}px headline clipped`).toBe(false);
+      expect(new Set(headlineFit.map((line) => line.top)).size).toBe(2);
+      await expect(main.locator(".contact__hero")).toHaveCSS("text-align", "left");
+      await expect(main.locator(".contact__eyebrow")).toHaveCSS("justify-content", "flex-start");
+      await expect(main.locator(".contact__panel h3")).toHaveCount(0);
+      await expect(main.locator(".contact__section-number, .contact__direct h3, .contact__direct p")).toHaveCount(0);
+      const alignment = await page.evaluate(() => {
+        const center = (selector: string) => {
+          const box = document.querySelector(selector)!.getBoundingClientRect();
+          return (box.left + box.right) / 2;
+        };
+        return { viewport: innerWidth / 2, hero: center(".contact__hero"), intro: center(".contact__intro"), body: center(".contact__body") };
+      });
+      expect(Math.abs(alignment.hero - alignment.viewport)).toBeLessThanOrEqual(1);
+      expect(Math.abs(alignment.intro - alignment.hero)).toBeLessThanOrEqual(1);
+      expect(Math.abs(alignment.body - alignment.viewport)).toBeLessThanOrEqual(1);
+      if (width === 1280) {
+        const characters = main.locator(".contact__intro .service-typewriter__motion-char");
+        const breakIndex = copy.intro.indexOf("\n");
+        expect(breakIndex).toBeGreaterThan(0);
+        const before = await characters.nth(breakIndex - 1).boundingBox();
+        const after = await characters.nth(breakIndex + 1).boundingBox();
+        expect(after!.y).toBeGreaterThan(before!.y);
+      }
+      await expect(main.locator("form")).toHaveCount(1);
+      await expect(main.getByRole("group", { name: copy.interest }).getByRole("checkbox")).toHaveCount(6);
+      await expect(main.locator(".contact__chip").first()).toContainText(copy.diagnostic);
+      const chipRows = await main.locator(".contact__chip").evaluateAll((chips) => chips.map((chip) => Math.round(chip.getBoundingClientRect().top)));
+      expect(new Set(chipRows).size).toBe(1);
+      if (locale === "bg" && width === 1280) {
+        const buttonDesign = await page.evaluate(() => {
+          const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+          return {
+            chip: { color: style(".contact__chip-face").color, radius: style(".contact__chip-face").borderTopLeftRadius },
+            site: { color: style(".site-header__cta").color, radius: style(".site-header__cta").borderTopLeftRadius },
+            submit: { color: style(".contact__submit .button").color, radius: style(".contact__submit .button").borderTopLeftRadius },
+          };
+        });
+        expect(buttonDesign.chip).toEqual(buttonDesign.site);
+        expect(buttonDesign.submit).toEqual(buttonDesign.site);
+        const firstChip = main.locator(".contact__chip").first();
+        await firstChip.hover();
+        const firstFace = firstChip.locator(".contact__chip-face");
+        await expect(firstFace).toHaveCSS("color", "rgb(8, 107, 67)");
+        await expect(firstFace).toHaveCSS("border-top-color", "rgb(8, 107, 67)");
+        await expect(firstFace).toHaveCSS("transform", "none");
+        const submit = main.getByRole("button", { name: copy.send });
+        await submit.hover();
+        await expect(submit).toHaveCSS("color", "rgb(8, 107, 67)");
+        await expect(submit).toHaveCSS("border-top-color", "rgb(8, 107, 67)");
+      }
+      await expect(main.getByRole("checkbox", { name: copy.newsletter })).toBeEnabled();
+      await expect(main.getByRole("checkbox", { name: copy.privacy })).toBeEnabled();
+      await expect(main.getByRole("button", { name: copy.send })).toBeEnabled();
+      await expect(main.locator(".contact__direct a")).toHaveCount(0);
+      await expect(main.getByRole("button", { name: `${copy.copy} ${appConfig.contactEmail}` })).toBeVisible();
+      const phones = main.locator(".contact__direct .contact__method-action").filter({ hasText: /^\+?\d/ });
+      await expect(phones).toHaveCount(2);
+      for (const [index, phone] of appConfig.contactPhones.entries()) {
+        const international = `${appConfig.contactPhoneCountryCode}${phone.slice(1)}`;
+        await expect(phones.nth(index)).toHaveText(locale === "en" ? international : phone);
+      }
+      await expect(main.getByRole("textbox", { name: copy.budget })).not.toHaveAttribute("required");
+      const beforeStorage = await page.evaluate(() => [localStorage.length, sessionStorage.length]);
+      const interests = main.getByRole("group", { name: copy.interest });
+      if (locale === "bg" && width === 390) {
+        const first = interests.getByRole("checkbox", { name: messages.bg.serviceLinks[0] });
+        const second = interests.getByRole("checkbox", { name: messages.bg.serviceLinks[1] });
+        await first.focus();
+        await expect(first).toBeFocused();
+        await first.press("Space");
+        await expect(first).toBeChecked();
+        await second.focus();
+        await second.press("Space");
+        await expect(second).toBeChecked();
+        await expect(first.locator("xpath=following-sibling::span")).toHaveCSS("background-color", "rgb(8, 107, 67)");
+        await page.emulateMedia({ forcedColors: "active" });
+        const selectedColors = await first.locator("xpath=following-sibling::span").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { foreground: style.color, background: style.backgroundColor };
+        });
+        expect(selectedColors.foreground).not.toBe(selectedColors.background);
+        await page.emulateMedia({ forcedColors: "none" });
+      }
+      const message = main.getByRole("textbox", { name: `${copy.message} *` });
+      await message.fill("A contact preview");
+      const before = page.url();
+      for (const label of [`${copy.name} *`, `${copy.email} *`, copy.phone, copy.website]) {
+        await main.getByRole("textbox", { name: label }).press("Enter");
+        expect(page.url()).toBe(before);
+      }
+      await expect(main.getByRole("checkbox", { name: copy.newsletter })).not.toBeChecked();
+      await expect(main.getByRole("checkbox", { name: copy.privacy })).not.toBeChecked();
+      expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual(beforeStorage);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test("direct contacts copy on click and mobile hold", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (value: string) => {
+        (window as Window & { copiedContact?: string }).copiedContact = value;
+      } },
+    });
+  });
+
+  for (const locale of locales) {
+    await page.goto(pageUrl("contacts", locale));
+    const copy = messages[locale].contacts;
+    const email = page.locator(".contact__method").first();
+    await email.getByRole("button", { name: `${copy.copy} ${appConfig.contactEmail}` }).click();
+    await expect(email.getByRole("status")).toHaveText(copy.copied);
+    expect(await page.evaluate(() => (window as Window & { copiedContact?: string }).copiedContact)).toBe(appConfig.contactEmail);
+
+    const phone = appConfig.contactPhones[0];
+    const displayed = locale === "en" ? `${appConfig.contactPhoneCountryCode}${phone.slice(1)}` : phone;
+    const phoneContact = page.locator(".contact__method").nth(1);
+    const phoneButton = phoneContact.getByRole("button", { name: `${copy.copy} ${displayed}` });
+    await phoneButton.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, clientX: 40, clientY: 40 });
+    await phoneButton.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, clientX: 40, clientY: 40 });
+    await phoneButton.dispatchEvent("click");
+    expect(await page.evaluate(() => (window as Window & { copiedContact?: string }).copiedContact)).toBe(displayed);
+    await page.evaluate(() => { (window as Window & { copiedContact?: string }).copiedContact = undefined; });
+    await phoneButton.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true, clientX: 40, clientY: 40 });
+    await page.waitForTimeout(600);
+    expect(await page.evaluate(() => (window as Window & { copiedContact?: string }).copiedContact)).toBeUndefined();
+    await phoneButton.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true, clientX: 40, clientY: 40 });
+    await phoneButton.dispatchEvent("click");
+    expect(await page.evaluate(() => (window as Window & { copiedContact?: string }).copiedContact)).toBe(displayed);
+    await expect(page).toHaveURL(new RegExp(`${pageUrl("contacts", locale)}$`));
+
+    const second = appConfig.contactPhones[1];
+    const secondDisplayed = locale === "en" ? `${appConfig.contactPhoneCountryCode}${second.slice(1)}` : second;
+    await page.getByRole("button", { name: `${copy.copy} ${secondDisplayed}` }).click();
+    expect(await page.evaluate(() => (window as Window & { copiedContact?: string }).copiedContact)).toBe(secondDisplayed);
+  }
+});
+
+test("a real touch hold copies a phone number to the browser clipboard", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const page = await context.newPage();
+  await mockContactCaptcha(page);
+  await page.goto(pageUrl("contacts", "bg"));
+  const phoneButton = page.getByRole("button", { name: `${messages.bg.contacts.copy} ${appConfig.contactPhones[0]}` });
+  await phoneButton.scrollIntoViewIfNeeded();
+  const box = await phoneButton.boundingBox();
+  expect(box).not.toBeNull();
+  const cdp = await context.newCDPSession(page);
+  const touchPoint = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2, id: 1 };
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touchPoint] });
+  await page.waitForTimeout(600);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(page.locator(".contact__method").nth(1).getByRole("status")).toHaveText(messages.bg.contacts.copied);
+  await expect(page).toHaveURL(new RegExp(`${pageUrl("contacts", "bg")}$`));
+  await context.close();
+});
+
+test("contact form presents required fields without JavaScript", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto(pageUrl("contacts", "bg"));
+  const main = page.locator("main.contact");
+  await expect(main.locator("form")).toHaveCount(1);
+  await expect(main.locator("form")).toHaveAttribute("method", "post");
+  await expect(main.getByRole("heading", { level: 2 })).toBeVisible();
+  await main.getByRole("textbox", { name: `${messages.bg.contacts.email} *` }).fill("visitor@example.test");
+  const before = page.url();
+  await main.getByRole("textbox", { name: `${messages.bg.contacts.email} *` }).press("Enter");
+  expect(page.url()).toBe(before);
+  await expect(main.getByRole("button", { name: messages.bg.contacts.send })).toBeEnabled();
+  await context.close();
+});
+
+test("contact form validates required input and sends the selected service", async ({ page }) => {
+  let submitted: Record<string, unknown> | undefined;
+  let googleScriptRequests = 0;
+  page.on("request", (request) => { if (request.url().startsWith(appConfig.contact.captchaScriptUrl)) googleScriptRequests += 1; });
+  await page.route(`**${appConfig.paths.contactApi}`, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ siteKey: "test-site-key" }) });
+      return;
+    }
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto(pageUrl("contacts", "bg"));
+  expect(googleScriptRequests).toBe(0);
+  const form = page.locator("main.contact form");
+  await form.getByRole("button", { name: messages.bg.contacts.send }).click();
+  expect(await form.locator('[name="name"]').evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
+  expect(submitted).toBeUndefined();
+  expect(googleScriptRequests).toBe(0);
+  const phoneInput = form.getByRole("textbox", { name: messages.bg.contacts.phone });
+  await phoneInput.fill("abcde");
+  expect(await phoneInput.evaluate((input: HTMLInputElement) => input.validity.patternMismatch)).toBe(true);
+  await phoneInput.fill("+359 889 912 671");
+  expect(await phoneInput.evaluate((input: HTMLInputElement) => input.validity.patternMismatch)).toBe(false);
+  await phoneInput.fill("");
+  await form.getByRole("checkbox", { name: messages.bg.contacts.diagnostic }).check();
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.name} *` }).fill("Visitor");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.email} *` }).fill("visitor@example.test");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.message} *` }).fill("I would like an initial website assessment.\nPlease help.");
+  await form.getByRole("textbox", { name: messages.bg.contacts.budget }).fill("5 000 лв.");
+  await form.getByRole("checkbox", { name: messages.bg.contacts.privacy }).check();
+  await form.getByRole("button", { name: messages.bg.contacts.send }).click();
+  await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.sent);
+  expect(googleScriptRequests).toBe(1);
+  expect(submitted).toMatchObject({
+    services: [appConfig.contact.diagnosticSlug], name: "Visitor", email: "visitor@example.test",
+    budget: "5 000 лв.", newsletter: false, privacy: true, captchaToken: "test-token",
+  });
+  expect(String(submitted?.message).replace(/\r\n/g, "\n")).toBe("I would like an initial website assessment.\nPlease help.");
+});
+
+test("contact form keeps entered data after a CAPTCHA rejection and retries", async ({ page }) => {
+  let attempts = 0;
+  await page.route(`**${appConfig.paths.contactApi}`, async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ siteKey: "test-site-key" }) });
+      return;
+    }
+    expect(route.request().postDataJSON()).toMatchObject({ captchaToken: "test-token" });
+    attempts += 1;
+    await route.fulfill({
+      status: attempts === 1 ? 400 : 200,
+      contentType: "application/json",
+      body: JSON.stringify(attempts === 1 ? { error: "captcha" } : { ok: true }),
+    });
+  });
+  await page.goto(pageUrl("contacts", "bg"));
+  const form = page.locator("main.contact form");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.name} *` }).fill("Visitor");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.email} *` }).fill("visitor@example.test");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.message} *` }).fill("Please contact me about my project.");
+  await form.getByRole("checkbox", { name: messages.bg.contacts.privacy }).check();
+  await form.getByRole("button", { name: messages.bg.contacts.send }).click();
+  await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.captchaError);
+  await expect(form.getByRole("textbox", { name: `${messages.bg.contacts.name} *` })).toHaveValue("Visitor");
+  await form.getByRole("button", { name: messages.bg.contacts.send }).click();
+  await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.sent);
+  expect(attempts).toBe(2);
+});
+
+test("contact form waits for a complete reCAPTCHA API before sending", async ({ page }) => {
+  await page.addInitScript(() => { (window as Window & { grecaptcha?: object }).grecaptcha = {}; });
+  await page.route(`**${appConfig.paths.contactApi}`, async (route) => {
+    await route.fulfill(route.request().method() === "GET"
+      ? { status: 200, contentType: "application/json", body: JSON.stringify({ siteKey: "test-site-key" }) }
+      : { status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto(pageUrl("contacts", "bg"));
+  const form = page.locator("main.contact form");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.name} *` }).fill("Visitor");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.email} *` }).fill("visitor@example.test");
+  await form.getByRole("textbox", { name: `${messages.bg.contacts.message} *` }).fill("Please review my website.");
+  await form.getByRole("checkbox", { name: messages.bg.contacts.privacy }).check();
+  await form.getByRole("button", { name: messages.bg.contacts.send }).click();
+  await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.sent);
 });
 
 test("navigation links to all five service pages in both languages", async ({ page }) => {
@@ -802,7 +1100,7 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
       expect(newsletterForm && newsletterForm.width <= 401).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
-    await expect(page.getByRole("link", { name: appConfig.contactEmail })).toHaveAttribute("href", `mailto:${appConfig.contactEmail}`);
+    await expect(page.getByRole("link", { name: appConfig.contactEmail, exact: true })).toHaveAttribute("href", `mailto:${appConfig.contactEmail}`);
   }
 });
 
