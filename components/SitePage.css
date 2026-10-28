@@ -342,7 +342,6 @@ html:has(.privacy-modal[open]) { overflow: hidden; scrollbar-gutter: stable; }
 .site-footer__resend { margin-top: .85rem; padding: 0; border: 0; background: transparent; color: #c4cec5; text-align: left; text-decoration: underline; text-underline-offset: .18rem; cursor: pointer; }
 .site-footer__resend:hover { color: var(--color-white); }
 .site-footer__resend:disabled { opacity: .65; cursor: wait; }
-.site-footer__newsletter-feedback { min-height: 1.5em; margin: .7rem 0 0; color: var(--color-white); font-size: .9rem; }
 .site-footer__social-icons { display: flex; flex-wrap: wrap; gap: .4rem; }
 .site-footer__social-icon { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; min-height: 2.75rem; padding: 0; border: 0.0625rem solid #a7bdac65; border-radius: .6rem; background: #143328; box-shadow: 0 0.125rem 0.5rem #0005; opacity: 1; transition: background-color .2s ease, border-color .2s ease; }
 .site-footer__social-icon:is(a, button:not(:disabled)):hover { border-color: currentColor; background: #1d4435; }

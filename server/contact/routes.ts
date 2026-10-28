@@ -94,11 +94,11 @@ function mailConfig() {
   return { host, port, secure: port === 465, auth: { user, pass }, from, connectionTimeout: 20_000, greetingTimeout: 20_000, socketTimeout: 30_000 };
 }
 
-async function newsletterWithinContactDeadline<T, U>(work: Promise<T>, fallback: U): Promise<T | U> {
+async function newsletterWithinContactDeadline<T, U>(work: Promise<T>, fallback: U, waitMilliseconds: number = appConfig.newsletter.contactWaitMilliseconds): Promise<T | U> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([work, new Promise<U>((resolve) => {
-      timer = setTimeout(() => resolve(fallback), appConfig.newsletter.contactWaitMilliseconds);
+      timer = setTimeout(() => resolve(fallback), waitMilliseconds);
     })]);
   } finally { if (timer) clearTimeout(timer); }
 }
@@ -149,7 +149,9 @@ contactRouter.post("/", async (req, res) => {
     try { newsletterEmail = normalizeNewsletterEmail(data.email); }
     catch { newsletterOutcome = "invalid"; }
     if (newsletterEmail) {
-      const attempt = await newsletterWithinContactDeadline(reserveNewsletterIp(ip), "unavailable" as const);
+      const startedAt = Date.now();
+      const attempt = await newsletterWithinContactDeadline(reserveNewsletterIp(ip), "unavailable" as const, appConfig.newsletter.contactIpWaitMilliseconds);
+      if (Date.now() - startedAt > appConfig.newsletter.contactWaitMilliseconds) console.info("Newsletter ip-reservation-slow");
       if (attempt !== "allowed") newsletterOutcome = attempt === "limited" ? "limited" : "unavailable";
     }
   }

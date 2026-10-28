@@ -10,26 +10,28 @@ import { isRecipientRejected, transportConfig } from "../auth/outbox.js";
 
 type Source = "footer" | "contact";
 type Subscription = {
-  _id: ObjectId; email: string; status: "approved" | "unsubscribed";
+  _id: ObjectId; recordType: "subscription"; email: string; status: "approved" | "unsubscribed";
   firstApprovedAt: Date; lastConfirmedAt: Date; consentVersion: string;
   source: Source; locale: Locale; cancelHashes: string[];
-  statusCancelTokens?: { hash: string; expiresAt: Date }[];
+  statusCancelTokens?: { hash: string; expiresAt?: Date }[];
   statusNoticeAt?: Date; unsubscribedAt?: Date; retainUntil?: Date; purgeAt?: Date;
 };
 type Pending = {
-  _id: ObjectId; email: string; source: Source; locale: Locale;
+  _id: ObjectId; recordType: "pending"; status: "pending_approval"; email: string; source: Source; locale: Locale;
   consentVersion: string; createdAt: Date; expiresAt: Date; purgeAt: Date;
   confirmHashes: string[]; cancelHashes: string[];
   lastMailAt: Date; resends: number; acceptedCount: number;
   acceptedOutboxIds?: ObjectId[]; uncertainDelivery?: boolean; smtpStartedAt?: Date;
 };
 type Outbox = {
-  _id: ObjectId; kind: "confirmation" | "resend" | "active-status";
+  _id: ObjectId; recordType: "outbox"; kind: "confirmation" | "resend" | "active-status";
   ownerId: ObjectId; cycleId: string; encryptedPayload: string; keyId: string;
   status: "pending" | "leased" | "sent"; attempts: number;
   availableAt: Date; expiresAt: Date; leaseId?: string; leaseUntil?: Date;
 };
-type Limit = { _id: string; count: number; expiresAt: Date };
+type Limit = { _id: string; recordType: "limit"; count: number; expiresAt: Date };
+const newsletterSchemaMarkerId = "__newsletter_schema__";
+type NewsletterSchema = { _id: typeof newsletterSchemaMarkerId; recordType: "schema"; schemaId: "wct-newsletter-v2" };
 type MailPayload = { to: string; subject: string; text: string };
 type RequestResult = "accepted" | "limited" | "unavailable";
 
@@ -50,38 +52,53 @@ function configuration() {
 }
 
 function collections(db: Db) {
-  const names = appConfig.newsletter.collections;
+  const name = appConfig.newsletter.collection;
   return {
-    subscriptions: db.collection<Subscription>(names.subscriptions),
-    pending: db.collection<Pending>(names.pending),
-    outbox: db.collection<Outbox>(names.outbox),
-    limits: db.collection<Limit>(names.limits),
+    subscriptions: db.collection<Subscription>(name),
+    pending: db.collection<Pending>(name),
+    outbox: db.collection<Outbox>(name),
+    limits: db.collection<Limit>(name),
   };
 }
 
 export async function createNewsletterIndexes(db: Db): Promise<void> {
   const c = collections(db);
   await Promise.all([
-    c.subscriptions.createIndex({ email: 1 }, { unique: true }),
+    c.subscriptions.createIndex({ email: 1 }, { unique: true, name: "subscription_email_unique", partialFilterExpression: { recordType: "subscription" } }),
+    c.pending.createIndex({ email: 1, recordType: 1 }, { unique: true, name: "pending_email_unique", partialFilterExpression: { recordType: "pending" } }),
     c.subscriptions.createIndex({ purgeAt: 1 }, { expireAfterSeconds: 0 }),
-    c.subscriptions.createIndex({ cancelHashes: 1 }),
-    c.subscriptions.createIndex({ "statusCancelTokens.hash": 1 }),
-    c.pending.createIndex({ email: 1 }, { unique: true }),
-    c.pending.createIndex({ purgeAt: 1 }, { expireAfterSeconds: 0 }),
-    c.pending.createIndex({ confirmHashes: 1 }),
-    c.pending.createIndex({ cancelHashes: 1 }),
-    c.outbox.createIndex({ status: 1, availableAt: 1 }),
+    c.subscriptions.createIndex({ recordType: 1, cancelHashes: 1 }),
+    c.subscriptions.createIndex({ recordType: 1, "statusCancelTokens.hash": 1 }),
+    c.pending.createIndex({ recordType: 1, confirmHashes: 1 }),
+    c.outbox.createIndex({ recordType: 1, status: 1, availableAt: 1 }),
+    c.outbox.createIndex({ recordType: 1, ownerId: 1 }),
     c.outbox.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-    c.limits.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
+}
+
+export async function prepareNewsletterSchema(db: Db): Promise<void> {
+  const markers = db.collection<NewsletterSchema>(appConfig.newsletter.collection);
+  const existing = await markers.findOne({ _id: newsletterSchemaMarkerId });
+  if (existing && existing.schemaId !== "wct-newsletter-v2") throw new Error("Newsletter schema version mismatch");
+  await createNewsletterIndexes(db);
+  await markers.updateOne(
+    { _id: newsletterSchemaMarkerId },
+    { $setOnInsert: { recordType: "schema", schemaId: "wct-newsletter-v2" } },
+    { upsert: true },
+  );
+  const marker = await markers.findOne({ _id: newsletterSchemaMarkerId });
+  if (marker?.schemaId !== "wct-newsletter-v2" || marker.recordType !== "schema") throw new Error("Newsletter schema version mismatch");
 }
 
 export async function newsletterConnection(): Promise<AuthConnection> {
   configuration();
   const connection = await authConnection();
   if (indexState.__wctNewsletterIndexes?.client !== connection.client) {
-    const ready = authCollections(connection.db).control.findOne({ _id: "singleton" }).then((marker) => {
-      if (marker?.schemaId !== "wct-auth-v1" || marker.newsletterSchemaId !== "wct-newsletter-v1") {
+    const ready = Promise.all([
+      authCollections(connection.db).control.findOne({ _id: "singleton" }, { timeoutMS: appConfig.newsletter.newsletterDatabaseOperationTimeoutMilliseconds }),
+      connection.db.collection<NewsletterSchema>(appConfig.newsletter.collection).findOne({ _id: newsletterSchemaMarkerId }, { timeoutMS: appConfig.newsletter.newsletterDatabaseOperationTimeoutMilliseconds }),
+    ]).then(([authMarker, newsletterMarker]) => {
+      if (authMarker?.schemaId !== "wct-auth-v1" || newsletterMarker?.schemaId !== "wct-newsletter-v2" || newsletterMarker.recordType !== "schema") {
         throw new Error("Newsletter database is not prepared");
       }
     });
@@ -116,7 +133,7 @@ function dateAfterYears(date: Date, years: number): Date {
 }
 
 async function databaseNow(db: Db): Promise<Date> {
-  const result = await db.command({ hello: 1 });
+  const result = await db.command({ hello: 1 }, { timeoutMS: appConfig.newsletter.newsletterDatabaseOperationTimeoutMilliseconds });
   return result.localTime instanceof Date ? result.localTime : new Date();
 }
 
@@ -155,30 +172,29 @@ async function queueMail(db: Db, kind: Outbox["kind"], ownerId: ObjectId, payloa
   const _id = new ObjectId();
   const config = configuration();
   await collections(db).outbox.insertOne({
-    _id, kind, ownerId, cycleId: ownerId.toHexString(), encryptedPayload: encrypt(payload, _id), keyId: config.keyId,
+    _id, recordType: "outbox", kind, ownerId, cycleId: ownerId.toHexString(), encryptedPayload: encrypt(payload, _id), keyId: config.keyId,
     status: "pending", attempts: 0, availableAt: now,
     expiresAt: new Date(now.getTime() + appConfig.newsletter.outboxMilliseconds),
   }, { session });
 }
 
-function confirmationMail(email: string, locale: Locale, expiresAt: Date, confirmToken: string, cancelToken: string): MailPayload {
-  const stamp = new Intl.DateTimeFormat(locale === "bg" ? "bg-BG" : "en-GB", { timeZone: "Europe/Sofia", dateStyle: "medium", timeStyle: "short" }).format(expiresAt);
+function confirmationMail(email: string, locale: Locale, confirmToken: string, cancelToken: string): MailPayload {
   return locale === "bg" ? {
     to: email, subject: "Потвърдете абонамента си за WebCreativeTeam",
-    text: `Поискахте абонамент за новини и полезно съдържание от WebCreativeTeam.\n\nПотвърдете до ${stamp}:\n${link(appConfig.paths.newsletterConfirm, locale, confirmToken)}\n\nОткажете заявката:\n${link(appConfig.paths.newsletterDecline, locale, cancelToken)}\n\nАко не сте заявили абонамент, можете да откажете заявката или да игнорирате писмото.`,
+    text: `Поискахте абонамент за новини и полезно съдържание от WebCreativeTeam.\n\nПотвърдете абонамента си:\n${link(appConfig.paths.newsletterConfirm, locale, confirmToken)}\n\nОтказ:\n${link(appConfig.paths.newsletterDecline, locale, cancelToken)}\n\nАко не сте заявили абонамент, можете да откажете заявката или да игнорирате писмото.`,
   } : {
     to: email, subject: "Confirm your WebCreativeTeam subscription",
-    text: `You requested WebCreativeTeam news and useful content.\n\nConfirm by ${stamp}:\n${link(appConfig.paths.newsletterConfirm, locale, confirmToken)}\n\nDecline the request:\n${link(appConfig.paths.newsletterDecline, locale, cancelToken)}\n\nIf you did not request this, decline or ignore this email.`,
+    text: `You requested WebCreativeTeam news and useful content.\n\nConfirm your subscription:\n${link(appConfig.paths.newsletterConfirm, locale, confirmToken)}\n\nDecline:\n${link(appConfig.paths.newsletterDecline, locale, cancelToken)}\n\nIf you did not request this, decline or ignore this email.`,
   };
 }
 
 function statusMail(email: string, locale: Locale, token: string): MailPayload {
   return locale === "bg" ? {
     to: email, subject: "Вече сте абонирани за WebCreativeTeam",
-    text: `Вече сте абонирани за бюлетина на WebCreativeTeam. Няма нужда да се абонирате отново. Ако желаете, можете да се отпишете чрез този линк в срок от 30 дни:\n${link(appConfig.paths.newsletterDecline, locale, token)}`,
+    text: `Вече сте абонирани за бюлетина на WebCreativeTeam. Няма нужда да се абонирате отново. Ако желаете, можете да се отпишете чрез този линк:\n${link(appConfig.paths.newsletterDecline, locale, token)}`,
   } : {
     to: email, subject: "You are already subscribed to WebCreativeTeam",
-    text: `You're already subscribed to the WebCreativeTeam newsletter. You don't need to subscribe again. You can unsubscribe through this link within 30 days:\n${link(appConfig.paths.newsletterDecline, locale, token)}`,
+    text: `You're already subscribed to the WebCreativeTeam newsletter. You don't need to subscribe again. You can unsubscribe through this link:\n${link(appConfig.paths.newsletterDecline, locale, token)}`,
   };
 }
 
@@ -204,9 +220,10 @@ async function reserveShared(db: Db, key: string, limit: number, windowMilliseco
   const now = await databaseNow(db);
   const until = new Date(now.getTime() + windowMilliseconds);
   const entry = await collections(db).limits.findOneAndUpdate({ _id: key }, [{ $set: {
+    recordType: "limit",
     count: { $cond: [{ $gt: ["$expiresAt", now] }, { $add: ["$count", 1] }, 1] },
     expiresAt: { $cond: [{ $gt: ["$expiresAt", now] }, "$expiresAt", until] },
-  } }], { upsert: true, returnDocument: "after" });
+  } }], { upsert: true, returnDocument: "after", timeoutMS: appConfig.newsletter.newsletterDatabaseOperationTimeoutMilliseconds });
   return Boolean(entry && entry.count <= limit);
 }
 
@@ -237,11 +254,11 @@ async function reserveGlobal(db: Db): Promise<boolean> {
 async function finalizeSentMail(db: Db, entry: Outbox): Promise<void> {
   const { pending, outbox } = collections(db);
   if (entry.kind !== "active-status") {
-    await pending.updateOne({ _id: entry.ownerId, acceptedOutboxIds: { $ne: entry._id } }, {
+    await pending.updateOne({ _id: entry.ownerId, recordType: "pending", acceptedOutboxIds: { $ne: entry._id } }, {
       $addToSet: { acceptedOutboxIds: entry._id }, $inc: { acceptedCount: 1 }, $unset: { smtpStartedAt: "" },
     });
   }
-  await outbox.deleteOne({ _id: entry._id, status: "sent" });
+  await outbox.deleteOne({ _id: entry._id, recordType: "outbox", status: "sent" });
 }
 
 export async function requestSubscription(email: string, locale: Locale, source: Source): Promise<RequestResult> {
@@ -252,37 +269,44 @@ export async function requestSubscription(email: string, locale: Locale, source:
     const now = await databaseNow(db);
     const { subscriptions, pending, outbox } = collections(db);
     const session = client.startSession();
+    let statusNoticeEvent: "queued" | "suppressed" | null = null;
     try {
       await session.withTransaction(async () => {
-        const active = await subscriptions.findOne({ email, status: "approved" }, { session });
+        statusNoticeEvent = null;
+        const active = await subscriptions.findOne({ email, recordType: "subscription", status: "approved" }, { session });
         if (active) {
           if (!active.statusNoticeAt || active.statusNoticeAt.getTime() + appConfig.newsletter.statusNoticeWaitMilliseconds <= now.getTime()) {
             const token = randomBytes(32).toString("base64url");
-            const stillValid = active.statusCancelTokens?.filter((entry) => entry.expiresAt > now) ?? [];
-            const changed = await subscriptions.updateOne({ _id: active._id, status: "approved", statusNoticeAt: active.statusNoticeAt ?? { $exists: false } }, {
-              $set: { statusNoticeAt: now, statusCancelTokens: [...stillValid, { hash: tokenHash(token), expiresAt: new Date(now.getTime() + appConfig.newsletter.statusNoticeWaitMilliseconds) }] },
+            const changed = await subscriptions.updateOne({ _id: active._id, recordType: "subscription", status: "approved", statusNoticeAt: active.statusNoticeAt ?? { $exists: false } }, {
+              $set: { statusNoticeAt: now }, $push: { statusCancelTokens: { hash: tokenHash(token) } },
             }, { session });
-            if (changed.modifiedCount === 1) await queueMail(db, "active-status", active._id, statusMail(email, active.locale, token), session, now);
+            if (changed.modifiedCount === 1) {
+              await queueMail(db, "active-status", active._id, statusMail(email, active.locale, token), session, now);
+              statusNoticeEvent = "queued";
+            } else statusNoticeEvent = "suppressed";
+          } else {
+            statusNoticeEvent = "suppressed";
           }
           return;
         }
-        const current = await pending.findOne({ email }, { session });
+        const current = await pending.findOne({ email, recordType: "pending" }, { session });
         if (current && current.expiresAt > now) return;
         if (current) {
-          await pending.deleteOne({ _id: current._id, expiresAt: { $lte: now } }, { session });
-          await outbox.deleteMany({ ownerId: current._id }, { session });
+          await pending.deleteOne({ _id: current._id, recordType: "pending", expiresAt: { $lte: now } }, { session });
+          await outbox.deleteMany({ recordType: "outbox", ownerId: current._id }, { session });
         }
         const confirmToken = randomBytes(32).toString("base64url");
         const cancelToken = randomBytes(32).toString("base64url");
         const expiresAt = new Date(now.getTime() + appConfig.newsletter.pendingMilliseconds);
         const record: Pending = {
-          _id: new ObjectId(), email, source, locale, consentVersion: `${source}-v1`, createdAt: now, expiresAt, purgeAt: expiresAt,
+          _id: new ObjectId(), recordType: "pending", status: "pending_approval", email, source, locale, consentVersion: `${source}-v1`, createdAt: now, expiresAt, purgeAt: expiresAt,
           confirmHashes: [tokenHash(confirmToken)], cancelHashes: [tokenHash(cancelToken)],
           lastMailAt: now, resends: 0, acceptedCount: 0,
         };
         await pending.insertOne(record, { session });
-        await queueMail(db, "confirmation", record._id, confirmationMail(email, locale, expiresAt, confirmToken, cancelToken), session, now);
+        await queueMail(db, "confirmation", record._id, confirmationMail(email, locale, confirmToken, cancelToken), session, now);
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 10_000 });
+      if (statusNoticeEvent) console.info(`Newsletter status-notice-${statusNoticeEvent}`);
     } finally { await session.endSession(); }
     return "accepted";
   } catch (error) {
@@ -301,15 +325,15 @@ export async function resendConfirmation(email: string): Promise<RequestResult> 
     const session = client.startSession();
     try {
       await session.withTransaction(async () => {
-        const record = await pending.findOne({ email, expiresAt: { $gt: now } }, { session });
+        const record = await pending.findOne({ email, recordType: "pending", expiresAt: { $gt: now } }, { session });
         if (!record || record.resends >= 2 || record.lastMailAt.getTime() + appConfig.newsletter.resendWaitMilliseconds > now.getTime()) return;
         const confirmToken = randomBytes(32).toString("base64url");
         const cancelToken = randomBytes(32).toString("base64url");
-        const changed = await pending.updateOne({ _id: record._id, resends: record.resends, expiresAt: { $gt: now } }, {
+        const changed = await pending.updateOne({ _id: record._id, recordType: "pending", resends: record.resends, expiresAt: { $gt: now } }, {
           $inc: { resends: 1 }, $set: { lastMailAt: now },
           $push: { confirmHashes: tokenHash(confirmToken), cancelHashes: tokenHash(cancelToken) },
         }, { session });
-        if (changed.modifiedCount === 1) await queueMail(db, "resend", record._id, confirmationMail(email, record.locale, record.expiresAt, confirmToken, cancelToken), session, now);
+        if (changed.modifiedCount === 1) await queueMail(db, "resend", record._id, confirmationMail(email, record.locale, confirmToken, cancelToken), session, now);
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 10_000 });
     } finally { await session.endSession(); }
     return "accepted";
@@ -331,52 +355,52 @@ export async function decideSubscription(action: "confirm" | "decline", rawToken
     try {
       await session.withTransaction(async () => {
         if (action === "confirm") {
-          const request = await pending.findOne({ confirmHashes: hash, expiresAt: { $gt: now } }, { session });
+          const request = await pending.findOne({ recordType: "pending", confirmHashes: hash, expiresAt: { $gt: now } }, { session });
           if (!request) return;
-          const prior = await subscriptions.findOne({ email: request.email }, { session });
+          const prior = await subscriptions.findOne({ recordType: "subscription", email: request.email }, { session });
           if (prior?.status === "approved") {
-            await pending.deleteOne({ _id: request._id }, { session });
-            await outbox.deleteMany({ ownerId: request._id }, { session });
+            await pending.deleteOne({ _id: request._id, recordType: "pending" }, { session });
+            await outbox.deleteMany({ ownerId: request._id, recordType: "outbox" }, { session });
             done = true;
             return;
           }
           if (prior && prior.retainUntil && prior.retainUntil > now) {
-            const changed = await subscriptions.updateOne({ _id: prior._id, status: "unsubscribed", retainUntil: { $gt: now } }, {
+            const changed = await subscriptions.updateOne({ _id: prior._id, recordType: "subscription", status: "unsubscribed", retainUntil: { $gt: now } }, {
               $set: { status: "approved", lastConfirmedAt: now, consentVersion: request.consentVersion, source: request.source, locale: request.locale, cancelHashes: request.cancelHashes, statusCancelTokens: [] },
               $unset: { unsubscribedAt: "", retainUntil: "", purgeAt: "", statusNoticeAt: "" },
             }, { session });
             if (changed.modifiedCount !== 1) throw new Error("Newsletter transition changed");
           } else {
-            if (prior) await subscriptions.deleteOne({ _id: prior._id, retainUntil: { $lte: now } }, { session });
+            if (prior) await subscriptions.deleteOne({ _id: prior._id, recordType: "subscription", retainUntil: { $lte: now } }, { session });
             await subscriptions.insertOne({
-              _id: new ObjectId(), email: request.email, status: "approved", firstApprovedAt: now, lastConfirmedAt: now,
+              _id: new ObjectId(), recordType: "subscription", email: request.email, status: "approved", firstApprovedAt: now, lastConfirmedAt: now,
               consentVersion: request.consentVersion, source: request.source, locale: request.locale, cancelHashes: request.cancelHashes,
             }, { session });
           }
-          const removed = await pending.deleteOne({ _id: request._id, confirmHashes: hash, expiresAt: { $gt: now } }, { session });
+          const removed = await pending.deleteOne({ _id: request._id, recordType: "pending", confirmHashes: hash, expiresAt: { $gt: now } }, { session });
           if (removed.deletedCount !== 1) throw new Error("Newsletter confirmation changed");
-          await outbox.deleteMany({ ownerId: request._id }, { session });
+          await outbox.deleteMany({ ownerId: request._id, recordType: "outbox" }, { session });
           done = true;
           return;
         }
-        const request = await pending.findOne({ cancelHashes: hash, expiresAt: { $gt: now } }, { session });
+        const request = await pending.findOne({ recordType: "pending", cancelHashes: hash, expiresAt: { $gt: now } }, { session });
         if (request) {
-          const removed = await pending.deleteOne({ _id: request._id, cancelHashes: hash }, { session });
+          const removed = await pending.deleteOne({ _id: request._id, recordType: "pending", cancelHashes: hash }, { session });
           if (removed.deletedCount !== 1) throw new Error("Newsletter decline changed");
-          await outbox.deleteMany({ ownerId: request._id }, { session });
+          await outbox.deleteMany({ ownerId: request._id, recordType: "outbox" }, { session });
           done = true;
           return;
         }
-        const validToken = { $or: [{ cancelHashes: hash }, { statusCancelTokens: { $elemMatch: { hash, expiresAt: { $gt: now } } } }] };
-        const active = await subscriptions.findOne({ status: "approved", ...validToken }, { session });
+        const validToken = { $or: [{ cancelHashes: hash }, { statusCancelTokens: { $elemMatch: { hash } } }] };
+        const active = await subscriptions.findOne({ recordType: "subscription", status: "approved", ...validToken }, { session });
         if (!active) return;
         const retainUntil = dateAfterYears(now, appConfig.newsletter.unsubscribedYears);
-        const changed = await subscriptions.updateOne({ _id: active._id, status: "approved", ...validToken }, {
+        const changed = await subscriptions.updateOne({ _id: active._id, recordType: "subscription", status: "approved", ...validToken }, {
           $set: { status: "unsubscribed", unsubscribedAt: now, retainUntil, purgeAt: retainUntil, cancelHashes: [], statusCancelTokens: [] },
           $unset: { statusNoticeAt: "" },
         }, { session });
         if (changed.modifiedCount !== 1) throw new Error("Newsletter unsubscribe changed");
-        await outbox.deleteMany({ ownerId: active._id }, { session });
+        await outbox.deleteMany({ ownerId: active._id, recordType: "outbox" }, { session });
         done = true;
       }, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" }, readPreference: "primary", timeoutMS: 10_000 });
     } finally { await session.endSession(); }
@@ -391,24 +415,25 @@ export async function runNewsletterOutboxOnce(): Promise<boolean> {
   const { db } = await newsletterConnection();
   const { outbox, pending, subscriptions } = collections(db);
   const now = await databaseNow(db);
-  const sent = await outbox.findOne({ status: "sent" });
+  const sent = await outbox.findOne({ recordType: "outbox", status: "sent" });
   if (sent) { await finalizeSentMail(db, sent); return true; }
   const leaseId = randomBytes(16).toString("hex");
   const entry = await outbox.findOneAndUpdate({
+    recordType: "outbox",
     $or: [{ status: "pending" }, { status: "leased", leaseUntil: { $lte: now } }],
     availableAt: { $lte: now }, expiresAt: { $gt: now },
   }, { $set: { status: "leased", leaseId, leaseUntil: new Date(now.getTime() + 5 * 60_000) }, $inc: { attempts: 1 } }, { sort: { availableAt: 1 }, returnDocument: "after" });
   if (!entry) return false;
   const isStatus = entry.kind === "active-status";
   const owner = isStatus
-    ? await subscriptions.findOne({ _id: entry.ownerId, status: "approved" })
-    : await pending.findOne({ _id: entry.ownerId, expiresAt: { $gt: now } });
+    ? await subscriptions.findOne({ _id: entry.ownerId, recordType: "subscription", status: "approved" })
+    : await pending.findOne({ _id: entry.ownerId, recordType: "pending", expiresAt: { $gt: now } });
   if (!owner) {
-    await outbox.deleteOne({ _id: entry._id, status: "leased", leaseId });
+    await outbox.deleteOne({ _id: entry._id, recordType: "outbox", status: "leased", leaseId });
     return true;
   }
   if (!await reserveShared(db, "smtp-hour", appConfig.newsletter.globalHourlyLimit, 60 * 60 * 1000)) {
-    await outbox.updateOne({ _id: entry._id, status: "leased", leaseId }, {
+    await outbox.updateOne({ _id: entry._id, recordType: "outbox", status: "leased", leaseId }, {
       $set: { status: "pending", availableAt: new Date(now.getTime() + 5 * 60_000) },
       $inc: { attempts: -1 }, $unset: { leaseId: "", leaseUntil: "" },
     });
@@ -423,7 +448,7 @@ export async function runNewsletterOutboxOnce(): Promise<boolean> {
     if (config) {
       const transport = nodemailer.createTransport(config);
       try {
-        if (!isStatus) await pending.updateOne({ _id: entry.ownerId, expiresAt: { $gt: now } }, { $set: { smtpStartedAt: now } });
+        if (!isStatus) await pending.updateOne({ _id: entry.ownerId, recordType: "pending", expiresAt: { $gt: now } }, { $set: { smtpStartedAt: now } });
         smtpStarted = true;
         const result = await transport.sendMail({ from: config.from, to: payload.to, subject: payload.subject, text: payload.text, headers: { "Auto-Submitted": "auto-generated" } });
         if (!result.accepted?.some((value) => typeof value === "string" && value.toLowerCase() === payload.to)) {
@@ -433,7 +458,7 @@ export async function runNewsletterOutboxOnce(): Promise<boolean> {
       } finally { transport.close(); }
     } else testMailbox.push(payload);
     accepted = true;
-    const marked = await outbox.updateOne({ _id: entry._id, status: "leased", leaseId }, { $set: { status: "sent" }, $unset: { leaseId: "", leaseUntil: "" } });
+    const marked = await outbox.updateOne({ _id: entry._id, recordType: "outbox", status: "leased", leaseId }, { $set: { status: "sent" }, $unset: { leaseId: "", leaseUntil: "" } });
     if (marked.modifiedCount !== 1) throw new Error("Newsletter lease changed");
     await finalizeSentMail(db, entry);
   } catch (error) {
@@ -443,22 +468,22 @@ export async function runNewsletterOutboxOnce(): Promise<boolean> {
     }
     if (isRecipientRejected(error)) definitivelyRejected = true;
     if (!isStatus && smtpStarted) {
-      await pending.updateOne({ _id: entry.ownerId }, definitivelyRejected
+      await pending.updateOne({ _id: entry.ownerId, recordType: "pending" }, definitivelyRejected
         ? { $unset: { smtpStartedAt: "" } }
         : { $set: { uncertainDelivery: true } });
     }
     if (definitivelyRejected || entry.attempts >= 5) {
-      await outbox.deleteOne({ _id: entry._id, status: "leased", leaseId });
+      await outbox.deleteOne({ _id: entry._id, recordType: "outbox", status: "leased", leaseId });
       if (!isStatus && entry.kind === "confirmation") {
-        const current = await pending.findOne({ _id: entry.ownerId });
+        const current = await pending.findOne({ _id: entry.ownerId, recordType: "pending" });
         if (current && current.acceptedCount === 0 && !current.uncertainDelivery
-          && await outbox.countDocuments({ ownerId: entry.ownerId }) === 0) {
-          await pending.deleteOne({ _id: entry.ownerId, acceptedCount: 0, uncertainDelivery: { $ne: true } });
+          && await outbox.countDocuments({ ownerId: entry.ownerId, recordType: "outbox" }) === 0) {
+          await pending.deleteOne({ _id: entry.ownerId, recordType: "pending", acceptedCount: 0, uncertainDelivery: { $ne: true } });
         }
       }
       console.error("Newsletter mail permanently failed");
     } else {
-      await outbox.updateOne({ _id: entry._id, status: "leased", leaseId }, {
+      await outbox.updateOne({ _id: entry._id, recordType: "outbox", status: "leased", leaseId }, {
         $set: { status: "pending", availableAt: new Date(now.getTime() + Math.min(60_000 * 2 ** entry.attempts, 3_600_000)) },
         $unset: { leaseId: "", leaseUntil: "" },
       });

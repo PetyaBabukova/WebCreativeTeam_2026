@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { flushSync } from "react-dom";
 import Image from "next/image";
-import { AnimatePresence, MotionConfig, motion, useIsPresent, useReducedMotion } from "motion/react";
+import { MotionConfig, motion } from "motion/react";
 import lightBackground from "@/assets/services/products_page_background.webp";
 import { appConfig } from "@/lib/config";
 import { validContactWebsite } from "@/lib/contactWebsite";
@@ -13,6 +13,7 @@ import type { messages } from "@/lib/messages";
 import { headlineReveal } from "./HeroOrb";
 import ServiceTypewriter from "./ServiceTypewriter";
 import { PrivacyModalLink } from "./PrivacyModal";
+import { useStatusNotice } from "./StatusNotice";
 import "./ContactPage.css";
 
 type ContactCopy = typeof messages.bg.contacts;
@@ -164,89 +165,6 @@ function CopyableContact({ value, kind, copy }: {
   </span>;
 }
 
-function ContactStatusNotice({ notice, copy, locale, onClose, submitButton }: {
-  notice: ContactNoticeState; copy: ContactCopy; locale: Locale; onClose: (id: number) => void;
-  submitButton: React.RefObject<HTMLButtonElement | null>;
-}) {
-  const reduceMotion = useReducedMotion();
-  const isPresent = useIsPresent();
-  const closeButton = useRef<HTMLButtonElement>(null);
-  const card = useRef<HTMLDivElement>(null);
-  const timer = useRef({ handle: null as number | null, remaining: appConfig.contact.notificationDurationMilliseconds as number, startedAt: 0, hover: false, focus: false });
-  const kind = notice.kind;
-  const isError = kind === "sendError" || kind === "validationError" || kind === "captchaError" || kind === "newsletterLimited" || kind === "newsletterUnavailable" || kind === "newsletterInvalid";
-  const title = kind === "sending" ? copy.noticeSending
-    : kind === "sent" ? copy.noticeSentTitle
-      : kind === "unconfirmed" ? copy.noticeUnconfirmedTitle
-        : kind.startsWith("newsletter") ? copy[kind as NewsletterFeedback] : copy.noticeErrorTitle;
-  const titleId = `contact-notice-title-${locale}-${notice.id}`;
-
-  function stopTimer() {
-    const current = timer.current;
-    if (current.handle === null) return;
-    window.clearTimeout(current.handle);
-    current.handle = null;
-    current.remaining = Math.max(0, current.remaining - (Date.now() - current.startedAt));
-  }
-
-  function startTimer() {
-    const current = timer.current;
-    if (!isPresent || kind === "sending" || current.handle !== null || current.hover || current.focus) return;
-    current.startedAt = Date.now();
-    current.handle = window.setTimeout(() => onClose(notice.id), current.remaining);
-  }
-
-  useEffect(() => {
-    const current = timer.current;
-    if (current.handle !== null) window.clearTimeout(current.handle);
-    current.handle = null;
-    if (!isPresent) return;
-    current.remaining = appConfig.contact.notificationDurationMilliseconds;
-    current.startedAt = 0;
-    current.hover = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover)").matches && Boolean(card.current?.matches(":hover"));
-    current.focus = Boolean(card.current?.contains(document.activeElement));
-    if (kind !== "sending" && !current.hover && !current.focus) {
-      current.startedAt = Date.now();
-      current.handle = window.setTimeout(() => onClose(notice.id), current.remaining);
-    }
-    return () => { if (current.handle !== null) window.clearTimeout(current.handle); current.handle = null; };
-  }, [isPresent, kind, notice.id, onClose]);
-
-  function close() {
-    const hadFocus = document.activeElement === closeButton.current;
-    onClose(notice.id);
-    if (hadFocus) submitButton.current?.focus();
-  }
-
-  return <motion.div ref={card} className={`contact__notice${kind === "sent" || kind === "newsletterCheck" ? " contact__notice--sent" : ""}${isError ? " contact__notice--error" : ""}${kind.startsWith("newsletter") ? " contact__notice--newsletter" : ""}`} role="group" aria-labelledby={titleId}
-    initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
-    animate={{ opacity: 1, y: 0 }}
-    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-    transition={reduceMotion ? { duration: .15 } : { type: "spring", visualDuration: .45, bounce: .15 }}
-    onPointerEnter={(event) => { if (event.pointerType === "mouse") { timer.current.hover = true; stopTimer(); } }}
-    onPointerLeave={(event) => { if (event.pointerType === "mouse") { timer.current.hover = false; startTimer(); } }}
-    onFocusCapture={() => { timer.current.focus = true; stopTimer(); }}
-    onBlurCapture={(event) => {
-      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-      timer.current.focus = false;
-      startTimer();
-    }}>
-    <span className={`contact__notice-icon${kind === "sending" && !reduceMotion ? " contact__notice-icon--sending" : ""}`} aria-hidden="true">
-      {kind === "sending" ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21 3-8.4 18-2.7-7.2L3 11.1 21 3Z" /><path d="m9.9 13.8 4.8-4.8" /></svg>
-        : kind === "sent" ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 12.5 5 5L19.5 7" /></svg>
-          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v6m0 4h.01" /></svg>}
-    </span>
-    <div className="contact__notice-text">
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div key={kind} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduceMotion ? .1 : .16 }}>
-          <strong id={titleId}>{title}</strong>
-        </motion.div>
-      </AnimatePresence>
-    </div>
-    {kind !== "sending" ? <button ref={closeButton} className="contact__notice-close" type="button" aria-label={copy.noticeClose} onClick={close}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button> : null}
-  </motion.div>;
-}
-
 export default function ContactPage({ locale, copy, serviceNames }: {
   locale: Locale; copy: ContactCopy; serviceNames: string[];
 }) {
@@ -257,6 +175,7 @@ export default function ContactPage({ locale, copy, serviceNames }: {
   const [feedback, setFeedback] = useState<FeedbackKind | null>(null);
   const [notice, setNotice] = useState<ContactNoticeState | null>(null);
   const [announcement, setAnnouncement] = useState({ status: "", error: "" });
+  const { publish, dismiss } = useStatusNotice();
   const captchaHost = useRef<HTMLDivElement>(null);
   const captchaWidget = useRef<{ api: RecaptchaApi; id: number } | null>(null);
   const captchaStatus = useRef<"idle" | "loading" | "ready" | "failed">("idle");
@@ -287,6 +206,19 @@ export default function ContactPage({ locale, copy, serviceNames }: {
     setNotice((current) => current?.id === id ? null : current);
     if (queuedNewsletter.current) showQueuedNewsletter();
   }, [showQueuedNewsletter]);
+
+  useEffect(() => {
+    if (!notice) { dismiss("contact"); return; }
+    const kind = notice.kind;
+    const isError = kind === "sendError" || kind === "validationError" || kind === "captchaError" || kind === "newsletterLimited" || kind === "newsletterUnavailable" || kind === "newsletterInvalid";
+    const title = kind === "sending" ? copy.noticeSending
+      : kind === "sent" ? copy.noticeSentTitle
+        : kind === "unconfirmed" ? copy.noticeUnconfirmedTitle
+          : kind.startsWith("newsletter") ? copy[kind as NewsletterFeedback] : copy.noticeErrorTitle;
+    publish({ source: "contact", kind: kind === "sending" ? "sending" : isError ? "error" : kind === "sent" || kind === "newsletterCheck" || kind === "newsletterPending" ? "success" : "neutral", text: title, closeLabel: copy.noticeClose, onClose: () => closeNotice(notice.id), returnFocus: submitButton.current });
+  }, [notice, copy, closeNotice, publish, dismiss]);
+
+  useEffect(() => () => dismiss("contact"), [dismiss]);
 
   function queueNewsletterOutcome(result: unknown) {
     const kind = result === "accepted" ? "newsletterCheck" : result === "pending" ? "newsletterPending" : result === "limited" ? "newsletterLimited"
@@ -536,7 +468,6 @@ export default function ContactPage({ locale, copy, serviceNames }: {
               <div className="contact__submit">
                 <div ref={captchaHost} className="contact__captcha" />
                 <button ref={submitButton} className="button button--outline" type="submit" aria-disabled={sending} aria-busy={sending}>{sending ? copy.sending : copy.send}</button>
-                <AnimatePresence mode="wait">{notice ? <ContactStatusNotice key={notice.id} notice={notice} copy={copy} locale={locale} onClose={closeNotice} submitButton={submitButton} /> : null}</AnimatePresence>
                 <p className="contact__feedback" aria-hidden="true">{feedback ? copy[feedback] : ""}</p>
                 <span className="sr-only" role="status">{announcement.status}</span>
                 <span className="sr-only" role="alert">{announcement.error}</span>

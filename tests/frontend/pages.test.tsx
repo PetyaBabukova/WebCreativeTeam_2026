@@ -25,6 +25,8 @@ import NotFoundPage from "@/components/NotFoundPage";
 import SiteNavigation from "@/components/SiteNavigation";
 import AuthScreen from "@/components/AuthScreen";
 import ContactPage from "@/components/ContactPage";
+import FooterNewsletter from "@/components/FooterNewsletter";
+import { StatusNoticeProvider, useStatusNotice } from "@/components/StatusNotice";
 import NewsletterDecision from "@/components/NewsletterDecision";
 import { messages } from "@/lib/messages";
 import { isLocale, canonicalRedirects, localeSwitchUrl, offersUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
@@ -575,7 +577,7 @@ describe("public pages", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     captchaWindow.grecaptcha = captcha;
     try {
-      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      render(<StatusNoticeProvider><ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} /></StatusNoticeProvider>);
       const form = screen.getByRole("form", { name: messages.bg.contacts.title });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
@@ -611,7 +613,7 @@ describe("public pages", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     captchaWindow.grecaptcha = captcha;
     try {
-      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      render(<StatusNoticeProvider><ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} /></StatusNoticeProvider>);
       const form = screen.getByRole("form", { name: messages.bg.contacts.title });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
@@ -639,7 +641,7 @@ describe("public pages", () => {
     globalThis.fetch = vi.fn(async () => Response.json({ siteKey: "test-site-key" })) as unknown as typeof fetch;
     captchaWindow.grecaptcha = captcha;
     try {
-      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      render(<StatusNoticeProvider><ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} /></StatusNoticeProvider>);
       const form = screen.getByRole("form", { name: messages.bg.contacts.title });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "  A" } });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
@@ -672,7 +674,7 @@ describe("public pages", () => {
     delete captchaWindow.grecaptcha;
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     try {
-      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      render(<StatusNoticeProvider><ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} /></StatusNoticeProvider>);
       const form = screen.getByRole("form", { name: messages.bg.contacts.title });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
@@ -731,7 +733,7 @@ describe("public pages", () => {
       return nativeSetTimeout(handler, delay, ...args) as unknown as ReturnType<typeof globalThis.setTimeout>;
     });
     try {
-      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      render(<StatusNoticeProvider><ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} /></StatusNoticeProvider>);
       const form = screen.getByRole("form", { name: messages.bg.contacts.title });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
@@ -740,13 +742,13 @@ describe("public pages", () => {
       fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
       fireEvent.submit(form);
       await waitFor(() => expect(posts).toBe(1));
-      expect(form.querySelectorAll(".contact__notice")).toHaveLength(0);
+      expect(document.querySelectorAll(".contact__notice")).toHaveLength(0);
       fireEvent.submit(form);
       expect(posts).toBe(1);
-      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeSending })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("group", { name: messages.bg.contacts.noticeSending })).toBeVisible());
       await act(async () => { resolveFirstPost(Response.json({ error: "unavailable" }, { status: 503 })); });
-      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeErrorTitle })).toBeVisible());
-      const errorNotice = form.querySelector(".contact__notice") as HTMLElement;
+      await waitFor(() => expect(screen.getByRole("group", { name: messages.bg.contacts.noticeErrorTitle })).toBeVisible());
+      const errorNotice = document.querySelector(".contact__notice") as HTMLElement;
       expect(errorNotice).toHaveClass("contact__notice--error");
       expect(within(form).getByRole("alert")).toHaveTextContent(messages.bg.contacts.sendError);
       expect(message).toHaveValue("Please review my website.");
@@ -761,13 +763,13 @@ describe("public pages", () => {
       expect(within(form).getByRole("button", { name: messages.bg.contacts.send })).toHaveFocus();
       fireEvent.submit(form);
       await waitFor(() => expect(posts).toBe(2));
-      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeVisible());
+      await waitFor(() => expect(screen.getByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeVisible());
       await act(async () => { staleNoticeTimer?.(); });
-      expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeVisible();
-      expect(form.querySelectorAll(".contact__notice--error")).toHaveLength(0);
+      expect(screen.getByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeVisible();
+      expect(document.querySelectorAll(".contact__notice--error")).toHaveLength(0);
       expect(message).toHaveValue("");
       await act(async () => { noticeTimers.at(-1)?.(); });
-      await waitFor(() => expect(within(form).queryByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeNull());
       expect(form.querySelector(".contact__feedback")).toHaveTextContent(messages.bg.contacts.sent);
     } finally {
       timeoutSpy.mockRestore();
@@ -807,7 +809,7 @@ describe("public pages", () => {
       return nativeSetTimeout(handler, delay, ...args) as unknown as ReturnType<typeof globalThis.setTimeout>;
     });
     try {
-      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      render(<StatusNoticeProvider><ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} /></StatusNoticeProvider>);
       const form = screen.getByRole("form", { name: messages.bg.contacts.title });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
       fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
@@ -817,8 +819,8 @@ describe("public pages", () => {
       fireEvent.submit(form);
       await waitFor(() => expect(expireRequest).toBeDefined());
       await act(async () => { expireRequest?.(); });
-      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeUnconfirmedTitle })).toBeVisible());
-      expect(form.querySelector(".contact__notice")).not.toHaveClass("contact__notice--error");
+      await waitFor(() => expect(screen.getByRole("group", { name: messages.bg.contacts.noticeUnconfirmedTitle })).toBeVisible());
+      expect(document.querySelector(".contact__notice")).not.toHaveClass("contact__notice--error");
       expect(within(form).getByRole("alert")).toHaveTextContent(messages.bg.contacts.unconfirmed);
       expect(message).toHaveValue("Please review my website.");
       expect(within(form).getByRole("button", { name: messages.bg.contacts.send })).toHaveAttribute("aria-disabled", "false");
@@ -828,6 +830,64 @@ describe("public pages", () => {
       if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
       else delete captchaWindow.grecaptcha;
     }
+  });
+  it("shows footer newsletter results in the shared green or orange notice", async () => {
+    const copy = messages.bg.landing.footer;
+    let captchaCallback: ((token: string) => void) | undefined;
+    const captcha = {
+      render: vi.fn((_host: HTMLElement, options: { callback: (token: string) => void }) => { captchaCallback = options.callback; return 0; }),
+      execute: vi.fn(() => captchaCallback?.("test-token")),
+      reset: vi.fn(),
+    };
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    const previousFetch = globalThis.fetch;
+    let submissions = 0;
+    globalThis.fetch = vi.fn(async (_url: string | URL | Request, options?: RequestInit) => {
+      if (options?.method !== "POST") return Response.json({ siteKey: "test-site-key" });
+      submissions += 1;
+      return submissions === 1 ? Response.json({ result: "check-email" }, { status: 202 }) : Response.json({ error: "Too many requests" }, { status: 429 });
+    }) as typeof fetch;
+    captchaWindow.grecaptcha = captcha;
+    try {
+      render(<StatusNoticeProvider><FooterNewsletter locale="bg" copy={copy} /></StatusNoticeProvider>);
+      const form = document.querySelector(".site-footer__newsletter-form") as HTMLFormElement;
+      fireEvent.change(within(form).getByRole("textbox", { name: copy.email }), { target: { value: "subscriber@example.test" } });
+      for (const checkbox of within(form).getAllByRole("checkbox")) fireEvent.click(checkbox);
+      fireEvent.submit(form);
+      const success = await screen.findByRole("group", { name: copy.checkEmail });
+      expect(success).toHaveClass("contact__notice--sent");
+      await waitFor(() => expect(within(form).getByRole("button", { name: copy.subscribe })).not.toBeDisabled());
+      fireEvent.submit(form);
+      const limited = await screen.findByRole("group", { name: copy.limited });
+      expect(limited).toHaveClass("contact__notice--error");
+      expect(document.querySelectorAll(".contact__notice")).toHaveLength(1);
+      const close = within(limited).getByRole("button", { name: copy.close });
+      close.focus();
+      fireEvent.click(close);
+      expect(within(form).getByRole("button", { name: copy.subscribe })).toHaveFocus();
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
+  });
+  it("queues footer and contact notices in one visible host", async () => {
+    function Probe() {
+      const { publish } = useStatusNotice();
+      return <>
+        <button onClick={() => publish({ source: "contact", kind: "success", text: "Contact sent", closeLabel: "Close" })}>Contact</button>
+        <button onClick={() => publish({ source: "footer", kind: "success", text: "Newsletter received", closeLabel: "Close" })}>Footer</button>
+      </>;
+    }
+    render(<StatusNoticeProvider><Probe /></StatusNoticeProvider>);
+    fireEvent.click(screen.getByRole("button", { name: "Contact" }));
+    fireEvent.click(screen.getByRole("button", { name: "Footer" }));
+    await waitFor(() => expect(screen.getByRole("group", { name: "Contact sent" })).toBeVisible());
+    expect(screen.queryByRole("group", { name: "Newsletter received" })).toBeNull();
+    fireEvent.click(within(screen.getByRole("group", { name: "Contact sent" })).getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.getByRole("group", { name: "Newsletter received" })).toBeVisible());
+    expect(screen.queryByRole("group", { name: "Contact sent" })).toBeNull();
   });
   it.each([[BgContacts, "bg"], [EnContacts, "en"]] as const)("routes footer and header links through the active locale %#", (Page, locale) => {
     render(<Page />);

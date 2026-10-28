@@ -33,6 +33,7 @@ import PrivacyContent from "./PrivacyContent";
 import { PrivacyModalLink, PrivacyModalProvider } from "./PrivacyModal";
 import FaqPage from "./FaqPage";
 import ContactPage from "./ContactPage";
+import { StatusNoticeProvider } from "./StatusNotice";
 import HeroMotion from "./HeroOrb";
 import IntroSection from "./IntroSection";
 import ServicesSection from "./ServicesSection";
@@ -173,14 +174,14 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
 
 export default function SitePage({ locale, page }: { locale: Locale; page: Page }) {
   const copy = messages[locale];
-  return <PrivacyModalProvider locale={locale} enabled={page !== "privacy"} title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen={page !== "privacy" && page !== "cookies"} inline={page === "cookies"}><div className={`site-page site-page--${page}`}>
+  return <PrivacyModalProvider locale={locale} enabled={page !== "privacy"} title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen={page !== "privacy" && page !== "cookies"} inline={page === "cookies"}><StatusNoticeProvider><div className={`site-page site-page--${page}`}>
     <SiteHeader locale={locale} page={page} />
     {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : page === "privacy" ? <PrivacyPage locale={locale} /> : page === "cookies" ? <CookiePolicyPage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
     </main>}
     <SiteFooter locale={locale} route={{ page }} />
-  </div></CookieConsentProvider></PrivacyModalProvider>;
+  </div></StatusNoticeProvider></CookieConsentProvider></PrivacyModalProvider>;
 }
 
 function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
@@ -213,7 +214,7 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
   const title = copy.serviceLinks[serviceSlugs.indexOf(slug)];
   const detail = serviceDetail(locale, slug);
   const sections: typeof messages.bg.serviceDetails["ai-automation"]["sections"] | undefined = detail && "sections" in detail && Array.isArray(detail.sections) ? detail.sections : undefined;
-  return <PrivacyModalProvider locale={locale} enabled title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen inline={false}><div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
+  return <PrivacyModalProvider locale={locale} enabled title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen inline={false}><StatusNoticeProvider><div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
     <SiteHeader locale={locale} page="service" serviceSlug={slug} />
     {detail ? <main id="main" className="service-detail" data-service={slug} tabIndex={-1}>
       <div className="service-detail__background" aria-hidden="true"><Image src={serviceDetailBackground} alt="" fill sizes="100vw" priority unoptimized decoding="sync" /></div>
@@ -253,5 +254,5 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
       </div>}
     </main> : <main id="main" className="container standard-page" tabIndex={-1}><h1>{title}</h1></main>}
     <SiteFooter locale={locale} route={{ page: "service", serviceSlug: slug }} />
-  </div></CookieConsentProvider></PrivacyModalProvider>;
+  </div></StatusNoticeProvider></CookieConsentProvider></PrivacyModalProvider>;
 }

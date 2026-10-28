@@ -52,7 +52,6 @@ export type AuthToken = {
 export type AdminControl = {
   _id: "singleton";
   schemaId: "wct-auth-v1";
-  newsletterSchemaId?: "wct-newsletter-v1";
   bootstrapState: BootstrapState;
   bootstrapEmail?: string;
   ownerUserId?: ObjectId;

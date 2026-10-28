@@ -3,6 +3,7 @@ import request from "supertest";
 import nodemailer from "nodemailer";
 import { createApp } from "../../server/app.js";
 import { appConfig } from "../../lib/config.js";
+import * as newsletterService from "../../server/newsletter/service.js";
 
 describe("Express HTTP boundaries", () => {
   it.each([
@@ -273,6 +274,70 @@ describe("Express HTTP boundaries", () => {
       vi.unstubAllEnvs();
     }
   });
+  it("does not lose the contact newsletter request when the IP check takes longer than 1.5 seconds", async () => {
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const verify = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ success: true, hostname: "localhost" }));
+    const reserveIp = vi.spyOn(newsletterService, "reserveNewsletterIp").mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve("allowed"), appConfig.newsletter.contactWaitMilliseconds + 50)));
+    const subscribe = vi.spyOn(newsletterService, "requestSubscription").mockResolvedValue("accepted");
+    const sendMail = vi.fn().mockResolvedValue({ accepted: [appConfig.contactEmail], rejected: [] });
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail, close: vi.fn() } as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").send({
+        locale: "bg", services: [], name: "Visitor", email: "Already@Example.test", phone: "", website: "", budget: "",
+        message: "Please review my website.", newsletter: true, privacy: true, captchaToken: "test-token",
+      }).expect(200, { ok: true, newsletter: "accepted" });
+      expect(reserveIp).toHaveBeenCalledOnce();
+      expect(subscribe).toHaveBeenCalledWith("already@example.test", "bg", "contact");
+      expect(verify).toHaveBeenCalledOnce();
+      expect(sendMail).toHaveBeenCalledOnce();
+    } finally {
+      transport.mockRestore();
+      subscribe.mockRestore();
+      reserveIp.mockRestore();
+      verify.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+  it("still sends the contact enquiry when the newsletter IP check does not answer", async () => {
+    vi.stubEnv("SITE_URL", "http://localhost:3000");
+    vi.stubEnv("AUTH_SMTP_HOST", "smtp.example.test");
+    vi.stubEnv("AUTH_SMTP_PORT", "465");
+    vi.stubEnv("AUTH_SMTP_USER", "test");
+    vi.stubEnv("AUTH_SMTP_PASSWORD", "test");
+    vi.stubEnv("AUTH_SMTP_FROM", "sender@example.test");
+    vi.stubEnv("CAPTCHA_SITE_KEY", "public-test-key");
+    vi.stubEnv("CAPTCHA_SECRET_SITE_KEY", "private-test-key");
+    const reserveIp = vi.spyOn(newsletterService, "reserveNewsletterIp").mockImplementation(() => new Promise(() => {}));
+    const subscribe = vi.spyOn(newsletterService, "requestSubscription").mockResolvedValue("accepted");
+    const verify = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ success: true, hostname: "localhost" }));
+    const sendMail = vi.fn().mockResolvedValue({ accepted: [appConfig.contactEmail], rejected: [] });
+    const transport = vi.spyOn(nodemailer, "createTransport").mockReturnValue({ sendMail, close: vi.fn() } as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").send({
+        locale: "bg", services: [], name: "Visitor", email: "visitor@example.test", phone: "", website: "", budget: "",
+        message: "Please review my website.", newsletter: true, privacy: true, captchaToken: "test-token",
+      }).expect(200, { ok: true, newsletter: "unavailable" });
+      expect(reserveIp).toHaveBeenCalledOnce();
+      expect(subscribe).not.toHaveBeenCalled();
+      expect(verify).toHaveBeenCalledOnce();
+      expect(sendMail).toHaveBeenCalledOnce();
+    } finally {
+      transport.mockRestore();
+      verify.mockRestore();
+      subscribe.mockRestore();
+      reserveIp.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  }, appConfig.newsletter.contactIpWaitMilliseconds + 5_000);
   it("rejects missing, wrong-host, and unavailable CAPTCHA responses without sending mail", async () => {
     const time = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60 * 60 * 1000);
     vi.stubEnv("SITE_URL", "http://localhost:3000");
