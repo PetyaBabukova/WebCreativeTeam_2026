@@ -14,7 +14,7 @@ describe("Express HTTP boundaries", () => {
   ])("redirects bare pages using the validated locale cookie %s", async (cookie, home, faq, contacts) => {
     const app = createApp((_req, res) => { res.send("next"); }, () => true);
     for (const [path, destination] of [["/", home], ["/faq?from=email", `${faq}?from=email`], ["/contacts?from=cta", `${contacts}?from=cta`]]) {
-      const response = await request(app).get(path).set(cookie ? { Cookie: cookie } : {}).expect(307);
+      const response = await request(app).get(path).set(cookie ? { Cookie: `${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all; ${cookie}` } : {}).expect(307);
       expect(response.headers.location).toBe(destination);
       expect(response.headers["cache-control"]).toBe("private, no-store");
       expect(response.headers["set-cookie"]).toBeUndefined();
@@ -22,12 +22,28 @@ describe("Express HTTP boundaries", () => {
   });
   it("only handles exact GET and HEAD aliases and leaves other requests to Next", async () => {
     const app = createApp((req, res) => { res.status(404).send(`next:${req.method}:${req.path}`); }, () => true);
-    await request(app).head("/faq").set("Cookie", "wct_locale=en").expect(307).expect("Location", "/faq/en");
-    await request(app).head("/contacts").set("Cookie", "wct_locale=en").expect(307).expect("Location", "/contacts/en");
+    const accepted = `${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all; wct_locale=en`;
+    await request(app).head("/faq").set("Cookie", accepted).expect(307).expect("Location", "/faq/en");
+    await request(app).head("/contacts").set("Cookie", accepted).expect(307).expect("Location", "/contacts/en");
     for (const path of ["/FAQ", "/faq/", "/contacts/", "/CONTACTS", "/about", "/services/bad/en", "/_next/asset.js"]) {
       await request(app).get(path).expect(404, `next:GET:${path}`);
     }
     await request(app).post("/faq").expect(404, "next:POST:/faq");
+  });
+  it("ignores and clears a prior language cookie without valid acceptance on public HTML", async () => {
+    const app = createApp((_req, res) => { res.send("next"); }, () => true);
+    for (const choice of [undefined, "v1.rejected", "v1.necessary", "v0.all", "v1.invalid"]) {
+      const header = [`${appConfig.localeCookie.name}=en`, choice && `${appConfig.cookieChoice.name}=${choice}`].filter(Boolean).join("; ");
+      const redirect = await request(app).get("/").set("Cookie", header).expect(307);
+      expect(redirect.headers.location).toBe("/bg");
+      expect(redirect.headers["set-cookie"]?.[0]).toContain(`${appConfig.localeCookie.name}=`);
+      expect(redirect.headers["cache-control"]).toBe("private, no-store");
+      const page = await request(app).get("/contacts/en").set("Accept", "text/html").set("Cookie", header).expect(200);
+      expect(page.headers["set-cookie"]?.[0]).toContain(`${appConfig.localeCookie.name}=`);
+      expect(page.headers["cache-control"]).toBe("private, no-store");
+    }
+    const asset = await request(app).get("/_next/asset.js").set("Accept", "text/html").set("Cookie", "wct_locale=en").expect(200);
+    expect(asset.headers["set-cookie"]).toBeUndefined();
   });
   it("reports readiness without caching or implementation headers", async () => {
     let ready = true;
@@ -199,6 +215,9 @@ describe("Express HTTP boundaries", () => {
       await send({ ...payload, privacy: false }).expect(400);
       await send({ ...payload, services: ["unknown"] }).expect(400);
       await send({ ...payload, website: "javascript:alert(1)" }).expect(400);
+      await send({ ...payload, website: "ftp://example.test" }).expect(400);
+      await send({ ...payload, website: "not-a-domain" }).expect(400);
+      await send({ ...payload, website: "https://user@example.test" }).expect(400);
       await send({ ...payload, budget: "x".repeat(appConfig.contact.budgetMaxLength + 1) }).expect(400);
       await send({ ...payload, message: "short" }).expect(400);
       await send({ ...payload, message: "          a" }).expect(400);
@@ -232,9 +251,9 @@ describe("Express HTTP boundaries", () => {
       expect(publicConfig.headers["cache-control"]).toBe("no-store");
       await request(app).post(appConfig.paths.contactApi).set("Origin", "http://localhost:3000").send({
         locale: "bg", services: [appConfig.contact.diagnosticSlug], name: "Visitor",
-        email: "visitor@example.test", phone: "", website: "", budget: "5 000 лв.",
+        email: "visitor@example.test", phone: "", website: "www.happycolors.eu", budget: "5 000 лв.",
         message: "I would like a website assessment.\r\nPlease help.", newsletter: true, privacy: true, captchaToken: "test-token",
-      }).expect(200, { ok: true });
+      }).expect(200, { ok: true, newsletter: "unavailable" });
       expect(verify).toHaveBeenCalledOnce();
       const verificationBody = verify.mock.calls[0][1]?.body;
       expect(verificationBody).toBeInstanceOf(URLSearchParams);
@@ -246,6 +265,7 @@ describe("Express HTTP boundaries", () => {
       }));
       expect(sendMail.mock.calls[0][0].text).toContain("Budget: 5 000 лв.");
       expect(sendMail.mock.calls[0][0].text).toContain("I would like a website assessment.\nPlease help.");
+      expect(sendMail.mock.calls[0][0].text).toContain("Website: www.happycolors.eu");
       expect(close).toHaveBeenCalledOnce();
     } finally {
       verify.mockRestore();

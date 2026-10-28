@@ -1,0 +1,7 @@
+.newsletter-decision { display: grid; place-items: center; min-height: 100vh; padding: 2rem; background: var(--color-white); color: var(--color-deep-green-on-light); }
+.newsletter-decision__card { width: min(100%, 39rem); padding: clamp(1.5rem, 5vw, 3rem); border: .1rem solid var(--color-primary); border-radius: 1rem; background: #fffaf1; }
+.newsletter-decision__eyebrow { margin: 0 0 .8rem; color: var(--color-primary); font-weight: 700; }
+.newsletter-decision h1 { margin: 0 0 1rem; font-size: clamp(2rem, 5vw, 3rem); }
+.newsletter-decision p { line-height: 1.6; }
+.newsletter-decision button { margin: 1rem 1rem 1rem 0; }
+.newsletter-decision a { display: inline-block; margin-top: 1rem; color: inherit; }

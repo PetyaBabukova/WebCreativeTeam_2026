@@ -1,76 +1,26 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { flushSync } from "react-dom";
 import Image from "next/image";
-import { MotionConfig, motion } from "motion/react";
+import { AnimatePresence, MotionConfig, motion, useIsPresent, useReducedMotion } from "motion/react";
 import lightBackground from "@/assets/services/products_page_background.webp";
 import { appConfig } from "@/lib/config";
+import { validContactWebsite } from "@/lib/contactWebsite";
+import { fetchCaptchaSiteKey, loadCaptchaScript, type RecaptchaApi } from "@/lib/clientCaptcha";
 import { serviceSlugs, type Locale } from "@/lib/routing";
 import type { messages } from "@/lib/messages";
 import { headlineReveal } from "./HeroOrb";
 import ServiceTypewriter from "./ServiceTypewriter";
+import { PrivacyModalLink } from "./PrivacyModal";
 import "./ContactPage.css";
 
 type ContactCopy = typeof messages.bg.contacts;
+type FeedbackKind = "sent" | "sendError" | "validationError" | "captchaError" | "captchaLoading" | "unconfirmed" | "newsletterCheck" | "newsletterLimited" | "newsletterUnavailable" | "newsletterInvalid" | "newsletterPending";
+type NewsletterFeedback = Extract<FeedbackKind, `newsletter${string}`>;
+type NoticeKind = Exclude<FeedbackKind, "captchaLoading"> | "sending";
+type ContactNoticeState = { id: number; kind: NoticeKind };
 
-type RecaptchaApi = {
-  render: (container: HTMLElement, options: {
-    sitekey: string; size: "invisible"; badge: "bottomright";
-    callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void;
-  }) => number;
-  execute: (widgetId: number) => void;
-  reset: (widgetId: number) => void;
-};
-type RecaptchaWindow = Window & { grecaptcha?: RecaptchaApi; __wctRecaptchaLoaded?: () => void };
-let captchaScriptPromise: Promise<RecaptchaApi> | null = null;
-
-function loadCaptchaScript(locale: Locale): Promise<RecaptchaApi> {
-  const captchaWindow = window as RecaptchaWindow;
-  if (captchaScriptPromise) return captchaScriptPromise;
-  if (captchaWindow.grecaptcha && typeof captchaWindow.grecaptcha.render === "function"
-    && typeof captchaWindow.grecaptcha.execute === "function" && typeof captchaWindow.grecaptcha.reset === "function") {
-    return Promise.resolve(captchaWindow.grecaptcha);
-  }
-  captchaScriptPromise = new Promise<RecaptchaApi>((resolve, reject) => {
-    const script = document.createElement("script");
-    let settled = false;
-    const timer = window.setTimeout(() => fail(), appConfig.contact.captchaScriptTimeoutMilliseconds);
-    function fail() {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      delete captchaWindow.__wctRecaptchaLoaded;
-      script.remove();
-      captchaScriptPromise = null;
-      reject(new Error("reCAPTCHA unavailable"));
-    }
-    captchaWindow.__wctRecaptchaLoaded = () => {
-      if (settled) return;
-      window.clearTimeout(timer);
-      if (!captchaWindow.grecaptcha || typeof captchaWindow.grecaptcha.render !== "function"
-        || typeof captchaWindow.grecaptcha.execute !== "function" || typeof captchaWindow.grecaptcha.reset !== "function") { fail(); return; }
-      settled = true;
-      delete captchaWindow.__wctRecaptchaLoaded;
-      resolve(captchaWindow.grecaptcha);
-    };
-    script.src = `${appConfig.contact.captchaScriptUrl}?render=explicit&onload=__wctRecaptchaLoaded&hl=${locale}`;
-    script.async = true;
-    script.defer = true;
-    script.onerror = fail;
-    document.head.appendChild(script);
-  });
-  return captchaScriptPromise;
-}
-
-async function fetchCaptchaSiteKey(): Promise<string | null> {
-  try {
-    const response = await fetch(appConfig.paths.contactApi, { cache: "no-store" });
-    if (!response.ok) return null;
-    const config: unknown = await response.json();
-    return config && typeof config === "object" && typeof (config as { siteKey?: unknown }).siteKey === "string"
-      ? (config as { siteKey: string }).siteKey : null;
-  } catch { return null; }
-}
 
 function ContactField({ id, name, label, type = "text", autoComplete, maxLength, required = false, multiline = false, third = false, onChange }: {
   id: string; name: string; label: string; type?: string; autoComplete?: string;
@@ -80,7 +30,7 @@ function ContactField({ id, name, label, type = "text", autoComplete, maxLength,
     <label className="sr-only" htmlFor={id}>{label}</label>
     {multiline
       ? <textarea id={id} name={name} placeholder={label} maxLength={maxLength} minLength={10} rows={3} required={required} onInput={(event) => event.currentTarget.setCustomValidity("")} onChange={(event) => onChange?.(event.currentTarget.value)} />
-      : <input id={id} name={name} type={type} placeholder={label} autoComplete={autoComplete} maxLength={maxLength} minLength={name === "name" ? 2 : undefined} pattern={name === "phone" ? "[+0-9\\(\\) .\\-]{5,30}" : undefined} required={required} onInput={(event) => event.currentTarget.setCustomValidity("")} />}
+      : <input id={id} name={name} type={type} inputMode={name === "website" ? "url" : undefined} placeholder={label} autoComplete={autoComplete} maxLength={maxLength} minLength={name === "name" ? 2 : undefined} pattern={name === "phone" ? "[+0-9\\(\\) .\\-]{5,30}" : undefined} required={required} onInput={(event) => event.currentTarget.setCustomValidity("")} />}
   </div>;
 }
 
@@ -89,8 +39,15 @@ function ContactIcon({ kind }: { kind: "email" | "phone" }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7.5 3H5a2 2 0 0 0-2 2c0 8.8 7.2 16 16 16a2 2 0 0 0 2-2v-2.5l-5-2-2.2 2.2a14 14 0 0 1-6.5-6.5L9.5 8Z" /></svg>;
 }
 
-function validContactForm(form: HTMLFormElement, message: string): boolean {
+function validContactForm(form: HTMLFormElement, message: string, websiteMessage: string): boolean {
   if (!form.reportValidity()) return false;
+  const website = form.elements.namedItem("website");
+  if (website instanceof HTMLInputElement && !validContactWebsite(website.value)) {
+    website.setCustomValidity(websiteMessage);
+    website.reportValidity();
+    website.focus();
+    return false;
+  }
   for (const [name, minimum] of [["name", 2], ["message", 10], ["phone", 1]] as const) {
     const field = form.elements.namedItem(name);
     if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) continue;
@@ -207,6 +164,89 @@ function CopyableContact({ value, kind, copy }: {
   </span>;
 }
 
+function ContactStatusNotice({ notice, copy, locale, onClose, submitButton }: {
+  notice: ContactNoticeState; copy: ContactCopy; locale: Locale; onClose: (id: number) => void;
+  submitButton: React.RefObject<HTMLButtonElement | null>;
+}) {
+  const reduceMotion = useReducedMotion();
+  const isPresent = useIsPresent();
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  const timer = useRef({ handle: null as number | null, remaining: appConfig.contact.notificationDurationMilliseconds as number, startedAt: 0, hover: false, focus: false });
+  const kind = notice.kind;
+  const isError = kind === "sendError" || kind === "validationError" || kind === "captchaError" || kind === "newsletterLimited" || kind === "newsletterUnavailable" || kind === "newsletterInvalid";
+  const title = kind === "sending" ? copy.noticeSending
+    : kind === "sent" ? copy.noticeSentTitle
+      : kind === "unconfirmed" ? copy.noticeUnconfirmedTitle
+        : kind.startsWith("newsletter") ? copy[kind as NewsletterFeedback] : copy.noticeErrorTitle;
+  const titleId = `contact-notice-title-${locale}-${notice.id}`;
+
+  function stopTimer() {
+    const current = timer.current;
+    if (current.handle === null) return;
+    window.clearTimeout(current.handle);
+    current.handle = null;
+    current.remaining = Math.max(0, current.remaining - (Date.now() - current.startedAt));
+  }
+
+  function startTimer() {
+    const current = timer.current;
+    if (!isPresent || kind === "sending" || current.handle !== null || current.hover || current.focus) return;
+    current.startedAt = Date.now();
+    current.handle = window.setTimeout(() => onClose(notice.id), current.remaining);
+  }
+
+  useEffect(() => {
+    const current = timer.current;
+    if (current.handle !== null) window.clearTimeout(current.handle);
+    current.handle = null;
+    if (!isPresent) return;
+    current.remaining = appConfig.contact.notificationDurationMilliseconds;
+    current.startedAt = 0;
+    current.hover = typeof window.matchMedia === "function" && window.matchMedia("(hover: hover)").matches && Boolean(card.current?.matches(":hover"));
+    current.focus = Boolean(card.current?.contains(document.activeElement));
+    if (kind !== "sending" && !current.hover && !current.focus) {
+      current.startedAt = Date.now();
+      current.handle = window.setTimeout(() => onClose(notice.id), current.remaining);
+    }
+    return () => { if (current.handle !== null) window.clearTimeout(current.handle); current.handle = null; };
+  }, [isPresent, kind, notice.id, onClose]);
+
+  function close() {
+    const hadFocus = document.activeElement === closeButton.current;
+    onClose(notice.id);
+    if (hadFocus) submitButton.current?.focus();
+  }
+
+  return <motion.div ref={card} className={`contact__notice${kind === "sent" || kind === "newsletterCheck" ? " contact__notice--sent" : ""}${isError ? " contact__notice--error" : ""}${kind.startsWith("newsletter") ? " contact__notice--newsletter" : ""}`} role="group" aria-labelledby={titleId}
+    initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -16 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+    transition={reduceMotion ? { duration: .15 } : { type: "spring", visualDuration: .45, bounce: .15 }}
+    onPointerEnter={(event) => { if (event.pointerType === "mouse") { timer.current.hover = true; stopTimer(); } }}
+    onPointerLeave={(event) => { if (event.pointerType === "mouse") { timer.current.hover = false; startTimer(); } }}
+    onFocusCapture={() => { timer.current.focus = true; stopTimer(); }}
+    onBlurCapture={(event) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      timer.current.focus = false;
+      startTimer();
+    }}>
+    <span className={`contact__notice-icon${kind === "sending" && !reduceMotion ? " contact__notice-icon--sending" : ""}`} aria-hidden="true">
+      {kind === "sending" ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m21 3-8.4 18-2.7-7.2L3 11.1 21 3Z" /><path d="m9.9 13.8 4.8-4.8" /></svg>
+        : kind === "sent" ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m4.5 12.5 5 5L19.5 7" /></svg>
+          : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v6m0 4h.01" /></svg>}
+    </span>
+    <div className="contact__notice-text">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div key={kind} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: reduceMotion ? .1 : .16 }}>
+          <strong id={titleId}>{title}</strong>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+    {kind !== "sending" ? <button ref={closeButton} className="contact__notice-close" type="button" aria-label={copy.noticeClose} onClick={close}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button> : null}
+  </motion.div>;
+}
+
 export default function ContactPage({ locale, copy, serviceNames }: {
   locale: Locale; copy: ContactCopy; serviceNames: string[];
 }) {
@@ -214,7 +254,9 @@ export default function ContactPage({ locale, copy, serviceNames }: {
   const [leadReady, setLeadReady] = useState(false);
   const [sending, setSending] = useState(false);
   const [captchaRetry, setCaptchaRetry] = useState(0);
-  const [feedback, setFeedback] = useState<"sent" | "sendError" | "validationError" | "captchaError" | "captchaLoading" | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackKind | null>(null);
+  const [notice, setNotice] = useState<ContactNoticeState | null>(null);
+  const [announcement, setAnnouncement] = useState({ status: "", error: "" });
   const captchaHost = useRef<HTMLDivElement>(null);
   const captchaWidget = useRef<{ api: RecaptchaApi; id: number } | null>(null);
   const captchaStatus = useRef<"idle" | "loading" | "ready" | "failed">("idle");
@@ -222,8 +264,63 @@ export default function ContactPage({ locale, copy, serviceNames }: {
   const pendingForm = useRef<HTMLFormElement | null>(null);
   const captchaExecutingAt = useRef(0);
   const submitting = useRef(false);
+  const submitButton = useRef<HTMLButtonElement>(null);
+  const noticeAttempt = useRef(0);
+  const noticeLoadingTimer = useRef<number | null>(null);
+  const requestController = useRef<AbortController | null>(null);
+  const queuedNewsletter = useRef<NewsletterFeedback | null>(null);
+  const newsletterTimer = useRef<number | null>(null);
   const interestHintId = `contact-interest-hint-${locale}`;
   const diagnosticHintId = `contact-diagnostic-hint-${locale}`;
+
+  const showQueuedNewsletter = useCallback(() => {
+    if (newsletterTimer.current !== null) window.clearTimeout(newsletterTimer.current);
+    newsletterTimer.current = null;
+    const kind = queuedNewsletter.current;
+    queuedNewsletter.current = null;
+    if (!kind) return;
+    noticeAttempt.current += 1;
+    setFeedback(kind);
+    setNotice({ id: noticeAttempt.current, kind });
+  }, []);
+  const closeNotice = useCallback((id: number) => {
+    setNotice((current) => current?.id === id ? null : current);
+    if (queuedNewsletter.current) showQueuedNewsletter();
+  }, [showQueuedNewsletter]);
+
+  function queueNewsletterOutcome(result: unknown) {
+    const kind = result === "accepted" ? "newsletterCheck" : result === "pending" ? "newsletterPending" : result === "limited" ? "newsletterLimited"
+      : result === "invalid" ? "newsletterInvalid" : "newsletterUnavailable";
+    queuedNewsletter.current = kind;
+    if (newsletterTimer.current !== null) window.clearTimeout(newsletterTimer.current);
+    newsletterTimer.current = window.setTimeout(showQueuedNewsletter, 3000);
+  }
+
+  function clearLoadingNotice() {
+    if (noticeLoadingTimer.current !== null) window.clearTimeout(noticeLoadingTimer.current);
+    noticeLoadingTimer.current = null;
+  }
+
+  function showOutcome(kind: Exclude<NoticeKind, "sending">) {
+    clearLoadingNotice();
+    setFeedback(kind);
+    setNotice({ id: noticeAttempt.current, kind });
+  }
+
+  useEffect(() => () => {
+    if (noticeLoadingTimer.current !== null) window.clearTimeout(noticeLoadingTimer.current);
+    if (newsletterTimer.current !== null) window.clearTimeout(newsletterTimer.current);
+    requestController.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    if (notice?.kind === "sending") setAnnouncement({ status: copy.noticeSending, error: "" });
+    else if (feedback === "sent") setAnnouncement({ status: copy.sent, error: "" });
+    else if (feedback === "newsletterCheck" || feedback === "newsletterPending") setAnnouncement({ status: copy[feedback], error: "" });
+    else if (feedback === "captchaLoading") setAnnouncement({ status: copy.captchaLoading, error: "" });
+    else if (feedback) setAnnouncement({ status: "", error: copy[feedback] });
+    else setAnnouncement({ status: "", error: "" });
+  }, [notice, feedback, copy]);
 
   useEffect(() => {
     siteKeyPromise.current = fetchCaptchaSiteKey();
@@ -254,10 +351,10 @@ export default function ContactPage({ locale, copy, serviceNames }: {
             const pending = pendingForm.current;
             if (!active || submitting.current) return;
             if (!pending) { api.reset(id); return; }
-            if (!token) { pendingForm.current = null; captchaExecutingAt.current = 0; setFeedback("captchaError"); api.reset(id); return; }
+            if (!token) { pendingForm.current = null; captchaExecutingAt.current = 0; showOutcome("captchaError"); api.reset(id); return; }
             pendingForm.current = null;
             captchaExecutingAt.current = 0;
-            if (!validContactForm(pending, copy.validationError)) {
+            if (!validContactForm(pending, copy.validationError, copy.websiteError)) {
               pending.querySelector<HTMLElement>(":invalid")?.focus();
               setFeedback("validationError");
               api.reset(id);
@@ -271,25 +368,43 @@ export default function ContactPage({ locale, copy, serviceNames }: {
             };
             submitting.current = true;
             setSending(true);
+            const attemptId = noticeAttempt.current;
+            const controller = new AbortController();
+            requestController.current = controller;
+            const requestTimeout = window.setTimeout(() => controller.abort(), appConfig.contact.requestTimeoutMilliseconds);
+            noticeLoadingTimer.current = window.setTimeout(() => {
+              if (noticeAttempt.current === attemptId) setNotice({ id: attemptId, kind: "sending" });
+              noticeLoadingTimer.current = null;
+            }, appConfig.contact.notificationLoadingDelayMilliseconds);
             void (async () => {
               try {
                 const result = await fetch(appConfig.paths.contactApi, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ ...body, captchaToken: token }),
+                  signal: controller.signal,
                 });
                 if (!active) return;
+                const details: unknown = await result.json().catch(() => null);
+                const newsletterResult = details && typeof details === "object" ? (details as { newsletter?: unknown }).newsletter : undefined;
                 if (result.ok) {
                   pending.reset();
                   setMessage("");
-                  setFeedback("sent");
+                  showOutcome("sent");
+                  if (body.newsletter) queueNewsletterOutcome(newsletterResult);
                 } else if (result.status === 400) {
-                  const details: unknown = await result.json().catch(() => null);
-                  setFeedback(details && typeof details === "object" && (details as { error?: unknown }).error === "captcha" ? "captchaError" : "validationError");
-                } else setFeedback("sendError");
+                  if (!active) return;
+                  showOutcome(details && typeof details === "object" && (details as { error?: unknown }).error === "captcha" ? "captchaError" : "validationError");
+                } else {
+                  showOutcome("sendError");
+                  if (body.newsletter && newsletterResult) queueNewsletterOutcome(newsletterResult);
+                }
               } catch {
-                if (active) setFeedback("sendError");
+                if (active) showOutcome(controller.signal.aborted ? "unconfirmed" : "sendError");
               } finally {
+                window.clearTimeout(requestTimeout);
+                clearLoadingNotice();
+                if (requestController.current === controller) requestController.current = null;
                 if (active) api.reset(id);
                 submitting.current = false;
                 if (active) setSending(false);
@@ -302,7 +417,7 @@ export default function ContactPage({ locale, copy, serviceNames }: {
             pendingForm.current = null;
             captchaExecutingAt.current = 0;
             api.reset(id);
-            if (hadPending) setFeedback("captchaError");
+            if (hadPending) showOutcome("captchaError");
           },
           "error-callback": () => {
             if (!active || submitting.current) return;
@@ -310,20 +425,20 @@ export default function ContactPage({ locale, copy, serviceNames }: {
             pendingForm.current = null;
             captchaExecutingAt.current = 0;
             api.reset(id);
-            if (hadPending) setFeedback("captchaError");
+            if (hadPending) showOutcome("captchaError");
           },
         });
         captchaWidget.current = { api, id };
         captchaStatus.current = "ready";
         if (pendingForm.current) {
           try { captchaExecutingAt.current = Date.now(); setFeedback(null); api.execute(id); }
-          catch { pendingForm.current = null; captchaExecutingAt.current = 0; setFeedback("captchaError"); }
+          catch { pendingForm.current = null; captchaExecutingAt.current = 0; showOutcome("captchaError"); }
         }
       } catch {
         if (active) {
           captchaStatus.current = "failed";
           pendingForm.current = null;
-          setFeedback("captchaError");
+          showOutcome("captchaError");
         }
       }
     }
@@ -340,10 +455,19 @@ export default function ContactPage({ locale, copy, serviceNames }: {
     event.preventDefault();
     if (submitting.current) return;
     const form = event.currentTarget;
-    if (!validContactForm(form, copy.validationError)) return;
+    if (!validContactForm(form, copy.validationError, copy.websiteError)) return;
     if (captchaStatus.current === "loading") return;
     if (captchaExecutingAt.current && Date.now() - captchaExecutingAt.current < 1000) return;
-    setFeedback(null);
+    if (newsletterTimer.current !== null) window.clearTimeout(newsletterTimer.current);
+    newsletterTimer.current = null;
+    queuedNewsletter.current = null;
+    noticeAttempt.current += 1;
+    clearLoadingNotice();
+    flushSync(() => {
+      setNotice(null);
+      setFeedback(null);
+      setAnnouncement({ status: "", error: "" });
+    });
     pendingForm.current = form;
     const widget = captchaWidget.current;
     if (!widget) {
@@ -353,7 +477,7 @@ export default function ContactPage({ locale, copy, serviceNames }: {
       return;
     }
     try { captchaExecutingAt.current = Date.now(); widget.api.execute(widget.id); }
-    catch { pendingForm.current = null; captchaExecutingAt.current = 0; setFeedback("captchaError"); }
+    catch { pendingForm.current = null; captchaExecutingAt.current = 0; showOutcome("captchaError"); }
   }
 
   return <MotionConfig reducedMotion="never">
@@ -395,7 +519,7 @@ export default function ContactPage({ locale, copy, serviceNames }: {
               <ContactField id={`contact-name-${locale}`} name="name" label={`${copy.name} *`} maxLength={appConfig.contact.nameMaxLength} autoComplete="name" required third />
               <ContactField id={`contact-email-${locale}`} name="email" label={`${copy.email} *`} type="email" maxLength={appConfig.contact.emailMaxLength} autoComplete="email" required third />
               <ContactField id={`contact-phone-${locale}`} name="phone" label={copy.phone} type="tel" maxLength={appConfig.contact.phoneMaxLength} autoComplete="tel" third />
-              <ContactField id={`contact-website-${locale}`} name="website" label={copy.website} type="url" maxLength={appConfig.contact.websiteMaxLength} autoComplete="url" />
+              <ContactField id={`contact-website-${locale}`} name="website" label={copy.website} maxLength={appConfig.contact.websiteMaxLength} autoComplete="url" />
               <ContactField id={`contact-budget-${locale}`} name="budget" label={copy.budget} maxLength={appConfig.contact.budgetMaxLength} />
               <div className="contact__message-field">
                 <ContactField id={`contact-message-${locale}`} name="message" label={`${copy.message} *`} multiline maxLength={appConfig.contact.messageMaxLength} required onChange={setMessage} />
@@ -406,13 +530,17 @@ export default function ContactPage({ locale, copy, serviceNames }: {
             <div className="contact__form-bottom">
               <div className="contact__consents">
                 <label><input className="form-checkbox" type="checkbox" name="newsletter" /><span>{copy.newsletter}</span></label>
-                <label><input className="form-checkbox" type="checkbox" name="privacy" required /><span>{copy.privacy}</span></label>
+                <a className="contact__newsletter-resend" href={`#newsletter-${locale}`}>{copy.newsletterResend}</a>
+                <div className="contact__privacy-row"><input className="form-checkbox" id={`contact-privacy-${locale}`} type="checkbox" name="privacy" aria-label={copy.privacy} required /><span><label htmlFor={`contact-privacy-${locale}`}>{copy.privacyPrefix}</label>{" "}<PrivacyModalLink locale={locale}>{copy.privacyLink}</PrivacyModalLink> *</span></div>
               </div>
               <div className="contact__submit">
                 <div ref={captchaHost} className="contact__captcha" />
-                <button className="button button--outline" type="submit" aria-disabled={sending} aria-busy={sending}>{sending ? copy.sending : copy.send}</button>
-                <p role="status" aria-live="polite">{feedback ? copy[feedback] : ""}</p>
-                <p className="contact__captcha-notice">{copy.captchaNoticeStart}<a href={appConfig.contact.captchaPrivacyUrl} target="_blank" rel="noopener noreferrer">{copy.captchaPrivacy}</a>{copy.captchaNoticeJoin}<a href={appConfig.contact.captchaTermsUrl} target="_blank" rel="noopener noreferrer">{copy.captchaTerms}</a>{copy.captchaNoticeEnd}</p>
+                <button ref={submitButton} className="button button--outline" type="submit" aria-disabled={sending} aria-busy={sending}>{sending ? copy.sending : copy.send}</button>
+                <AnimatePresence mode="wait">{notice ? <ContactStatusNotice key={notice.id} notice={notice} copy={copy} locale={locale} onClose={closeNotice} submitButton={submitButton} /> : null}</AnimatePresence>
+                <p className="contact__feedback" aria-hidden="true">{feedback ? copy[feedback] : ""}</p>
+                <span className="sr-only" role="status">{announcement.status}</span>
+                <span className="sr-only" role="alert">{announcement.error}</span>
+                <p className="contact__captcha-notice">{copy.captchaNoticeStart}<PrivacyModalLink locale={locale}>{copy.captchaPrivacy}</PrivacyModalLink>{copy.captchaNoticeEnd}</p>
               </div>
             </div>
           </form>

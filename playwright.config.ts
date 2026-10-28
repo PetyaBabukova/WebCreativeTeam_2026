@@ -4,7 +4,21 @@ export default defineConfig({
   testDir: "tests/e2e", fullyParallel: false, workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
-  use: { baseURL: testOrigin, trace: "retain-on-failure" },
+  use: {
+    baseURL: testOrigin,
+    trace: "retain-on-failure",
+    // Existing journeys start after the first-visit choice; dedicated consent tests clear this cookie.
+    storageState: { cookies: [{
+      name: appConfig.cookieChoice.name,
+      value: `${appConfig.cookieChoice.version}.all`,
+      domain: new URL(testOrigin).hostname,
+      path: appConfig.cookieChoice.path,
+      expires: -1,
+      httpOnly: false,
+      secure: false,
+      sameSite: "Lax",
+    }], origins: [] },
+  },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "node dist/server/index.js",

@@ -1,7 +1,10 @@
 import express, { Router, type ErrorRequestHandler } from "express";
 import nodemailer from "nodemailer";
 import { appConfig, isLocale, siteOrigin } from "../../lib/config.js";
+import { validContactWebsite } from "../../lib/contactWebsite.js";
 import { clientIpBucket, normalizeEmail } from "../auth/security.js";
+import { captchaConfig, verifyCaptcha } from "./captcha.js";
+import { normalizeNewsletterEmail, requestSubscription, reserveNewsletterIp } from "../newsletter/service.js";
 
 type ContactRequest = {
   locale: string;
@@ -61,14 +64,6 @@ function safeStructuredText(value: string): boolean {
   return !/[\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/u.test(value);
 }
 
-function validWebsite(value: string): boolean {
-  if (!value) return true;
-  try {
-    const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname) && !url.username && !url.password;
-  } catch { return false; }
-}
-
 function parseContact(value: unknown): ContactRequest | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
@@ -81,7 +76,7 @@ function parseContact(value: unknown): ContactRequest | null {
   let email: string;
   try { email = normalizeEmail(data.email); } catch { return null; }
   if (!validText(data.phone, 0, appConfig.contact.phoneMaxLength) || data.phone && (!data.phone.trim() || !/^[+0-9() .-]{5,30}$/.test(data.phone))) return null;
-  if (!validText(data.website, 0, appConfig.contact.websiteMaxLength) || !safeStructuredText(data.website) || !validWebsite(data.website)) return null;
+  if (!validText(data.website, 0, appConfig.contact.websiteMaxLength) || !safeStructuredText(data.website) || !validContactWebsite(data.website)) return null;
   if (!validText(data.budget, 0, appConfig.contact.budgetMaxLength) || !safeStructuredText(data.budget) || /[\r\n]/.test(data.budget)) return null;
   const message = typeof data.message === "string" ? data.message.replace(/\r\n/g, "\n") : data.message;
   if (!validText(message, 10, appConfig.contact.messageMaxLength)) return null;
@@ -99,30 +94,15 @@ function mailConfig() {
   return { host, port, secure: port === 465, auth: { user, pass }, from, connectionTimeout: 20_000, greetingTimeout: 20_000, socketTimeout: 30_000 };
 }
 
-function captchaConfig() {
-  const siteKey = process.env.CAPTCHA_SITE_KEY;
-  const secret = process.env.CAPTCHA_SECRET_SITE_KEY;
-  return siteKey && secret ? { siteKey, secret } : null;
+async function newsletterWithinContactDeadline<T, U>(work: Promise<T>, fallback: U): Promise<T | U> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work, new Promise<U>((resolve) => {
+      timer = setTimeout(() => resolve(fallback), appConfig.newsletter.contactWaitMilliseconds);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
-async function verifyCaptcha(token: string, secret: string, hostname: string): Promise<"valid" | "invalid" | "unavailable"> {
-  try {
-    const response = await fetch(appConfig.contact.captchaVerifyUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ secret, response: token }),
-      signal: AbortSignal.timeout(appConfig.contact.captchaVerifyTimeoutMilliseconds),
-    });
-    if (!response.ok) return "unavailable";
-    const result: unknown = await response.json();
-    if (!result || typeof result !== "object" || Array.isArray(result)) return "unavailable";
-    const answer = result as Record<string, unknown>;
-    if (answer.success !== true && answer.success !== false) return "unavailable";
-    if (answer.success === false) return "invalid";
-    if (answer["error-codes"] !== undefined && (!Array.isArray(answer["error-codes"]) || answer["error-codes"].length)) return "unavailable";
-    return answer.hostname === hostname ? "valid" : "invalid";
-  } catch { return "unavailable"; }
-}
 
 export const contactRouter = Router();
 contactRouter.use(express.json({ limit: "16kb", strict: true }));
@@ -163,6 +143,16 @@ contactRouter.post("/", async (req, res) => {
     console.warn("Contact request rate limited: captcha address");
     res.status(429).json({ error: "Too many requests" }); return;
   }
+  let newsletterOutcome: "accepted" | "limited" | "unavailable" | "invalid" | "pending" | undefined;
+  let newsletterEmail: string | undefined;
+  if (data.newsletter) {
+    try { newsletterEmail = normalizeNewsletterEmail(data.email); }
+    catch { newsletterOutcome = "invalid"; }
+    if (newsletterEmail) {
+      const attempt = await newsletterWithinContactDeadline(reserveNewsletterIp(ip), "unavailable" as const);
+      if (attempt !== "allowed") newsletterOutcome = attempt === "limited" ? "limited" : "unavailable";
+    }
+  }
   if (activeCaptchaChecks >= appConfig.contact.captchaConcurrentLimit
     || reserve(globalCaptchaAttempts, "global", now, appConfig.contact.captchaGlobalAttemptLimit) === null) {
     release(requests, ip, reservation);
@@ -180,10 +170,13 @@ contactRouter.post("/", async (req, res) => {
     res.status(verification === "invalid" ? 400 : 503).json({ error: verification === "invalid" ? "captcha" : "Service unavailable" });
     return;
   }
+  if (newsletterEmail && !newsletterOutcome) newsletterOutcome = await newsletterWithinContactDeadline(
+    requestSubscription(newsletterEmail, data.locale as "bg" | "en", "contact"), "pending" as const,
+  );
   if (reserve(globalMailAttempts, "global", now, appConfig.contact.contactGlobalSendLimit) === null) {
     release(requests, ip, reservation);
     console.warn("Contact request rate limited: mail global");
-    res.status(429).json({ error: "Too many requests" }); return;
+    res.status(429).json({ error: "Too many requests", newsletter: newsletterOutcome }); return;
   }
   const transport = nodemailer.createTransport(config);
   try {
@@ -206,12 +199,12 @@ contactRouter.post("/", async (req, res) => {
     });
     if (!result.accepted?.some((address) => typeof address === "string" && address.toLowerCase() === appConfig.contactEmail)) {
       console.error("Contact mail rejected");
-      res.status(502).json({ error: "Mail rejected" }); return;
+      res.status(502).json({ error: "Mail rejected", newsletter: newsletterOutcome }); return;
     }
-    res.status(200).json({ ok: true });
+    res.status(200).json({ ok: true, newsletter: newsletterOutcome });
   } catch {
     console.error("Contact mail unavailable");
-    res.status(503).json({ error: "Mail unavailable" });
+    res.status(503).json({ error: "Mail unavailable", newsletter: newsletterOutcome });
   } finally {
     transport.close();
   }

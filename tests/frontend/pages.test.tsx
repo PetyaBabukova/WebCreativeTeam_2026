@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { renderToReadableStream } from "react-dom/server";
+import { StrictMode } from "react";
 import BgHome, { generateMetadata as bgHomeMetadata } from "@/app/(bg)/bg/page";
 import EnHome, { generateMetadata as enHomeMetadata } from "@/app/(en)/en/page";
 import BgAbout, { generateMetadata as bgAboutMetadata } from "@/app/(bg)/about/bg/page";
@@ -11,6 +12,10 @@ import BgFaq, { generateMetadata as bgFaqMetadata } from "@/app/(bg)/faq/bg/page
 import EnFaq, { generateMetadata as enFaqMetadata } from "@/app/(en)/faq/en/page";
 import BgContacts, { generateMetadata as bgContactsMetadata } from "@/app/(bg)/contacts/bg/page";
 import EnContacts, { generateMetadata as enContactsMetadata } from "@/app/(en)/contacts/en/page";
+import BgPrivacy, { generateMetadata as bgPrivacyMetadata } from "@/app/(bg)/privacy/page";
+import EnPrivacy, { generateMetadata as enPrivacyMetadata } from "@/app/(en)/privacy/en/page";
+import BgCookies, { generateMetadata as bgCookiesMetadata } from "@/app/(bg)/cookies/page";
+import EnCookies, { generateMetadata as enCookiesMetadata } from "@/app/(en)/cookies/en/page";
 import BgService, { generateMetadata as bgServiceMetadata } from "@/app/(bg)/services/[slug]/bg/page";
 import EnService, { generateMetadata as enServiceMetadata } from "@/app/(en)/services/[slug]/en/page";
 import BgLayout from "@/app/(bg)/layout";
@@ -20,6 +25,7 @@ import NotFoundPage from "@/components/NotFoundPage";
 import SiteNavigation from "@/components/SiteNavigation";
 import AuthScreen from "@/components/AuthScreen";
 import ContactPage from "@/components/ContactPage";
+import NewsletterDecision from "@/components/NewsletterDecision";
 import { messages } from "@/lib/messages";
 import { isLocale, canonicalRedirects, localeSwitchUrl, offersUrl, pageUrl, portfolioUrl, sectionUrl, serviceSlugs, serviceUrl } from "@/lib/routing";
 import { appConfig, localOrigin, siteOrigin } from "@/lib/config";
@@ -44,6 +50,7 @@ const originalVisibility = Object.getOwnPropertyDescriptor(document, "visibility
 
 beforeEach(() => {
   document.cookie = `${appConfig.localeCookie.name}=; Max-Age=0; Path=/`;
+  document.cookie = `${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all; Path=/`;
   window.location.hash = "";
 });
 
@@ -406,6 +413,21 @@ function navigationCopy() {
 }
 
 describe("public pages", () => {
+  it("keeps a newsletter decision token through Strict Mode effect replay", async () => {
+    const token = "a".repeat(43);
+    window.location.hash = `token=${token}`;
+    const send = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => new Response(JSON.stringify({ result: "done" }), { status: 200 }));
+    const previousFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", send);
+    try {
+      render(<StrictMode><NewsletterDecision locale="en" action="confirm" /></StrictMode>);
+      expect(window.location.hash).toBe("");
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+      await waitFor(() => expect(send).toHaveBeenCalledOnce());
+      expect(JSON.parse(String(send.mock.calls[0]?.[1]?.body))).toMatchObject({ action: "confirm", token });
+    } finally { vi.stubGlobal("fetch", previousFetch); }
+  });
+
   it.each([[BgFaq, "bg"], [EnFaq, "en"]] as const)("shows 13 initially closed FAQ cards and localized related links %#", (Page, locale) => {
     render(<Page />);
     const main = screen.getByRole("main");
@@ -518,6 +540,13 @@ describe("public pages", () => {
     expect(within(message.closest(".contact__message-field") as HTMLElement).getByRole("status")).toHaveTextContent(copy.contacts.limitReached);
     expect(within(main).getByRole("checkbox", { name: copy.contacts.newsletter })).toBeEnabled();
     expect(within(main).getByRole("checkbox", { name: copy.contacts.privacy })).toBeRequired();
+    const privacy = within(main.querySelector(".contact__privacy-row") as HTMLElement).getByRole("link", { name: copy.contacts.privacyLink });
+    expect(privacy).toHaveAttribute("href", pageUrl("privacy", locale));
+    expect(within(main.querySelector(".contact__captcha-notice") as HTMLElement).getByRole("link", { name: copy.contacts.captchaPrivacy })).toHaveAttribute("href", pageUrl("privacy", locale));
+    expect(within(main).getByRole("checkbox", { name: copy.contacts.privacy })).not.toBeChecked();
+    privacy.addEventListener("click", (event) => event.preventDefault(), { once: true });
+    fireEvent.click(privacy);
+    expect(within(main).getByRole("checkbox", { name: copy.contacts.privacy })).not.toBeChecked();
     expect(within(main).getByRole("button", { name: copy.contacts.send })).toBeEnabled();
     expect(main.querySelector(".contact__direct a")).toBeNull();
     expect(within(main).getByRole("button", { name: `${copy.contacts.copy} ${appConfig.contactEmail}` })).toBeEnabled();
@@ -652,7 +681,7 @@ describe("public pages", () => {
       fireEvent.submit(form);
       await waitFor(() => expect(document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)).not.toBeNull());
       await act(async () => { document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)?.dispatchEvent(new Event("error")); });
-      await waitFor(() => expect(within(form).getAllByRole("status").at(-1)).toHaveTextContent(messages.bg.contacts.captchaError));
+      await waitFor(() => expect(within(form).getByRole("alert")).toHaveTextContent(messages.bg.contacts.captchaError));
       expect(document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)).toBeNull();
       fireEvent.submit(form);
       await waitFor(() => expect(document.querySelector(`script[src^="${appConfig.contact.captchaScriptUrl}"]`)).not.toBeNull());
@@ -661,6 +690,140 @@ describe("public pages", () => {
       await waitFor(() => expect(within(form).getAllByRole("status").at(-1)).toHaveTextContent(messages.bg.contacts.sent));
       expect(captcha.execute).toHaveBeenCalledOnce();
     } finally {
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
+  });
+  it("shows one status indicator for a slow send, then an orange error, and resets it on retry", async () => {
+    let resolveFirstPost: (response: Response) => void = () => {};
+    const firstPost = new Promise<Response>((resolve) => { resolveFirstPost = resolve; });
+    let posts = 0;
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+      if (options?.method !== "POST") return Promise.resolve(Response.json({ siteKey: "test-site-key" }));
+      posts += 1;
+      return posts === 1 ? firstPost : Promise.resolve(Response.json({ ok: true }));
+    });
+    let completeCaptcha: ((token: string) => void) | undefined;
+    const captcha = {
+      render: vi.fn((_container: HTMLElement, options: { callback: (token: string) => void }) => {
+        completeCaptcha = options.callback;
+        return 0;
+      }),
+      execute: vi.fn(() => completeCaptcha?.("test-token")),
+      reset: vi.fn(),
+    };
+    const previousFetch = globalThis.fetch;
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    captchaWindow.grecaptcha = captcha;
+    let staleNoticeTimer: (() => void) | undefined;
+    const noticeTimers: Array<() => void> = [];
+    const noticeDelays: number[] = [];
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    const timeoutSpy = vi.spyOn(window, "setTimeout").mockImplementation((handler, delay, ...args) => {
+      if (typeof handler === "function" && delay !== undefined && delay > 10000 && delay <= appConfig.contact.notificationDurationMilliseconds) {
+        staleNoticeTimer ??= () => handler();
+        noticeTimers.push(() => handler());
+        noticeDelays.push(delay);
+      }
+      return nativeSetTimeout(handler, delay, ...args) as unknown as ReturnType<typeof globalThis.setTimeout>;
+    });
+    try {
+      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      const form = screen.getByRole("form", { name: messages.bg.contacts.title });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
+      const message = within(form).getByRole("textbox", { name: `${messages.bg.contacts.message} *` });
+      fireEvent.change(message, { target: { value: "Please review my website." } });
+      fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
+      fireEvent.submit(form);
+      await waitFor(() => expect(posts).toBe(1));
+      expect(form.querySelectorAll(".contact__notice")).toHaveLength(0);
+      fireEvent.submit(form);
+      expect(posts).toBe(1);
+      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeSending })).toBeVisible());
+      await act(async () => { resolveFirstPost(Response.json({ error: "unavailable" }, { status: 503 })); });
+      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeErrorTitle })).toBeVisible());
+      const errorNotice = form.querySelector(".contact__notice") as HTMLElement;
+      expect(errorNotice).toHaveClass("contact__notice--error");
+      expect(within(form).getByRole("alert")).toHaveTextContent(messages.bg.contacts.sendError);
+      expect(message).toHaveValue("Please review my website.");
+      expect(noticeDelays).toContain(appConfig.contact.notificationDurationMilliseconds);
+      fireEvent.pointerEnter(errorNotice, { pointerType: "mouse" });
+      await new Promise((resolve) => nativeSetTimeout(resolve, 20));
+      fireEvent.pointerLeave(errorNotice, { pointerType: "mouse" });
+      expect(noticeDelays.at(-1)).toBeLessThan(appConfig.contact.notificationDurationMilliseconds);
+      const close = within(errorNotice).getByRole("button", { name: messages.bg.contacts.noticeClose });
+      close.focus();
+      fireEvent.click(close);
+      expect(within(form).getByRole("button", { name: messages.bg.contacts.send })).toHaveFocus();
+      fireEvent.submit(form);
+      await waitFor(() => expect(posts).toBe(2));
+      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeVisible());
+      await act(async () => { staleNoticeTimer?.(); });
+      expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeVisible();
+      expect(form.querySelectorAll(".contact__notice--error")).toHaveLength(0);
+      expect(message).toHaveValue("");
+      await act(async () => { noticeTimers.at(-1)?.(); });
+      await waitFor(() => expect(within(form).queryByRole("group", { name: messages.bg.contacts.noticeSentTitle })).toBeNull());
+      expect(form.querySelector(".contact__feedback")).toHaveTextContent(messages.bg.contacts.sent);
+    } finally {
+      timeoutSpy.mockRestore();
+      globalThis.fetch = previousFetch;
+      if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
+      else delete captchaWindow.grecaptcha;
+    }
+  });
+  it("keeps the form and reports an unconfirmed result after the request timeout", async () => {
+    const fetchMock = vi.fn((_url: string, options?: RequestInit) => {
+      if (options?.method !== "POST") return Promise.resolve(Response.json({ siteKey: "test-site-key" }));
+      return new Promise<Response>((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    });
+    let completeCaptcha: ((token: string) => void) | undefined;
+    const captcha = {
+      render: vi.fn((_container: HTMLElement, options: { callback: (token: string) => void }) => {
+        completeCaptcha = options.callback;
+        return 0;
+      }),
+      execute: vi.fn(() => completeCaptcha?.("test-token")),
+      reset: vi.fn(),
+    };
+    const previousFetch = globalThis.fetch;
+    const captchaWindow = window as Window & { grecaptcha?: typeof captcha };
+    const previousCaptcha = captchaWindow.grecaptcha;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    captchaWindow.grecaptcha = captcha;
+    let expireRequest: (() => void) | undefined;
+    const nativeSetTimeout = window.setTimeout.bind(window);
+    const timeoutSpy = vi.spyOn(window, "setTimeout").mockImplementation((handler, delay, ...args) => {
+      if (delay === appConfig.contact.requestTimeoutMilliseconds && typeof handler === "function") {
+        expireRequest = () => handler();
+        return 999999 as unknown as ReturnType<typeof window.setTimeout>;
+      }
+      return nativeSetTimeout(handler, delay, ...args) as unknown as ReturnType<typeof globalThis.setTimeout>;
+    });
+    try {
+      render(<ContactPage locale="bg" copy={messages.bg.contacts} serviceNames={messages.bg.serviceLinks} />);
+      const form = screen.getByRole("form", { name: messages.bg.contacts.title });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.name} *` }), { target: { value: "Visitor" } });
+      fireEvent.change(within(form).getByRole("textbox", { name: `${messages.bg.contacts.email} *` }), { target: { value: "visitor@example.test" } });
+      const message = within(form).getByRole("textbox", { name: `${messages.bg.contacts.message} *` });
+      fireEvent.change(message, { target: { value: "Please review my website." } });
+      fireEvent.click(within(form).getByRole("checkbox", { name: messages.bg.contacts.privacy }));
+      fireEvent.submit(form);
+      await waitFor(() => expect(expireRequest).toBeDefined());
+      await act(async () => { expireRequest?.(); });
+      await waitFor(() => expect(within(form).getByRole("group", { name: messages.bg.contacts.noticeUnconfirmedTitle })).toBeVisible());
+      expect(form.querySelector(".contact__notice")).not.toHaveClass("contact__notice--error");
+      expect(within(form).getByRole("alert")).toHaveTextContent(messages.bg.contacts.unconfirmed);
+      expect(message).toHaveValue("Please review my website.");
+      expect(within(form).getByRole("button", { name: messages.bg.contacts.send })).toHaveAttribute("aria-disabled", "false");
+    } finally {
+      timeoutSpy.mockRestore();
       globalThis.fetch = previousFetch;
       if (previousCaptcha) captchaWindow.grecaptcha = previousCaptcha;
       else delete captchaWindow.grecaptcha;
@@ -676,14 +839,33 @@ describe("public pages", () => {
     expect(within(document.querySelector(".site-header") as HTMLElement).getByRole("link", { name: copy.landing.hero.contact }).getAttribute("href")).toBe(pageUrl("contacts", locale));
     expect(within(footer).getAllByRole("link", { name: copy.landing.hero.contact })).toHaveLength(1);
     expect(within(footer).getByRole("link", { name: locale === "bg" ? "EN" : "BG" })).toHaveAttribute("href", pageUrl("contacts", locale === "bg" ? "en" : "bg"));
-    expect(within(footer).getByRole("button", { name: copy.landing.footer.subscribe })).toBeDisabled();
+    expect(within(footer).getByRole("button", { name: copy.landing.footer.subscribe })).toBeEnabled();
+    expect(within(footer).getByRole("button", { name: copy.landing.footer.resend })).toBeEnabled();
     expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).toBeEnabled();
     expect(within(footer).getByRole("checkbox", { name: `${copy.landing.footer.consentPrivacy} ${copy.landing.footer.privacyPolicy}` })).toBeEnabled();
-    expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).not.toHaveAttribute("name");
+    expect(within(footer).getByRole("link", { name: copy.landing.footer.privacy })).toHaveAttribute("href", pageUrl("privacy", locale));
+    expect(within(footer).getByRole("link", { name: copy.landing.footer.privacyPolicy })).toHaveAttribute("href", pageUrl("privacy", locale));
+    expect(within(footer).getByRole("textbox", { name: copy.landing.footer.email })).toHaveAttribute("name", "email");
     expect(within(footer).getAllByRole("link", { name: /^(LinkedIn|Facebook|YouTube)$/ })).toHaveLength(3);
     expect(within(footer).getAllByRole("button", { name: /^(Instagram|TikTok)$/ })).toHaveLength(2);
     expect(footer).not.toHaveTextContent(locale === "bg" ? "Профилите скоро ще бъдат достъпни." : "Our profiles will be available soon.");
     expect(footer).not.toHaveTextContent(locale === "bg" ? "Абонаментът все още не е достъпен." : "Newsletter signup is not available yet.");
+  });
+  it("opens one privacy dialog for a plain click and preserves modified clicks", () => {
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    try {
+      render(<BgContacts />);
+      const dialog = document.querySelector(".privacy-modal:not(.cookie-modal)") as HTMLDialogElement;
+      const privacy = within(document.querySelector(".contact__privacy-row") as HTMLElement).getByRole("link", { name: messages.bg.contacts.privacyLink });
+      fireEvent.click(privacy, { ctrlKey: true });
+      expect(dialog).not.toHaveAttribute("open");
+      fireEvent.click(privacy);
+      expect(dialog).toHaveAttribute("open");
+      expect(document.querySelectorAll(".privacy-modal:not(.cookie-modal)")).toHaveLength(1);
+    } finally {
+      HTMLDialogElement.prototype.showModal = originalShow;
+    }
   });
   it.each([
     [BgHome, bgHomeMetadata, "bg", "home", "/bg"],
@@ -696,6 +878,10 @@ describe("public pages", () => {
     [EnFaq, enFaqMetadata, "en", "faq", "/faq/en"],
     [BgContacts, bgContactsMetadata, "bg", "contacts", "/contacts/bg"],
     [EnContacts, enContactsMetadata, "en", "contacts", "/contacts/en"],
+    [BgPrivacy, bgPrivacyMetadata, "bg", "privacy", "/privacy"],
+    [EnPrivacy, enPrivacyMetadata, "en", "privacy", "/privacy/en"],
+    [BgCookies, bgCookiesMetadata, "bg", "cookies", "/cookies"],
+    [EnCookies, enCookiesMetadata, "en", "cookies", "/cookies/en"],
   ] as const)("renders localized content and public metadata %#", async (Page, metadata, locale, page, url) => {
     render(<Page />);
     const homeSeo = locale === "bg" ? {
@@ -711,7 +897,7 @@ describe("public pages", () => {
     const language = within(document.querySelector(".site-header") as HTMLElement).getByRole("navigation", { name: messages[locale].language, hidden: true });
     expect(within(language).getByRole("link", { name: locale.toUpperCase(), hidden: true })).toHaveAttribute("href", url);
     const alternate = locale === "bg" ? "en" : "bg";
-    expect(within(language).getByRole("link", { name: alternate.toUpperCase(), hidden: true })).toHaveAttribute("href", url.replace(/(bg|en)$/, alternate));
+    expect(within(language).getByRole("link", { name: alternate.toUpperCase(), hidden: true })).toHaveAttribute("href", pageUrl(page, alternate));
     const result = await metadata();
     if (page === "home") {
       expect(result.title).toBe(homeSeo.title);
@@ -720,6 +906,18 @@ describe("public pages", () => {
     expect(result.alternates?.canonical).toBe(url);
     expect(result.robots).toEqual({ index: false, follow: false });
     expect(result.alternates?.languages).toEqual({ bg: pageUrl(page, "bg"), en: pageUrl(page, "en") });
+    if (page === "privacy") {
+      expect(screen.getByRole("main").querySelector("[lang='bg']")).toHaveTextContent(appConfig.legalName);
+      expect(within(screen.getByRole("contentinfo")).getByRole("link", { name: messages[locale].landing.footer.privacy })).toHaveAttribute("aria-current", "page");
+      expect(within(screen.getByRole("main")).getByRole("link", { name: messages[locale].privacy.complaintLink })).toHaveAttribute("href", appConfig.privacyAuthorityUrl);
+    }
+  });
+  it("keeps the privacy copy's cookie durations aligned with configuration", () => {
+    const cookieCopy = messages.bg.privacy.sections.find((section) => section.id === "cookies")?.paragraphs.join(" ");
+    const retentionCopy = messages.bg.privacy.sections.find((section) => section.id === "retention")?.paragraphs.join(" ");
+    expect(cookieCopy).toContain(`${appConfig.localeCookie.maxAgeSeconds / 86400} дни`);
+    expect(cookieCopy).toContain(`${appConfig.auth.absoluteSeconds / 86400} дни`);
+    expect(retentionCopy).toContain(`${appConfig.auth.auditRetentionSeconds / 86400} дни`);
   });
   it.each([
     [BgService, bgServiceMetadata, "bg"],
@@ -950,6 +1148,78 @@ describe("public pages", () => {
     document.cookie = `${appConfig.localeCookie.name}=en; Path=/`;
     fireEvent(document, new Event("visibilitychange"));
     expect(document.cookie).toContain(`${appConfig.localeCookie.name}=en`);
+  });
+  it("shows the first-visit dialog in the page language and saves acceptance immediately", () => {
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
+    document.cookie = `${appConfig.cookieChoice.name}=; Max-Age=0; Path=/`;
+    try {
+      render(<EnHome />);
+      const dialog = document.querySelector(".cookie-modal") as HTMLDialogElement;
+      expect(dialog).toHaveAttribute("open");
+      expect(dialog).toHaveAttribute("lang", "en");
+      expect(within(dialog).getByRole("heading", { name: messages.en.cookies.dialogTitle })).toBeVisible();
+      fireEvent.click(within(dialog).getByRole("button", { name: messages.en.cookies.acceptAll }));
+      expect(document.cookie).toContain(`${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all`);
+      expect(document.cookie).toContain(`${appConfig.localeCookie.name}=en`);
+      expect(dialog).not.toHaveAttribute("open");
+    } finally {
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
+  it("makes both refusal buttons remove the language preference", () => {
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
+    try {
+      for (const [label, value] of [[messages.bg.cookies.rejectAll, "rejected"], [messages.bg.cookies.necessaryOnly, "necessary"]]) {
+        document.cookie = `${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all; Path=/`;
+        document.cookie = `${appConfig.localeCookie.name}=en; Path=/`;
+        const view = render(<BgHome />);
+        fireEvent.click(within(screen.getByRole("contentinfo")).getByRole("link", { name: messages.bg.landing.footer.cookies }));
+        const dialog = document.querySelector(".cookie-modal") as HTMLDialogElement;
+        fireEvent.click(within(dialog).getByRole("button", { name: label }));
+        expect(document.cookie).toContain(`${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.${value}`);
+        expect(document.cookie).not.toContain(`${appConfig.localeCookie.name}=`);
+        view.unmount();
+      }
+    } finally {
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
+  });
+  it("does not trap visitors when their browser blocks cookie writes", () => {
+    const originalCookie = Object.getOwnPropertyDescriptor(document, "cookie");
+    const originalShow = HTMLDialogElement.prototype.showModal;
+    const originalClose = HTMLDialogElement.prototype.close;
+    Object.defineProperty(document, "cookie", { configurable: true, get: () => "", set: () => {} });
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); };
+    try {
+      const first = render(<BgHome />);
+      const dialog = document.querySelector(".cookie-modal") as HTMLDialogElement;
+      expect(dialog).toHaveAttribute("open");
+      fireEvent.click(within(dialog).getByRole("button", { name: messages.bg.cookies.necessaryOnly }));
+      expect(dialog).not.toHaveAttribute("open");
+      fireEvent(window, new Event("pageshow"));
+      expect(dialog).not.toHaveAttribute("open");
+      first.unmount();
+      render(<BgHome />);
+      const reopened = document.querySelector(".cookie-modal") as HTMLDialogElement;
+      expect(reopened).toHaveAttribute("open");
+      fireEvent.click(within(reopened).getByRole("button", { name: messages.bg.cookies.closeLabel }));
+      fireEvent(window, new Event("pageshow"));
+      expect(reopened).not.toHaveAttribute("open");
+    } finally {
+      if (originalCookie) Object.defineProperty(document, "cookie", originalCookie);
+      else Reflect.deleteProperty(document, "cookie");
+      HTMLDialogElement.prototype.showModal = originalShow;
+      HTMLDialogElement.prototype.close = originalClose;
+    }
   });
   it("switches the locale of the current service without the retired contact anchor", () => {
     const copy = navigationCopy();

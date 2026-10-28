@@ -13,6 +13,13 @@ function recipientMatches(value: string | { address?: string }, expected: string
   return address.trim().toLowerCase() === expected.trim().toLowerCase();
 }
 
+export function isRecipientRejected(error: unknown): boolean {
+  const responseCode = error && typeof error === "object" && "responseCode" in error ? Number(error.responseCode) : 0;
+  const command = error && typeof error === "object" && "command" in error ? String(error.command) : "";
+  const rejected = Boolean(error && typeof error === "object" && "recipientRejected" in error && error.recipientRejected === true);
+  return rejected || [550, 551, 553].includes(responseCode) && command.startsWith("RCPT");
+}
+
 function decodeKey(value: string | undefined): Buffer {
   const decoded = value ? Buffer.from(value, "base64") : Buffer.alloc(0);
   if (decoded.length !== 32) throw new Error("Authentication mail is not configured");
@@ -68,7 +75,7 @@ export async function queueMail(payload: MailPayload, tokenId?: string, session?
   await authCollections(db).outbox.insertOne(entry, { session });
 }
 
-function transportConfig() {
+export function transportConfig() {
   if (process.env.AUTH_MAIL_TRANSPORT === "test") {
     if (process.env.NODE_ENV !== "test") throw new Error("Test mail transport is unavailable outside tests");
     return null;
@@ -158,9 +165,7 @@ export async function runOutboxOnce(): Promise<boolean> {
     }
     const attempts = entry.attempts;
     const responseCode = error && typeof error === "object" && "responseCode" in error ? Number(error.responseCode) : 0;
-    const command = error && typeof error === "object" && "command" in error ? String(error.command) : "";
-    const rejected = error && typeof error === "object" && "recipientRejected" in error && error.recipientRejected === true;
-    const failed = attempts >= 5 || rejected || [550, 551, 553].includes(responseCode) && command.startsWith("RCPT");
+    const failed = attempts >= 5 || isRecipientRejected(error);
     if (failed) {
       console.error("Authentication mail permanently failed", { id: entry._id.toHexString(), attempts, responseCode });
       await finishOutboxEntry(entry, "failed");

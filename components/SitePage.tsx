@@ -28,6 +28,9 @@ import { messages, serviceDetail } from "@/lib/messages";
 import { localeSwitchUrl, locales, pageUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug, type SiteRoute } from "@/lib/routing";
 import FooterLegalButton from "./FooterLegalButton";
 import FooterNewsletter from "./FooterNewsletter";
+import { CookieConsentLink, CookieConsentProvider, CookiePolicyPage } from "./CookieConsent";
+import PrivacyContent from "./PrivacyContent";
+import { PrivacyModalLink, PrivacyModalProvider } from "./PrivacyModal";
 import FaqPage from "./FaqPage";
 import ContactPage from "./ContactPage";
 import HeroMotion from "./HeroOrb";
@@ -96,6 +99,16 @@ function HomePage({ locale }: { locale: Locale }) {
   </main>;
 }
 
+function PrivacyPage({ locale }: { locale: Locale }) {
+  const copy = messages[locale].privacy;
+  return <main id="main" className="container standard-page privacy-page" tabIndex={-1}>
+    <div className="privacy-page__content">
+      <h1>{copy.title}</h1>
+      <PrivacyContent locale={locale} />
+    </div>
+  </main>;
+}
+
 const socialNames = ["linkedin", "facebook", "instagram", "youtube", "tiktok"] as const;
 const socialLabels = { linkedin: "LinkedIn", facebook: "Facebook", instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok" } as const;
 
@@ -148,8 +161,8 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
     <div className="container site-footer__bottom">
       <p>{footer.rights}</p>
       <div className="site-footer__bottom-links">
-        <FooterLegalButton label={footer.privacy} title={footer.privacyPolicy} {...legal} />
-        <FooterLegalButton label={footer.cookies} title={footer.cookies} {...legal} />
+        <PrivacyModalLink className="site-footer__legal-button" locale={locale} current={route.page === "privacy"}>{footer.privacy}</PrivacyModalLink>
+        <CookieConsentLink className="site-footer__legal-button" locale={locale} current={route.page === "cookies"}>{footer.cookies}</CookieConsentLink>
         <FooterLegalButton label={footer.terms} title={footer.terms} {...legal} />
       </div>
       <nav className="site-footer__languages" aria-label={copy.language}>{locales.map((language) => <a key={language} href={localeSwitchUrl(route, language)} lang={language} hrefLang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</a>)}</nav>
@@ -160,14 +173,14 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
 
 export default function SitePage({ locale, page }: { locale: Locale; page: Page }) {
   const copy = messages[locale];
-  return <div className={`site-page site-page--${page}`}>
+  return <PrivacyModalProvider locale={locale} enabled={page !== "privacy"} title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen={page !== "privacy" && page !== "cookies"} inline={page === "cookies"}><div className={`site-page site-page--${page}`}>
     <SiteHeader locale={locale} page={page} />
-    {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : <main id="main" className="container standard-page" tabIndex={-1}>
+    {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : page === "privacy" ? <PrivacyPage locale={locale} /> : page === "cookies" ? <CookiePolicyPage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
     </main>}
     <SiteFooter locale={locale} route={{ page }} />
-  </div>;
+  </div></CookieConsentProvider></PrivacyModalProvider>;
 }
 
 function ServiceLinkIcon({ slug }: { slug: ServiceSlug }) {
@@ -200,7 +213,7 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
   const title = copy.serviceLinks[serviceSlugs.indexOf(slug)];
   const detail = serviceDetail(locale, slug);
   const sections: typeof messages.bg.serviceDetails["ai-automation"]["sections"] | undefined = detail && "sections" in detail && Array.isArray(detail.sections) ? detail.sections : undefined;
-  return <div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
+  return <PrivacyModalProvider locale={locale} enabled title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen inline={false}><div className={`site-page site-page--service${detail ? " site-page--service-detail" : ""}`}>
     <SiteHeader locale={locale} page="service" serviceSlug={slug} />
     {detail ? <main id="main" className="service-detail" data-service={slug} tabIndex={-1}>
       <div className="service-detail__background" aria-hidden="true"><Image src={serviceDetailBackground} alt="" fill sizes="100vw" priority unoptimized decoding="sync" /></div>
@@ -240,5 +253,5 @@ export function ServicePage({ locale, slug }: { locale: Locale; slug: ServiceSlu
       </div>}
     </main> : <main id="main" className="container standard-page" tabIndex={-1}><h1>{title}</h1></main>}
     <SiteFooter locale={locale} route={{ page: "service", serviceSlug: slug }} />
-  </div>;
+  </div></CookieConsentProvider></PrivacyModalProvider>;
 }

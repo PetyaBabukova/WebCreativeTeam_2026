@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { appConfig } from "@/lib/config";
+import { appConfig, parseCookieChoice } from "@/lib/config";
 import { locales, localeSwitchUrl, pageUrl, sectionUrl, serviceSlugs, serviceUrl, type Locale, type Page, type ServiceSlug } from "@/lib/routing";
 import { HeaderAuthStatus } from "./HeaderAuthStatus";
 
@@ -35,15 +35,18 @@ function currentSharedHash(): string {
 function useLocalePreference(locale: Locale) {
   useEffect(() => {
     const sync = () => {
+      if (parseCookieChoice(document.cookie) !== "all") return;
       const { name, maxAgeSeconds, path, sameSite } = appConfig.localeCookie;
       document.cookie = `${name}=${locale}; Max-Age=${maxAgeSeconds}; Path=${path}; SameSite=${sameSite}${window.location.protocol === "https:" ? "; Secure" : ""}`;
     };
     const syncWhenVisible = () => { if (document.visibilityState === "visible") sync(); };
     sync();
     window.addEventListener("pageshow", sync);
+    window.addEventListener(appConfig.cookieChoice.eventName, sync);
     document.addEventListener("visibilitychange", syncWhenVisible);
     return () => {
       window.removeEventListener("pageshow", sync);
+      window.removeEventListener(appConfig.cookieChoice.eventName, sync);
       document.removeEventListener("visibilitychange", syncWhenVisible);
     };
   }, [locale]);

@@ -5,11 +5,16 @@ export function isLocale(value: string): value is Locale {
   return (locales as readonly string[]).includes(value);
 }
 
+const privacyPhone = "0887454509";
+
 export const appConfig = {
   defaultPort: 3000,
   contactEmail: "info@webcreativeteam.com",
-  contactPhones: ["0889912671", "0887454509"],
+  legalName: "Уеб Криейтив Тиим ЕООД",
+  contactPhones: ["0889912671", privacyPhone],
+  privacyPhone,
   contactPhoneCountryCode: "+359",
+  privacyAuthorityUrl: "https://cpdp.bg/",
   contact: {
     serviceSlugs: ["ai-automation", "seo-geo", "digital-marketing", "branding", "web-solutions"],
     diagnosticSlug: "free-diagnostic",
@@ -29,10 +34,11 @@ export const appConfig = {
     contactGlobalSendLimit: 30,
     captchaVerifyTimeoutMilliseconds: 5000,
     captchaScriptTimeoutMilliseconds: 12000,
+    requestTimeoutMilliseconds: 30000,
+    notificationLoadingDelayMilliseconds: 250,
+    notificationDurationMilliseconds: 12000,
     captchaScriptUrl: "https://www.google.com/recaptcha/api.js",
     captchaVerifyUrl: "https://www.google.com/recaptcha/api/siteverify",
-    captchaPrivacyUrl: "https://policies.google.com/privacy",
-    captchaTermsUrl: "https://policies.google.com/terms",
     captchaCspScriptSources: ["https://www.google.com/recaptcha/", "https://www.gstatic.com/recaptcha/"],
     captchaCspFrameSources: ["'self'", "https://www.google.com/recaptcha/", "https://recaptcha.google.com/recaptcha/"],
     captchaCspConnectSources: ["https://www.google.com/recaptcha/"],
@@ -55,6 +61,14 @@ export const appConfig = {
     path: "/",
     sameSite: "Lax",
   },
+  cookieChoice: {
+    name: "wct_cookie_choice",
+    version: "v1",
+    maxAgeSeconds: 15552000,
+    path: "/",
+    sameSite: "Lax",
+    eventName: "wct-cookie-choice-change",
+  },
   paths: {
     root: "/",
     about: "/about",
@@ -62,6 +76,8 @@ export const appConfig = {
     faq: "/faq",
     portfolio: "/portfolio",
     contacts: "/contacts",
+    privacy: "/privacy",
+    cookies: "/cookies",
     services: "/services",
     offers: "/servicess/offers",
     health: "/healthz",
@@ -69,6 +85,9 @@ export const appConfig = {
     admin: "/admin",
     authApi: "/api/auth",
     contactApi: "/api/contact",
+    newsletterApi: "/api/newsletter",
+    newsletterConfirm: "/newsletter/confirm",
+    newsletterDecline: "/newsletter/decline",
   },
   auth: {
     cookieName: "__Host-wct_admin",
@@ -95,7 +114,49 @@ export const appConfig = {
     sensitiveLimit: 5,
     limitWindowSeconds: 15 * 60,
   },
+  newsletter: {
+    collections: {
+      subscriptions: "newsletterSubscriptions",
+      pending: "newsletterPendingSubscriptions",
+      outbox: "newsletterOutbox",
+      limits: "newsletterRateLimits",
+    },
+    pendingMilliseconds: 30 * 24 * 60 * 60 * 1000,
+    unsubscribedYears: 3,
+    outboxMilliseconds: 48 * 60 * 60 * 1000,
+    resendWaitMilliseconds: 24 * 60 * 60 * 1000,
+    statusNoticeWaitMilliseconds: 30 * 24 * 60 * 60 * 1000,
+    workerPollMilliseconds: 1000,
+    contactWaitMilliseconds: 1500,
+    requestBodyLimit: "8kb",
+    ipWindowMilliseconds: 15 * 60 * 1000,
+    ipWindowLimit: 5,
+    ipDailyLimit: 10,
+    globalHourlyLimit: 20,
+    globalDailyLimit: 50,
+    localMinuteLimit: 10,
+    decisionMinuteLimit: 30,
+    decisionGlobalMinuteLimit: 100,
+    localBucketLimit: 10_000,
+    localGlobalMinuteLimit: 100,
+    tokenMaxLength: 256,
+  },
 } as const;
+
+export type CookieChoice = "all" | "rejected" | "necessary";
+
+export function cookieValue(header: string | undefined, name: string): string | null {
+  const entry = header?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return entry ? entry.slice(name.length + 1) : null;
+}
+
+export function parseCookieChoice(header: string | undefined): CookieChoice | null {
+  const value = cookieValue(header, appConfig.cookieChoice.name);
+  const prefix = `${appConfig.cookieChoice.version}.`;
+  if (!value?.startsWith(prefix)) return null;
+  const choice = value.slice(prefix.length);
+  return choice === "all" || choice === "rejected" || choice === "necessary" ? choice : null;
+}
 
 export function localizedPath(path: string, locale: Locale): string {
   return path === appConfig.paths.root ? `${path}${locale}` : `${path}/${locale}`;

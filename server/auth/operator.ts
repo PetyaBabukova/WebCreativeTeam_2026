@@ -2,6 +2,8 @@ import { assertAdminCount, authCollections, authConnection, closeAuthConnection,
 import { bootstrapOwner } from "./service.ts";
 import { recoverOwner } from "./service.ts";
 import { ObjectId } from "mongodb";
+import { appConfig } from "../../lib/config.ts";
+import { createNewsletterIndexes } from "../newsletter/service.ts";
 import nextEnv from "@next/env";
 
 const { loadEnvConfig } = nextEnv;
@@ -16,14 +18,16 @@ export async function runAuthOperator(command: OperatorCommand) {
     if (!hello.setName && hello.msg !== "isdbgrid") throw new Error("Authentication database must support transactions");
     const names = (await db.listCollections({}, { nameOnly: true }).toArray()).map((collection) => collection.name);
     if (names.length) {
-      const expected = new Set(["adminUsers", "authSessions", "authTokens", "adminControl", "authOutbox", "authAudit", "authRateLimits"]);
-      if (names.some((name) => !expected.has(name))) throw new Error("Database contains non-auth collections");
+      const expected = new Set(["adminUsers", "authSessions", "authTokens", "adminControl", "authOutbox", "authAudit", "authRateLimits", ...Object.values(appConfig.newsletter.collections)]);
+      if (names.some((name) => !expected.has(name))) throw new Error("Database contains unexpected collections");
       const marker = await authCollections(db).control.findOne({ _id: "singleton" });
       if (marker?.schemaId !== "wct-auth-v1") throw new Error("Authentication database ownership marker missing");
       await assertAdminCount(connection);
     }
     await createAuthIndexes(db);
     await ensureAdminControl(db);
+    await createNewsletterIndexes(db);
+    await authCollections(db).control.updateOne({ _id: "singleton", schemaId: "wct-auth-v1" }, { $set: { newsletterSchemaId: "wct-newsletter-v1" } });
     await assertAdminCount(connection);
     return;
   }

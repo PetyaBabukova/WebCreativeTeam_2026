@@ -2,7 +2,7 @@ import { appConfig, localizedPath, locales, type Locale } from "./config";
 
 export { isLocale, locales } from "./config";
 export type { Locale } from "./config";
-export type Page = "home" | "about" | "blog" | "faq" | "contacts";
+export type Page = "home" | "about" | "blog" | "faq" | "contacts" | "privacy" | "cookies";
 export const serviceSlugs = appConfig.contact.serviceSlugs;
 export type ServiceSlug = (typeof serviceSlugs)[number];
 export type SiteRoute = { page: Page; serviceSlug?: never } | { page: "service"; serviceSlug: ServiceSlug };
@@ -40,6 +40,7 @@ export function serviceFeatureSectionId(slug: ServiceSlug, index: number): strin
 }
 
 export function pageUrl(page: Page, locale: Locale): string {
+  if (page === "privacy" || page === "cookies") return locale === "bg" ? appConfig.paths[page] : `${appConfig.paths[page]}/${locale}`;
   return localizedPath(page === "home" ? appConfig.paths.root : appConfig.paths[page], locale);
 }
 

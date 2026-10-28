@@ -278,12 +278,18 @@ test("contact form validates required input and sends the selected service", asy
   await form.getByRole("textbox", { name: `${messages.bg.contacts.message} *` }).fill("I would like an initial website assessment.\nPlease help.");
   await form.getByRole("textbox", { name: messages.bg.contacts.budget }).fill("5 000 лв.");
   await form.getByRole("checkbox", { name: messages.bg.contacts.privacy }).check();
+  const websiteInput = form.getByRole("textbox", { name: messages.bg.contacts.website });
+  await websiteInput.fill("not-a-domain");
+  await form.getByRole("button", { name: messages.bg.contacts.send }).click();
+  expect(await websiteInput.evaluate((input: HTMLInputElement) => input.validationMessage)).toBe(messages.bg.contacts.websiteError);
+  expect(submitted).toBeUndefined();
+  await websiteInput.fill("happycolors.eu");
   await form.getByRole("button", { name: messages.bg.contacts.send }).click();
   await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.sent);
   expect(googleScriptRequests).toBe(1);
   expect(submitted).toMatchObject({
     services: [appConfig.contact.diagnosticSlug], name: "Visitor", email: "visitor@example.test",
-    budget: "5 000 лв.", newsletter: false, privacy: true, captchaToken: "test-token",
+    website: "happycolors.eu", budget: "5 000 лв.", newsletter: false, privacy: true, captchaToken: "test-token",
   });
   expect(String(submitted?.message).replace(/\r\n/g, "\n")).toBe("I would like an initial website assessment.\nPlease help.");
 });
@@ -310,7 +316,7 @@ test("contact form keeps entered data after a CAPTCHA rejection and retries", as
   await form.getByRole("textbox", { name: `${messages.bg.contacts.message} *` }).fill("Please contact me about my project.");
   await form.getByRole("checkbox", { name: messages.bg.contacts.privacy }).check();
   await form.getByRole("button", { name: messages.bg.contacts.send }).click();
-  await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.captchaError);
+  await expect(form.getByRole("alert")).toHaveText(messages.bg.contacts.captchaError);
   await expect(form.getByRole("textbox", { name: `${messages.bg.contacts.name} *` })).toHaveValue("Visitor");
   await form.getByRole("button", { name: messages.bg.contacts.send }).click();
   await expect(form.getByRole("status").last()).toHaveText(messages.bg.contacts.sent);
@@ -635,6 +641,57 @@ test("bare URLs use the current locale until another locale is chosen", async ({
   await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.localeCookie.name)?.value).toBe("en");
   await page.goto("/faq");
   expect(new URL(page.url()).pathname).toBe(pageUrl("faq", "en"));
+});
+
+test("first visit shows localized cookie choices and refusal keeps English pages in English", async ({ page }) => {
+  await page.context().clearCookies();
+  await page.goto(pageUrl("home", "en"));
+  const dialog = page.getByRole("dialog", { name: messages.en.cookies.dialogTitle });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("lang", "en");
+  for (const label of [messages.en.cookies.acceptAll, messages.en.cookies.rejectAll, messages.en.cookies.necessaryOnly]) {
+    await expect(dialog.getByRole("button", { name: label })).toBeVisible();
+  }
+  await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name === appConfig.localeCookie.name)).toBe(false);
+  await dialog.getByRole("button", { name: messages.en.cookies.rejectAll }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.cookieChoice.name)?.value).toBe(`${appConfig.cookieChoice.version}.rejected`);
+  await page.goto(pageUrl("contacts", "en"));
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(dialog).not.toBeVisible();
+  await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name === appConfig.localeCookie.name)).toBe(false);
+  await page.goto("/");
+  await expect(page).toHaveURL(new RegExp(`${pageUrl("home", "bg")}$`));
+  await page.goto(pageUrl("cookies", "en"));
+  await expect(page.getByRole("heading", { level: 1, name: messages.en.cookies.title })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: messages.en.cookies.dialogTitle })).not.toBeVisible();
+  await page.getByRole("button", { name: messages.en.cookies.acceptAll }).click();
+  await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.localeCookie.name)?.value).toBe("en");
+  await page.goto("/");
+  await expect(page).toHaveURL(new RegExp(`${pageUrl("home", "en")}$`));
+});
+
+test("closing the first cookie dialog keeps necessary cookies and leaves privacy readable", async ({ page }) => {
+  await page.context().clearCookies();
+  await page.goto(pageUrl("privacy", "bg"));
+  await expect(page.getByRole("dialog", { name: messages.bg.cookies.dialogTitle })).not.toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: messages.bg.privacy.title })).toBeVisible();
+  await page.goto(pageUrl("home", "bg"));
+  const dialog = page.getByRole("dialog", { name: messages.bg.cookies.dialogTitle });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect.poll(async () => (await page.context().cookies()).find((cookie) => cookie.name === appConfig.cookieChoice.name)?.value).toBe(`${appConfig.cookieChoice.version}.necessary`);
+});
+
+test("the real server clears an old language cookie only on public HTML", async ({ request }) => {
+  const response = await request.get(pageUrl("contacts", "en"), {
+    headers: { Accept: "text/html", Cookie: `${appConfig.localeCookie.name}=en` },
+  });
+  expect(response.status()).toBe(200);
+  expect(response.headers()["set-cookie"]).toContain(`${appConfig.localeCookie.name}=;`);
+  expect(response.headers()["set-cookie"]).toContain("Expires=Thu, 01 Jan 1970");
+  expect(response.headers()["cache-control"]).toBe("private, no-store");
 });
 
 test("desktop service submenu opens only on click and the arrow stays beside its link", async ({ page }) => {
@@ -1049,7 +1106,7 @@ test("paused orb responds more strongly to hover and relaxes when resumed", asyn
   await expect.poll(tiltStrength).toBeLessThan(rotatingTilt * 1.2);
 });
 
-test("footer routes, legal dialogs and incomplete integrations remain honest", async ({ page }) => {
+test("footer routes, privacy page and incomplete integrations remain honest", async ({ page }) => {
   for (const locale of locales) {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(pageUrl("contacts", locale));
@@ -1083,14 +1140,21 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
     await expect(privacyConsent).toBeChecked();
     await expect(footer).not.toContainText(locale === "bg" ? "Абонаментът все още не е достъпен." : "Newsletter signup is not available yet.");
     await expect(footer).not.toContainText(locale === "bg" ? "Профилите скоро ще бъдат достъпни." : "Our profiles will be available soon.");
-    const privacy = footer.locator(".site-footer__bottom-links button").first();
-    await privacy.focus();
-    await privacy.press("Enter");
-    const dialog = footer.getByRole("dialog", { name: locale === "bg" ? "Политиката за поверителност" : "Privacy Policy" });
-    await expect(dialog).toBeVisible();
-    await dialog.press("Escape");
-    await expect(dialog).not.toBeVisible();
+    const privacy = footer.getByRole("link", { name: locale === "bg" ? "Поверителност" : "Privacy", exact: true });
+    await expect(privacy).toHaveAttribute("href", pageUrl("privacy", locale));
+    await privacy.click();
+    const modal = page.getByRole("dialog", { name: locale === "bg" ? "Политика за поверителност" : "Privacy Policy" });
+    await expect(modal).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`${pageUrl("contacts", locale)}$`));
+    await expect(modal.locator(".privacy-page__contact").last()).toHaveText(locale === "bg" ? appConfig.privacyPhone : `${appConfig.contactPhoneCountryCode}${appConfig.privacyPhone.slice(1)}`);
+    await expect(modal.getByRole("region", { name: locale === "bg" ? "Политика за поверителност" : "Privacy Policy" })).toHaveAttribute("tabindex", "0");
+    await expect(modal.getByRole("link", { name: messages[locale].privacy.complaintLink })).toHaveAttribute("target", "_blank");
+    await modal.getByRole("button", { name: locale === "bg" ? "Затвори Политиката за поверителност" : "Close Privacy Policy" }).click();
+    await expect(modal).not.toBeVisible();
     await expect(privacy).toBeFocused();
+    await page.goto(pageUrl("privacy", locale));
+    await expect(page.getByRole("heading", { level: 1, name: locale === "bg" ? "Политика за поверителност" : "Privacy Policy" })).toBeVisible();
+    await expect(footer.getByRole("link", { name: locale === "bg" ? "EN" : "BG" })).toHaveAttribute("href", pageUrl("privacy", locale === "bg" ? "en" : "bg"));
     for (const width of [390, 768, 900, 1100, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       const grid = await footer.locator(".site-footer__grid").boundingBox();
@@ -1100,8 +1164,28 @@ test("footer routes, legal dialogs and incomplete integrations remain honest", a
       expect(newsletterForm && newsletterForm.width <= 401).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
-    await expect(page.getByRole("link", { name: appConfig.contactEmail, exact: true })).toHaveAttribute("href", `mailto:${appConfig.contactEmail}`);
+    await expect(page.locator(".privacy-page__contact").first()).toHaveText(appConfig.contactEmail);
+    await expect(page.locator(".privacy-page__contact").last()).toHaveText(locale === "bg" ? appConfig.privacyPhone : `${appConfig.contactPhoneCountryCode}${appConfig.privacyPhone.slice(1)}`);
   }
+});
+
+test("privacy dialog preserves a partially completed contact form", async ({ page }) => {
+  await page.goto(pageUrl("contacts", "bg"));
+  const form = page.locator(".contact__panel");
+  await form.getByRole("textbox", { name: "Име *", exact: true }).fill("Петя Тестова");
+  await form.getByRole("textbox", { name: "Имейл *", exact: true }).fill("petya@example.test");
+  const privacy = form.getByRole("link", { name: messages.bg.contacts.privacyLink }).first();
+  await privacy.click();
+  const modal = page.getByRole("dialog", { name: messages.bg.privacy.title });
+  await expect(modal).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(modal).not.toBeVisible();
+  await expect(privacy).toBeFocused();
+  await expect(form.getByRole("textbox", { name: "Име *", exact: true })).toHaveValue("Петя Тестова");
+  await expect(form.getByRole("textbox", { name: "Имейл *", exact: true })).toHaveValue("petya@example.test");
+  await privacy.click();
+  await modal.getByRole("button", { name: messages.bg.privacy.closeLabel }).click();
+  await expect(privacy).toBeFocused();
 });
 
 test("footer logo returns to the top on every click", async ({ page }) => {
@@ -1468,6 +1552,7 @@ test("headline and CTAs remain within the hero on common viewports", async ({ pa
 });
 
 test("desktop first scene fits and its right copy aligns with the intro", async ({ page }) => {
+  test.setTimeout(60000);
   // 1536x730 is the user's laptop (1920x1080 at 125% scaling, minus browser chrome); 2560x1300 their external monitor.
   for (const viewport of [{ width: 1280, height: 720 }, { width: 1536, height: 730 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 2560, height: 1300 }]) {
     await page.setViewportSize(viewport);

@@ -10,9 +10,10 @@
   --color-green: #086b43;
   --color-lime: #94cb57;
   --color-orange: var(--brand-orange);
+  --color-orange-deep: #b54b00;
   --color-primary: var(--color-orange);
   --gradient-brand: linear-gradient(95deg, #a3db64 6%, #68d58a 40%, var(--color-primary) 94%);
-  --gradient-brand-on-light: linear-gradient(95deg, #47731b 6%, var(--color-green) 40%, #b54b00 94%);
+  --gradient-brand-on-light: linear-gradient(95deg, #47731b 6%, var(--color-green) 40%, var(--color-orange-deep) 94%);
   --gradient-brand-compact: linear-gradient(95deg, #a3db64 0%, #68d58a 24%, var(--color-primary) 78%);
   --color-white: #fff;
   --container: 108rem;
