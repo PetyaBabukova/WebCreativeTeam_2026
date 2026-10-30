@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { appConfig, type Locale } from "../../lib/config.ts";
 import { authConnection } from "../auth/db.ts";
 
-export type BlogText = { title: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt: Date };
+export type BlogText = { title: string; subtitle?: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt: Date };
 export type Article = {
   _id: ObjectId; slug: string; legacyId?: string; createKey?: string; publishedAt: Date; updatedAt: Date;
   version: number; createdBy: ObjectId; updatedBy: ObjectId; heroUrl: string; thumbnailUrl: string;
@@ -25,27 +25,26 @@ export function bucketName(): string | undefined {
   if (!/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(name) || name.includes("..")) throw new Error("Invalid blog storage configuration");
   return name;
 }
-export function imagePrefix(): string | undefined {
-  const name = bucketName();
-  return name ? `${appConfig.blog.imageOrigin}/${name}/${appConfig.blog.imagePrefix}/` : undefined;
-}
 function bucket() { const name = bucketName(); if (!name) throw new BlogError(503, "Blog storage is not configured"); return storage.bucket(name); }
-function imageUrl(key: string) { return `${appConfig.blog.imageOrigin}/${bucketName()}/${key}`; }
-function objectKey(url: string, articleId: ObjectId): string {
-  const prefix = imagePrefix();
-  if (!prefix || !url.startsWith(`${prefix}${articleId.toHexString()}/`)) throw new BlogError(400, "Invalid article image");
-  const parsed = new URL(url);
-  if (parsed.href !== url || parsed.search || parsed.hash || parsed.username || parsed.password || /%|\.\./i.test(parsed.pathname)) throw new BlogError(400, "Invalid article image");
-  const key = url.slice(`${appConfig.blog.imageOrigin}/${bucketName()}/`.length);
-  if (!/^blog\/[a-f0-9]{24}\/(?:hero|thumbnail|inline-[0-9]{1,2})\/[a-f0-9]{64}-[a-f0-9]{16}\.webp$/.test(key)) throw new BlogError(400, "Invalid article image");
-  return key;
+const publicImagePrefix = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/`;
+function imageUrl(key: string) { return `${publicImagePrefix}${key.slice(`${appConfig.blog.imagePrefix}/`.length)}`; }
+export function objectKey(url: string, articleId?: ObjectId): string {
+  if (!url.startsWith(publicImagePrefix)) throw new BlogError(400, "Invalid article image");
+  const suffix = url.slice(publicImagePrefix.length);
+  const match = /^([a-f0-9]{24})\/(hero|thumbnail|inline-(?:[0-9]|1[0-9]))\/([a-f0-9]{64}-[a-f0-9]{16}\.webp)$/.exec(suffix);
+  if (!match || articleId && match[1] !== articleId.toHexString()) throw new BlogError(400, "Invalid article image");
+  return `${appConfig.blog.imagePrefix}/${suffix}`;
 }
+export function blogImageFile(url: string, generation?: string) { const key = objectKey(url); return bucket().file(key, generation ? { generation } : undefined); }
 
 function text(value: unknown, max: number, required = true): string {
   if (typeof value !== "string") throw new BlogError(400, "Invalid article field");
   const result = value.normalize("NFC").trim();
   if (result.length > max || required && !result || /[\p{Cc}\p{Cf}]/u.test(result)) throw new BlogError(400, "Invalid article field");
   return result;
+}
+export function normalizeSubtitle(value: unknown, required = false): string | undefined {
+  return value === undefined && !required ? undefined : text(value, 240, required);
 }
 function slugTitle(title: string, id: ObjectId): string {
   const map: Record<string, string> = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sht", ъ: "a", ь: "y", ю: "yu", я: "ya" };
@@ -78,7 +77,8 @@ export function cleanHtml(value: unknown, articleId: ObjectId): string {
   return clean;
 }
 function fields(input: Record<string, unknown>, html: string, id: ObjectId): BlogText {
-  return { title: text(input.title, 80), html: cleanHtml(html, id), seoTitle: text(input.seoTitle, 70), seoDescription: text(input.seoDescription, 160), heroAlt: text(input.heroAlt, 180), thumbnailAlt: text(input.thumbnailAlt, 180), updatedAt: new Date() };
+  const subtitle = normalizeSubtitle(input.subtitle);
+  return { title: text(input.title, 80), ...(subtitle === undefined ? {} : { subtitle }), html: cleanHtml(html, id), seoTitle: text(input.seoTitle, 70), seoDescription: text(input.seoDescription, 160), heroAlt: text(input.heroAlt, 180), thumbnailAlt: text(input.thumbnailAlt, 180), updatedAt: new Date() };
 }
 function ensureKeys(input: Record<string, unknown>, allowed: string[]) {
   if (Object.keys(input).some((key) => !allowed.includes(key))) throw new BlogError(400, "Unexpected article field");
@@ -98,6 +98,7 @@ async function upload(id: ObjectId, item: Upload, batchId: string): Promise<{ ur
     if (!["jpeg", "png", "webp"].includes(metadata.format ?? "") || (metadata.pages ?? 1) !== 1) throw new BlogError(400, "Invalid image format");
     const width = role === "thumbnail" ? 800 : role === "hero" ? 2400 : 1600;
     processed = await image.rotate().resize({ width, withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
+    if (processed.length > appConfig.blog.maxFileBytes) throw new BlogError(413, "Image too large");
   } catch (error) { throw error instanceof BlogError ? error : new BlogError(400, "Invalid image format"); }
   const hash = createHash("sha256").update(processed).digest("hex");
   const key = `${appConfig.blog.imagePrefix}/${id.toHexString()}/${role}/${hash}-${batchId}.webp`;
@@ -186,8 +187,9 @@ export async function adminArticle(id: string) {
   return article;
 }
 export async function createArticle(input: Record<string, unknown>, files: Upload[], actor: ObjectId) {
-  ensureKeys(input, ["locale", "title", "html", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt", "createKey"]);
+  ensureKeys(input, ["locale", "title", "subtitle", "html", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt", "createKey"]);
   if (input.locale !== "bg") throw new BlogError(400, "Create in Bulgarian first");
+  normalizeSubtitle(input.subtitle, true);
   const createKey = text(input.createKey, 80);
   if (!/^[0-9a-f-]{36}$/.test(createKey)) throw new BlogError(400, "Invalid request key");
   await ensureIndexes();
@@ -207,7 +209,7 @@ export async function createArticle(input: Record<string, unknown>, files: Uploa
   }
 }
 export async function updateArticle(id: string, input: Record<string, unknown>, files: Upload[], actor: ObjectId) {
-  ensureKeys(input, ["locale", "title", "html", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt", "version"]);
+  ensureKeys(input, ["locale", "title", "subtitle", "html", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt", "version"]);
   if (!ObjectId.isValid(id) || id.length !== 24 || input.locale !== "bg" && input.locale !== "en") throw new BlogError(400, "Invalid article");
   const version = Number(input.version);
   if (!Number.isSafeInteger(version) || version < 1) throw new BlogError(400, "Invalid version");
@@ -217,7 +219,8 @@ export async function updateArticle(id: string, input: Record<string, unknown>, 
   const previous = await collection.findOne({ _id: new ObjectId(id) });
   if (!previous) throw new BlogError(404, "Article not found");
   if (previous.version !== version) throw new BlogError(409, "Article changed; reload before saving");
-  const uploaded = await uploadedHtml(input, files, previous._id, previous);
+  if ((locale === "en" && !previous.locales.en) || previous.locales[locale]?.subtitle) normalizeSubtitle(input.subtitle ?? previous.locales[locale]?.subtitle, true);
+  const uploaded = await uploadedHtml({ ...input, subtitle: input.subtitle ?? previous.locales[locale]?.subtitle }, files, previous._id, previous);
   if (locale === "en") {
     const permitted = refs(previous);
     for (const match of uploaded.text.html.matchAll(/<img\s+[^>]*src="([^"]+)"/g)) {

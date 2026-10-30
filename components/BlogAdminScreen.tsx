@@ -7,7 +7,7 @@ import { appConfig, type Locale } from "@/lib/config";
 import { blogArticleUrl } from "@/lib/routing";
 import "quill/dist/quill.snow.css";
 
-type TextFields = { title: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt?: string };
+type TextFields = { title: string; subtitle?: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt?: string };
 type Article = { _id: string; slug: string; version: number; heroUrl: string; thumbnailUrl: string; locales: { bg: TextFields; en?: TextFields } };
 type ArticleRow = Pick<Article, "_id" | "slug" | "version" | "locales">;
 type PendingImage = { name: string; file: File; preview: string };
@@ -78,7 +78,7 @@ function RichEditor({ initial, onChange, onImage, allowImage }: { initial: strin
   return <div ref={host} aria-label="Article content" />;
 }
 
-const blank: TextFields = { title: "", html: "", seoTitle: "", seoDescription: "", heroAlt: "", thumbnailAlt: "" };
+const blank: TextFields = { title: "", subtitle: "", html: "", seoTitle: "", seoDescription: "", heroAlt: "", thumbnailAlt: "" };
 export default function BlogAdminScreen({ locale, base, csrf }: { locale: Locale; base: string; csrf: string }) {
   const bg = locale === "bg";
   const [rows, setRows] = useState<ArticleRow[]>([]);
@@ -107,7 +107,7 @@ export default function BlogAdminScreen({ locale, base, csrf }: { locale: Locale
   function start(articleValue: Article | null, selected: Locale = "bg") {
     for (const item of pending) URL.revokeObjectURL(item.preview);
     setArticle(articleValue); setLanguage(selected); setPending([]); setHero(null); setThumbnail(null); setNotice("");
-    setForm(articleValue ? { ...(articleValue.locales[selected] ?? { ...articleValue.locales.bg, title: "", seoTitle: "", seoDescription: "" }) } : { ...blank });
+    setForm(articleValue ? { ...blank, ...(articleValue.locales[selected] ?? { ...articleValue.locales.bg, title: "", subtitle: "", seoTitle: "", seoDescription: "" }) } : { ...blank });
     setEditorKey((key) => key + 1);
     if (!articleValue) createKey.current = crypto.randomUUID();
   }
@@ -126,7 +126,7 @@ export default function BlogAdminScreen({ locale, base, csrf }: { locale: Locale
     setBusy(true); setNotice("");
     try {
       const body = new FormData();
-      for (const key of ["title", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt"] as const) body.set(key, form[key]);
+      for (const key of ["title", "subtitle", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt"] as const) body.set(key, form[key] ?? "");
       let html = form.html;
       for (const item of pending) if (html.includes(`src="${item.preview}"`)) { html = html.replaceAll(`src="${item.preview}"`, `src="pending:${item.name}"`); body.append(item.name, item.file); }
       body.set("html", html); body.set("locale", language);
@@ -165,6 +165,7 @@ export default function BlogAdminScreen({ locale, base, csrf }: { locale: Locale
         {article && <p><Link href={blogArticleUrl(article.slug, article.locales.en && language === "en" ? "en" : "bg")} target="_blank">{bg ? "Виж статията" : "View article"}</Link></p>}
         <form className="form-stack" onSubmit={(event) => void save(event)}>
           <label>{bg ? "Заглавие" : "Title"}<input value={form.title} onChange={(event) => field("title", event.target.value)} maxLength={80} required /></label>
+          <label>{bg ? "Подзаглавие" : "Subtitle"}<input value={form.subtitle ?? ""} onChange={(event) => field("subtitle", event.target.value)} maxLength={240} required={!article || (language === "en" && !article.locales.en) || Boolean(article.locales[language]?.subtitle)} /></label>
           <label>SEO title<input value={form.seoTitle} onChange={(event) => field("seoTitle", event.target.value)} maxLength={70} required /></label>
           <label>SEO description<textarea value={form.seoDescription} onChange={(event) => field("seoDescription", event.target.value)} maxLength={160} required /></label>
           <label>{bg ? "Alt за основното изображение" : "Main image alt"}<input value={form.heroAlt} onChange={(event) => field("heroAlt", event.target.value)} maxLength={180} required /></label>

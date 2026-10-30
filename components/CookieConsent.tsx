@@ -21,6 +21,10 @@ function useConsent() {
   return value;
 }
 
+export function useCookieChoice() {
+  return useConsent().choice;
+}
+
 function clearLocaleCookie() {
   const { name, path, sameSite } = appConfig.localeCookie;
   document.cookie = `${name}=; Max-Age=0; Path=${path}; SameSite=${sameSite}${location.protocol === "https:" ? "; Secure" : ""}`;

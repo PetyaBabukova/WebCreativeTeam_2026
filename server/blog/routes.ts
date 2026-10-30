@@ -2,17 +2,96 @@ import express, { type Request, type Response } from "express";
 import Busboy from "busboy";
 import { appConfig } from "../../lib/config.js";
 import { privateResponse, validCsrf, validOrigin, verifySession } from "../auth/security.js";
-import { adminArticle, adminArticles, BlogError, createArticle, deleteArticle, imagePrefix, updateArticle, type Upload } from "./service.js";
+import { adminArticle, adminArticles, BlogError, blogImageFile, createArticle, deleteArticle, updateArticle, type Upload } from "./service.js";
 
 export const blogRouter = express.Router();
-let warnedImageConfig = false;
-export function blogImageCspSource() {
-  try { return imagePrefix() ?? ""; }
-  catch {
-    if (!warnedImageConfig) { console.warn("Invalid blog storage configuration"); warnedImageConfig = true; }
-    return "";
+const imageRequests = new Map<string, { count: number; expires: number }>();
+let activeImageRequests = 0;
+const activeImageIps = new Map<string, number>();
+
+function imageRateAllowed(ip: string): boolean {
+  const now = Date.now();
+  const previous = imageRequests.get(ip);
+  if (previous && previous.expires > now) {
+    if (previous.count >= appConfig.blog.imageRateLimit) return false;
+    previous.count++;
+    return true;
+  }
+  if (imageRequests.size >= appConfig.blog.imageRateBucketLimit) {
+    for (const [key, entry] of imageRequests) if (entry.expires <= now) imageRequests.delete(key);
+    if (imageRequests.size >= appConfig.blog.imageRateBucketLimit) imageRequests.delete(imageRequests.keys().next().value!);
+  }
+  imageRequests.set(ip, { count: 1, expires: now + appConfig.blog.imageRateWindowMilliseconds });
+  return true;
+}
+
+function imageError(res: Response, status: number) {
+  if (res.headersSent) { res.destroy(); return; }
+  res.set("Cache-Control", "no-store").status(status).end();
+}
+
+async function serveImage(req: Request, res: Response, head: boolean) {
+  res.set("X-Content-Type-Options", "nosniff");
+  let file: ReturnType<typeof blogImageFile>;
+  try { file = blogImageFile(req.originalUrl); }
+  catch (error) { imageError(res, error instanceof BlogError && error.status === 503 ? 503 : 404); return; }
+  const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  if (activeImageRequests >= appConfig.blog.imageConcurrentLimit || (activeImageIps.get(ip) ?? 0) >= appConfig.blog.imageConcurrentIpLimit || !imageRateAllowed(ip)) {
+    res.set("Retry-After", String(Math.ceil(appConfig.blog.imageRateWindowMilliseconds / 1000)));
+    imageError(res, 429);
+    return;
+  }
+  activeImageRequests++;
+  activeImageIps.set(ip, (activeImageIps.get(ip) ?? 0) + 1);
+  let released = false;
+  const deadline = setTimeout(() => imageError(res, 503), appConfig.blog.imageDeadlineMilliseconds);
+  deadline.unref();
+  const release = () => {
+    if (released) return;
+    released = true;
+    clearTimeout(deadline);
+    activeImageRequests--;
+    const remaining = (activeImageIps.get(ip) ?? 1) - 1;
+    if (remaining) activeImageIps.set(ip, remaining); else activeImageIps.delete(ip);
+  };
+  res.once("close", release);
+  res.once("finish", release);
+  try {
+    const [metadata] = await file.getMetadata();
+    const size = Number(metadata.size);
+    if (!Number.isSafeInteger(size) || size < 1 || size > appConfig.blog.maxFileBytes || metadata.contentType !== "image/webp" || (metadata.contentEncoding && metadata.contentEncoding !== "identity") || !metadata.generation) {
+      imageError(res, 404);
+      return;
+    }
+    if (res.destroyed || res.writableEnded) return;
+    if (head) {
+      res.set({ "Content-Type": "image/webp", "Content-Length": String(size), "Cache-Control": `public, max-age=${appConfig.blog.imageCacheSeconds}` }).status(200).end();
+      return;
+    }
+    const stream = blogImageFile(req.originalUrl, String(metadata.generation)).createReadStream();
+    res.once("close", () => { if (!res.writableFinished) stream.destroy(); });
+    stream.on("error", (error: unknown) => {
+      console.warn("Blog image read failed", { name: error instanceof Error ? error.name : "Unknown" });
+      imageError(res, error && typeof error === "object" && "code" in error && error.code === 404 ? 404 : 503);
+    });
+    stream.once("end", () => { if (!res.headersSent) imageError(res, 503); });
+    stream.once("data", (chunk: Buffer) => {
+      stream.pause();
+      if (res.destroyed) { stream.destroy(); return; }
+      res.set({ "Content-Type": "image/webp", "Content-Length": String(size), "Cache-Control": `public, max-age=${appConfig.blog.imageCacheSeconds}` }).status(200);
+      res.write(chunk);
+      stream.pipe(res);
+    });
+  } catch (error) {
+    console.warn("Blog image lookup failed", { name: error instanceof Error ? error.name : "Unknown" });
+    imageError(res, error && typeof error === "object" && "code" in error && error.code === 404 ? 404 : 503);
   }
 }
+
+const imageRoute = `${appConfig.blog.imageRoute}/:articleId/:role/:file`;
+blogRouter.head(imageRoute, (req, res) => { void serveImage(req, res, true); });
+blogRouter.get(imageRoute, (req, res) => { void serveImage(req, res, false); });
+blogRouter.use(appConfig.blog.imageRoute, (_req, res) => { imageError(res, 404); });
 
 function safe(handler: (req: Request, res: Response) => Promise<void>) {
   return (req: Request, res: Response) => { void handler(req, res).catch((error: unknown) => {

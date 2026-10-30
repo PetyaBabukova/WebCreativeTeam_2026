@@ -10,11 +10,11 @@ const rotationSpeed = 360 / 24000;
 
 const entranceEase = [.33, 1, .68, 1] as const;
 
-export function headlineReveal(index: number, delay: number) {
+export function headlineReveal(index: number, delay: number, duration = .75) {
   return {
     initial: { opacity: 0, y: "105%" },
     animate: { opacity: 1, y: "0%" },
-    transition: { delay: delay + index * .2, duration: .75, ease: entranceEase },
+    transition: { delay: delay + index * .2, duration, ease: entranceEase },
   };
 }
 

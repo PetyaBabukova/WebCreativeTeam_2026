@@ -1,5 +1,13 @@
 .site-page { overflow: clip; }
-.site-page--about, .site-page--blog, .site-page--faq, .site-page--contacts, .site-page--privacy, .site-page--cookies, .site-page--service { background: var(--color-background); }
+.site-page--about, .site-page--faq, .site-page--contacts, .site-page--privacy, .site-page--cookies, .site-page--service { background: var(--color-background); }
+.site-page--blog { position: relative; isolation: isolate; background: var(--color-deep); }
+.site-page--blog::before { position: fixed; z-index: 0; inset: 0; background: linear-gradient(90deg, #0018101a, #00181065 47%, #00181021), linear-gradient(0deg, #00181068, transparent 38%), url("../assets/faq/background-desktop.webp") center / cover no-repeat; pointer-events: none; content: ""; }
+.site-page--blog:has(> .blog-detail) { background: var(--color-background-warm); }
+.site-page--blog:has(> .blog-detail)::before { content: none; }
+.site-page--blog > :is(main, footer) { position: relative; z-index: 1; }
+@media (width <= 47.5rem) {
+  .site-page--blog::before { background: linear-gradient(0deg, #00181070, transparent 45%), linear-gradient(180deg, #00181026, #00181040 50%, #00181026), url("../assets/faq/background-mobile.webp") center / cover no-repeat; }
+}
 .site-header { position: fixed; z-index: 20; top: 0; right: 0; left: 0; isolation: isolate; color: var(--color-white); }
 .site-header[data-compact] { box-shadow: 0 .5rem 1.25rem #00110d40; }
 .site-header[data-compact]::after { position: absolute; right: 0; bottom: 0; left: 0; height: .0625rem; background: #a7bdac36; pointer-events: none; content: ""; }
@@ -189,7 +197,7 @@ html:has(.privacy-modal[open]) { overflow: hidden; scrollbar-gutter: stable; }
   must already look like the background image: a gradient of its sampled colours (products_page_background.webp,
   top to bottom). Without it the light page colour flashes for a frame on every reload. Re-sample when the image changes.
 */
-.service-detail__background { position: fixed; z-index: -1; inset: 0; overflow: hidden; background: #efdcb7 linear-gradient(180deg, #ede1c3, #f4e0bf 25%, #f7e1b9 50%, #f5e4be 75%, #ebd6b6); pointer-events: none; }
+.service-detail__background { position: fixed; z-index: -1; inset: 0; overflow: hidden; background: #efdcb7 linear-gradient(180deg, #ede1c3, #f4e0bf 25%, #f7e1b9 50%, var(--color-background-warm) 75%, #ebd6b6); pointer-events: none; }
 .service-detail__background img { object-fit: cover; object-position: center; }
 .service-detail__hero { position: relative; }
 .service-detail__hero-inner { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); grid-template-rows: auto 1fr; align-items: stretch; column-gap: var(--section-gap); padding-top: calc(var(--site-header-clearance) + var(--section-gap)); padding-bottom: var(--section-pad-end); }

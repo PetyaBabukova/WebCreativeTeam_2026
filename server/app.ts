@@ -5,7 +5,7 @@ import { authRouter } from "./auth/routes.js";
 import { authTrustedProxies } from "./auth/config.js";
 import { contactRouter } from "./contact/routes.js";
 import { newsletterRouter } from "./newsletter/routes.js";
-import { blogRouter, blogImageCspSource } from "./blog/routes.js";
+import { blogRouter } from "./blog/routes.js";
 import { getLegacyArticle } from "./blog/service.js";
 
 const localeRedirectPaths: ReadonlyArray<string> = [appConfig.paths.root, appConfig.paths.faq, appConfig.paths.contacts];
@@ -58,7 +58,7 @@ export function createApp(nextHandler: RequestHandler, isReady: () => boolean) {
       .some((path) => req.path === localizedPath(path, "bg") || req.path === localizedPath(path, "en"));
     const policy = [
       "default-src 'self'", `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${newsletterTokenPage ? "" : ` ${appConfig.contact.captchaCspScriptSources.join(" ")}`}`,
-      "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob:${blogImageCspSource() ? ` ${blogImageCspSource()}` : ""}`, "font-src 'self'",
+      "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'",
       `connect-src 'self'${newsletterTokenPage ? "" : ` ${appConfig.contact.captchaCspConnectSources.join(" ")}`}`, `frame-src ${newsletterTokenPage ? "'none'" : appConfig.contact.captchaCspFrameSources.join(" ")}`,
       "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
     ].join("; ");

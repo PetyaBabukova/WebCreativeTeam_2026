@@ -5,6 +5,7 @@
   --brand-dark-green: #002e00;
   --color-ink: #101717;
   --color-background: #fbfaf7;
+  --color-background-warm: #f5e4be;
   --color-deep: #031a14;
   --color-deep-green-on-light: #16432f;
   --color-green: #086b43;
@@ -71,6 +72,14 @@ button, input { font: inherit; }
 
 /* Shared form controls for the administrative forms. */
 .form-stack { display: grid; gap: 1.15rem; }
+.form-stack > label { display: grid; gap: .45rem; min-width: 0; color: var(--color-deep-green-on-light); font-weight: 650; }
+.form-stack > label :is(input, textarea) { display: block; width: 100%; min-width: 0; font: inherit; color: var(--color-ink); }
+.form-stack > label :is(input:not([type="file"]), textarea) { min-height: 2.9rem; padding: .6rem .8rem; border: .0625rem solid #54816b; border-radius: .6rem; background: var(--color-white); }
+.form-stack > label textarea { min-height: 5.5rem; resize: vertical; }
+.form-stack > label :is(input:not([type="file"]), textarea):focus { outline: .1875rem solid var(--color-primary); outline-offset: .15rem; }
+.form-stack > label input[type="file"] { min-height: 3.3rem; padding: .4rem .55rem; border: .0625rem solid #54816b; border-radius: .6rem; background: var(--color-white); font-weight: 400; }
+.form-stack > label input[type="file"]::file-selector-button { min-height: 2.3rem; margin-right: .8rem; padding: .35rem .8rem; border: .0625rem solid var(--color-primary); border-radius: .5rem; background: transparent; color: var(--color-orange-deep); font: inherit; font-weight: 650; cursor: pointer; }
+.form-stack > div:not(.form-field) > label { display: block; margin-bottom: .45rem; color: var(--color-deep-green-on-light); font-weight: 650; }
 .form-field { display: grid; gap: .45rem; font-weight: 650; }
 .form-field__control { display: flex; align-items: stretch; border: .0625rem solid #54816b; border-radius: .6rem; background: var(--color-white); }
 .form-field__control:focus-within { outline: .1875rem solid var(--color-primary); outline-offset: .15rem; }

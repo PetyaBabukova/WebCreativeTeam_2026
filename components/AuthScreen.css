@@ -18,6 +18,9 @@
 .auth-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem 0; border-bottom: .0625rem solid #d8e4da; overflow-wrap: anywhere; }
 .auth-list button { border: .0625rem solid var(--color-primary); border-radius: .5rem; padding: .35rem .65rem; background: transparent; color: #9b3a00; cursor: pointer; }
 .auth-mail-failed { color: #9b3a00; }
+.auth-panel .ql-toolbar.ql-snow { border-color: #54816b; border-radius: .6rem .6rem 0 0; }
+.auth-panel .ql-container.ql-snow { border-color: #54816b; border-radius: 0 0 .6rem .6rem; font-family: inherit; font-size: 1rem; }
+.auth-panel .ql-editor { min-height: 12rem; }
 .auth-reauth { width: min(calc(100% - 2rem), 28rem); padding: clamp(1.25rem, 3vw, 2rem); border: .0625rem solid #bfd2c3; border-radius: 1rem; color: var(--color-deep-green-on-light); background: var(--color-white); box-shadow: 0 .7rem 2rem #00251740; }
 .auth-reauth::backdrop { background: #001d16aa; }
 .auth-reauth__actions { display: flex; flex-wrap: wrap; gap: .75rem; }

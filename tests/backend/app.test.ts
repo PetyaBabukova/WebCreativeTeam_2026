@@ -1,11 +1,73 @@
 import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import nodemailer from "nodemailer";
+import { Readable } from "node:stream";
 import { createApp } from "../../server/app.js";
 import { appConfig } from "../../lib/config.js";
 import * as newsletterService from "../../server/newsletter/service.js";
+import * as blogService from "../../server/blog/service.js";
 
 describe("Express HTTP boundaries", () => {
+  it("serves a private blog image publicly, while HEAD only reads metadata", async () => {
+    const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+    const file = { getMetadata: vi.fn().mockResolvedValue([{ size: "3", contentType: "image/webp", generation: "1" }]), createReadStream: vi.fn(() => Readable.from([Buffer.from("abc")])) };
+    const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const head = await request(app).head(image).expect(200);
+      expect(head.headers["content-length"]).toBe("3");
+      expect(file.createReadStream).not.toHaveBeenCalled();
+      const get = await request(app).get(image).expect(200);
+      expect(get.headers["content-type"]).toMatch(/^image\/webp/);
+      expect(get.headers["cache-control"]).toBe("public, max-age=86400");
+      expect(get.headers["content-length"]).toBe("3");
+      expect(file.createReadStream).toHaveBeenCalledTimes(1);
+      expect(lookup).toHaveBeenCalledWith(image);
+      expect(lookup).toHaveBeenCalledWith(image, "1");
+    } finally { lookup.mockRestore(); }
+  });
+  it("does not cache missing blog images or accept altered paths", async () => {
+    const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+    const app = createApp((_req, res) => { res.send("next"); }, () => true);
+    const invalid = await request(app).get(`${image}?x=1`).expect(404);
+    expect(invalid.headers["cache-control"]).toBe("no-store");
+    const file = { getMetadata: vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { code: 404 })) };
+    const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const missing = await request(app).get(image).expect(404);
+      expect(missing.headers["cache-control"]).toBe("no-store");
+      expect(missing.headers["content-length"]).toBe("0");
+    } finally { lookup.mockRestore(); warning.mockRestore(); }
+  });
+  it("does not send a cacheable image when the storage stream fails", async () => {
+    const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+    const file = {
+      getMetadata: vi.fn().mockResolvedValue([{ size: "3", contentType: "image/webp", generation: "1" }]),
+      createReadStream: vi.fn(() => new Readable({ read() { this.destroy(new Error("read failed")); } })),
+    };
+    const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      const failed = await request(app).get(image).expect(503);
+      expect(failed.headers["cache-control"]).toBe("no-store");
+      expect(failed.headers["content-type"] ?? "").not.toMatch(/^image\/webp/);
+    } finally { lookup.mockRestore(); warning.mockRestore(); }
+  });
+  it("closes a partly sent blog image instead of completing a short 200 response", async () => {
+    const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+    const file = {
+      getMetadata: vi.fn().mockResolvedValue([{ size: "3", contentType: "image/webp", generation: "1" }]),
+      createReadStream: vi.fn(() => Readable.from((async function* () { yield Buffer.from("a"); throw new Error("read failed"); })())),
+    };
+    const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const app = createApp((_req, res) => { res.send("next"); }, () => true);
+      await expect(request(app).get(image)).rejects.toThrow();
+    } finally { lookup.mockRestore(); warning.mockRestore(); }
+  });
   it("rejects blog writes and admin reads before parsing uploads or touching content", async () => {
     const app = createApp((_req, res) => { res.send("next"); }, () => true);
     await request(app).get(`${appConfig.paths.blogApi}/admin`).expect(401);
@@ -81,6 +143,7 @@ describe("Express HTTP boundaries", () => {
       expect(forced.headers["content-security-policy"]).toContain("'strict-dynamic'");
       expect(forced.headers["content-security-policy"]).toContain(`frame-src ${appConfig.contact.captchaCspFrameSources.join(" ")}`);
       expect(forced.headers["content-security-policy"]).toContain(`connect-src 'self' ${appConfig.contact.captchaCspConnectSources.join(" ")}`);
+      expect(forced.headers["content-security-policy"]).not.toContain("storage.googleapis.com");
       expect(forced.headers["content-security-policy-report-only"]).toBeUndefined();
       expect(forced.headers["strict-transport-security"]).toBeUndefined();
       const second = await request(app()).get(appConfig.paths.health).expect(200);
