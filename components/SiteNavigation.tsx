@@ -20,7 +20,7 @@ type NavigationCopy = {
   contact: string;
 };
 
-type NavigationProps = { locale: Locale; copy: NavigationCopy } & (
+type NavigationProps = { locale: Locale; copy: NavigationCopy; languageUrls?: Partial<Record<Locale, string>> } & (
   | { page: Page; serviceSlug?: never }
   | { page: "service"; serviceSlug: ServiceSlug }
 );
@@ -52,7 +52,7 @@ function useLocalePreference(locale: Locale) {
   }, [locale]);
 }
 
-export default function SiteNavigation({ locale, page, serviceSlug, copy }: NavigationProps) {
+export default function SiteNavigation({ locale, page, serviceSlug, copy, languageUrls }: NavigationProps) {
   if (copy.serviceLinks.length !== serviceSlugs.length) {
     throw new Error(`Expected ${serviceSlugs.length} service navigation labels, received ${copy.serviceLinks.length}`);
   }
@@ -151,7 +151,7 @@ export default function SiteNavigation({ locale, page, serviceSlug, copy }: Navi
         <Link href={pageUrl("contacts", locale)} aria-current={page === "contacts" ? "page" : undefined} onClick={closeMenus}>{copy.contact}</Link>
       </nav>
       <nav aria-label={copy.language} className="site-menu__languages">
-        {locales.map((language) => <a key={language} href={localeSwitchUrl(page === "service" ? { page, serviceSlug } : { page }, language, hash)} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined} onClick={closeMenus}>{language.toUpperCase()}</a>)}
+        {locales.map((language) => <a key={language} href={languageUrls?.[language] ?? localeSwitchUrl(page === "service" ? { page, serviceSlug } : { page }, language, hash)} hrefLang={language} lang={language} aria-current={language === locale ? "page" : undefined} onClick={closeMenus}>{language.toUpperCase()}</a>)}
       </nav>
     </div>
   </details>;

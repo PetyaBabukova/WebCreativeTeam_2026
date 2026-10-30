@@ -3,9 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import { appConfig, type Locale } from "@/lib/config";
 import { csrfToken, verifySessionCookie } from "@/server/auth/security";
 import AuthScreen, { type AuthView } from "./AuthScreen";
+import BlogAdminScreen from "./BlogAdminScreen";
 
 const publicViews = new Set<AuthView>(["login", "forgot", "invite", "reset", "email"]);
-const privateViews = new Set<AuthView>(["home", "profile", "administrators"]);
+const privateViews = new Set<AuthView>(["home", "profile", "administrators", "articles"]);
 
 function adminBase(locale: Locale) { return locale === "en" ? `${appConfig.paths.admin}/en` : appConfig.paths.admin; }
 
@@ -17,7 +18,8 @@ export default async function AuthPageServer({ locale, segments, returnTo }: { l
   const verified = await verifySessionCookie((await cookies()).toString());
   if (publicViews.has(view) && verified && view === "login") redirect(base);
   if (privateViews.has(view) && !verified) redirect(`${base}/login?returnTo=${encodeURIComponent(`${base}/${view === "home" ? "" : view}`)}`);
-  const destination = returnTo && [base, `${base}/profile`, `${base}/administrators`].includes(returnTo) ? returnTo : base;
+  const destination = returnTo && [base, `${base}/profile`, `${base}/administrators`, `${base}/articles`].includes(returnTo) ? returnTo : base;
+  if (view === "articles" && verified) return <BlogAdminScreen locale={locale} base={base} csrf={csrfToken(verified.session, "private")} />;
   return <AuthScreen locale={locale} view={view} base={base} returnTo={destination}
     user={verified ? { id: verified.user._id.toHexString(), email: verified.user.email, username: verified.user.username, csrf: csrfToken(verified.session, "private") } : undefined} />;
 }

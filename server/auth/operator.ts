@@ -13,6 +13,7 @@ type OperatorCommand = "prepare" | "prepare-newsletter" | "check-count" | "boots
 const expectedCollections = new Set([
   "adminUsers", "authSessions", "authTokens", "adminControl", "authOutbox", "authAudit", "authRateLimits",
   appConfig.newsletter.collection,
+  appConfig.blog.collection,
   ...appConfig.newsletter.legacyCollections,
 ]);
 

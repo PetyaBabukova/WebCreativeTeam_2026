@@ -19,33 +19,40 @@
     "test:e2e:install": "playwright install chromium",
     "test:e2e": "playwright test",
     "auth:operator": "node dist/server/auth/operator.js",
-    "auth:operator:dev": "tsx server/auth/operator.ts"
+    "auth:operator:dev": "tsx server/auth/operator.ts",
+    "blog:migrate:dev": "tsx server/blog/migrate.ts"
   },
   "dependencies": {
-    "@next/env": "16.3.6",
+    "@google-cloud/storage": "8.4.0",
+    "@next/env": "16.4.3",
     "argon2": "0.45.1",
+    "busboy": "1.6.0",
     "cross-env": "10.1.0",
     "express": "5.2.1",
     "ipaddr.js": "2.2.0",
     "mongodb": "7.7.0",
     "motion": "13.4.6",
-    "next": "16.3.6",
+    "next": "16.4.3",
     "nodemailer": "10.1.7",
+    "quill": "2.0.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "sanitize-html": "2.18.1",
     "sharp": "0.35.5"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@next/eslint-plugin-next": "16.3.6",
+    "@next/eslint-plugin-next": "16.4.3",
     "@playwright/test": "1.63.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
+    "@types/busboy": "1.5.5",
     "@types/express": "5.0.6",
     "@types/node": "22.20.4",
     "@types/nodemailer": "8.0.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/sanitize-html": "2.16.2",
     "@types/supertest": "7.2.1",
     "@vitest/coverage-v8": "5.0.2",
     "eslint": "10.11.0",
@@ -55,5 +62,9 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.1",
     "vitest": "5.0.2"
+  },
+  "overrides": {
+    "body-parser": "2.4.0",
+    "qs": "6.17.1"
   }
 }

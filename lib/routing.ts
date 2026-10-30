@@ -14,6 +14,9 @@ export function isServiceSlug(value: string): value is ServiceSlug {
 export function serviceUrl(slug: ServiceSlug, locale: Locale): string {
   return `${appConfig.paths.services}/${slug}/${locale}`;
 }
+export function blogArticleUrl(slug: string, locale: Locale): string {
+  return `${appConfig.paths.blog}/${slug}/${locale}`;
+}
 
 export function portfolioUrl(locale: Locale): string {
   return localizedPath(appConfig.paths.portfolio, locale);

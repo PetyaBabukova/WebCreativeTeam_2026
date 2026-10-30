@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import heroBackgroundDesktop from "@/assets/hero/background-desktop.webp";
 import heroBackgroundMobile from "@/assets/hero/background-mobile.webp";
 import serviceDetailBackground from "@/assets/services/products_page_background.webp";
@@ -42,7 +43,7 @@ import SiteNavigation from "./SiteNavigation";
 import { HeaderAuthProvider, HeaderAuthStatus } from "./HeaderAuthStatus";
 import "./SitePage.css";
 
-type HeaderProps = { locale: Locale } & (
+type HeaderProps = { locale: Locale; languageUrls?: Partial<Record<Locale, string>> } & (
   | { page: Page; serviceSlug?: never }
   | { page: "service"; serviceSlug: ServiceSlug }
 );
@@ -120,7 +121,7 @@ function SocialIcon({ name }: { name: (typeof socialNames)[number] }) {
   return <span aria-hidden="true" className="site-footer__social-glyph">{name === "linkedin" ? "in" : "f"}</span>;
 }
 
-function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
+function SiteFooter({ locale, route, languageUrls }: { locale: Locale; route: SiteRoute; languageUrls?: Partial<Record<Locale, string>> }) {
   const copy = messages[locale];
   const footer = copy.landing.footer;
   const legal = { unavailable: footer.legalUnavailable, close: footer.close };
@@ -166,21 +167,21 @@ function SiteFooter({ locale, route }: { locale: Locale; route: SiteRoute }) {
         <CookieConsentLink className="site-footer__legal-button" locale={locale} current={route.page === "cookies"}>{footer.cookies}</CookieConsentLink>
         <FooterLegalButton label={footer.terms} title={footer.terms} {...legal} />
       </div>
-      <nav className="site-footer__languages" aria-label={copy.language}>{locales.map((language) => <a key={language} href={localeSwitchUrl(route, language)} lang={language} hrefLang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</a>)}</nav>
+      <nav className="site-footer__languages" aria-label={copy.language}>{locales.map((language) => <a key={language} href={languageUrls?.[language] ?? localeSwitchUrl(route, language)} lang={language} hrefLang={language} aria-current={language === locale ? "page" : undefined}>{language.toUpperCase()}</a>)}</nav>
     </div>
     </div>
   </footer>;
 }
 
-export default function SitePage({ locale, page }: { locale: Locale; page: Page }) {
+export default function SitePage({ locale, page, content, languageUrls }: { locale: Locale; page: Page; content?: ReactNode; languageUrls?: Partial<Record<Locale, string>> }) {
   const copy = messages[locale];
   return <PrivacyModalProvider locale={locale} enabled={page !== "privacy"} title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen={page !== "privacy" && page !== "cookies"} inline={page === "cookies"}><StatusNoticeProvider><div className={`site-page site-page--${page}`}>
-    <SiteHeader locale={locale} page={page} />
-    {page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : page === "privacy" ? <PrivacyPage locale={locale} /> : page === "cookies" ? <CookiePolicyPage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
+    <SiteHeader locale={locale} page={page} languageUrls={languageUrls} />
+    {content ?? (page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : page === "privacy" ? <PrivacyPage locale={locale} /> : page === "cookies" ? <CookiePolicyPage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
-    </main>}
-    <SiteFooter locale={locale} route={{ page }} />
+    </main>)}
+    <SiteFooter locale={locale} route={{ page }} languageUrls={languageUrls} />
   </div></StatusNoticeProvider></CookieConsentProvider></PrivacyModalProvider>;
 }
 

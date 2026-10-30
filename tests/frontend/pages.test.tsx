@@ -6,8 +6,6 @@ import BgHome, { generateMetadata as bgHomeMetadata } from "@/app/(bg)/bg/page";
 import EnHome, { generateMetadata as enHomeMetadata } from "@/app/(en)/en/page";
 import BgAbout, { generateMetadata as bgAboutMetadata } from "@/app/(bg)/about/bg/page";
 import EnAbout, { generateMetadata as enAboutMetadata } from "@/app/(en)/about/en/page";
-import BgBlog, { generateMetadata as bgBlogMetadata } from "@/app/(bg)/blog/bg/page";
-import EnBlog, { generateMetadata as enBlogMetadata } from "@/app/(en)/blog/en/page";
 import BgFaq, { generateMetadata as bgFaqMetadata } from "@/app/(bg)/faq/bg/page";
 import EnFaq, { generateMetadata as enFaqMetadata } from "@/app/(en)/faq/en/page";
 import BgContacts, { generateMetadata as bgContactsMetadata } from "@/app/(bg)/contacts/bg/page";
@@ -932,8 +930,6 @@ describe("public pages", () => {
     [EnHome, enHomeMetadata, "en", "home", "/en"],
     [BgAbout, bgAboutMetadata, "bg", "about", "/about/bg"],
     [EnAbout, enAboutMetadata, "en", "about", "/about/en"],
-    [BgBlog, bgBlogMetadata, "bg", "blog", "/blog/bg"],
-    [EnBlog, enBlogMetadata, "en", "blog", "/blog/en"],
     [BgFaq, bgFaqMetadata, "bg", "faq", "/faq/bg"],
     [EnFaq, enFaqMetadata, "en", "faq", "/faq/en"],
     [BgContacts, bgContactsMetadata, "bg", "contacts", "/contacts/bg"],

@@ -5,6 +5,8 @@ import { authRouter } from "./auth/routes.js";
 import { authTrustedProxies } from "./auth/config.js";
 import { contactRouter } from "./contact/routes.js";
 import { newsletterRouter } from "./newsletter/routes.js";
+import { blogRouter, blogImageCspSource } from "./blog/routes.js";
+import { getLegacyArticle } from "./blog/service.js";
 
 const localeRedirectPaths: ReadonlyArray<string> = [appConfig.paths.root, appConfig.paths.faq, appConfig.paths.contacts];
 
@@ -56,7 +58,7 @@ export function createApp(nextHandler: RequestHandler, isReady: () => boolean) {
       .some((path) => req.path === localizedPath(path, "bg") || req.path === localizedPath(path, "en"));
     const policy = [
       "default-src 'self'", `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${newsletterTokenPage ? "" : ` ${appConfig.contact.captchaCspScriptSources.join(" ")}`}`,
-      "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:", "font-src 'self'",
+      "style-src 'self' 'unsafe-inline'", `img-src 'self' data: blob:${blogImageCspSource() ? ` ${blogImageCspSource()}` : ""}`, "font-src 'self'",
       `connect-src 'self'${newsletterTokenPage ? "" : ` ${appConfig.contact.captchaCspConnectSources.join(" ")}`}`, `frame-src ${newsletterTokenPage ? "'none'" : appConfig.contact.captchaCspFrameSources.join(" ")}`,
       "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
     ].join("; ");
@@ -101,6 +103,14 @@ export function createApp(nextHandler: RequestHandler, isReady: () => boolean) {
   app.use(appConfig.paths.authApi, authRouter);
   app.use(appConfig.paths.contactApi, contactRouter);
   app.use(appConfig.paths.newsletterApi, newsletterRouter);
+  app.use(appConfig.paths.blogApi, blogRouter);
+  app.get(appConfig.paths.legacyArticles, (_req, res) => { res.redirect(301, localizedPath(appConfig.paths.blog, "bg")); });
+  app.get(`${appConfig.paths.legacyArticles}/:id/details`, (req, res, next) => {
+    void getLegacyArticle(String(req.params.id)).then((article) => {
+      if (!article) { next(); return; }
+      res.redirect(301, `${appConfig.paths.blog}/${article.slug}/bg`);
+    }).catch(next);
+  });
   app.use(appConfig.paths.admin, (_req, res, next) => {
     res.set("Cache-Control", "private, no-store");
     res.set("X-Robots-Tag", "noindex, nofollow, noarchive");

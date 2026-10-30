@@ -6,6 +6,14 @@ import { appConfig } from "../../lib/config.js";
 import * as newsletterService from "../../server/newsletter/service.js";
 
 describe("Express HTTP boundaries", () => {
+  it("rejects blog writes and admin reads before parsing uploads or touching content", async () => {
+    const app = createApp((_req, res) => { res.send("next"); }, () => true);
+    await request(app).get(`${appConfig.paths.blogApi}/admin`).expect(401);
+    await request(app).get(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`).expect(401);
+    await request(app).post(`${appConfig.paths.blogApi}/admin`).set("Content-Type", "multipart/form-data").expect(401);
+    await request(app).put(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`).set("Content-Type", "multipart/form-data").expect(401);
+    await request(app).delete(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`).send({ version: 1 }).expect(401);
+  });
   it.each([
     [undefined, "/bg", "/faq/bg", "/contacts/bg"],
     ["wct_locale=en", "/en", "/faq/en", "/contacts/en"],
