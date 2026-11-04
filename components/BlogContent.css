@@ -61,7 +61,11 @@
 .blog-article__body pre { max-width: 100%; overflow-x: auto; padding: 1.25rem; border-radius: .75rem; background: var(--color-deep); color: var(--color-white); }
 .blog-article__body img { display: block; max-width: 100%; height: auto; margin: 2.5rem auto; }
 .blog-article__body a { color: var(--color-deep-green-on-light); text-decoration: underline; text-underline-offset: .2em; }
+.blog-article__body [style*="background-color"], .blog-article__body [style*="background-color"] * { color: var(--color-ink) !important; }
 .blog-detail__bottom { max-width: var(--blog-reading-width); margin: clamp(3rem, 6vw, 6rem) auto 0; padding-top: 1.5rem; border-top: .0625rem solid var(--blog-rule); }
+.blog-detail__admin { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; width: min(100%, var(--blog-reading-width)); margin: 2rem auto 0; }
+.blog-detail__admin-error { flex-basis: 100%; margin: .25rem 0 0; color: var(--color-deep-green-on-light); }
+.blog-detail__admin-error :is(a, button) { color: inherit; text-decoration: underline; }
 
 @media (width <= 47.5rem) {
   .blog-page__intro { min-height: 0; }

@@ -6,7 +6,41 @@ import { MotionConfig, motion, useInView } from "motion/react";
 import { headlineReveal } from "./HeroOrb";
 import { useCookieChoice } from "./CookieConsent";
 import ServiceTypewriter from "./ServiceTypewriter";
-import type { Locale } from "@/lib/config";
+import { appConfig, type Locale } from "@/lib/config";
+import { adminUrl, blogAdminEditUrl, pageUrl } from "@/lib/routing";
+
+export function BlogDetailAdminActions({ locale, id, version }: { locale: Locale; id: string; version: number }) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<"session" | "conflict" | "other" | null>(null);
+  const bg = locale === "bg";
+  const editUrl = blogAdminEditUrl(id, locale);
+  async function csrf() {
+    const response = await fetch(`${appConfig.paths.authApi}/csrf`, { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    return (await response.json()).csrf as string;
+  }
+  async function remove() {
+    if (busy || !window.confirm(bg ? "Да изтрия ли статията окончателно?" : "Delete this article permanently?")) return;
+    setBusy(true); setFailure(null);
+    let navigated = false;
+    try {
+      const send = (token: string) => fetch(`${appConfig.paths.blogApi}/admin/${id}`, { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json", "x-csrf-token": token }, body: JSON.stringify({ version }) });
+      let response = await send(await csrf());
+      if (response.status === 403) response = await send(await csrf());
+      if (response.status === 401) { setFailure("session"); return; }
+      if (response.status === 409) { setFailure("conflict"); return; }
+      if (!response.ok) throw new Error(String(response.status));
+      window.location.assign(pageUrl("blog", locale));
+      navigated = true;
+    } catch (error) { setFailure(error instanceof Error && error.message === "401" ? "session" : "other"); }
+    finally { if (!navigated) setBusy(false); }
+  }
+  return <div className="blog-detail__admin" role="group" aria-label={bg ? "Управление на статията" : "Article management"}>
+    <Link className="button button--outline" href={editUrl}>{bg ? "Редактирай" : "Edit"}</Link>
+    <button type="button" className="button button--outline" disabled={busy} onClick={() => void remove()}>{busy ? (bg ? "Изтриване…" : "Deleting…") : (bg ? "Изтрий" : "Delete")}</button>
+    {failure && <p role="alert" className="blog-detail__admin-error">{failure === "session" ? (bg ? "Сесията е изтекла." : "Your session has expired.") : failure === "conflict" ? (bg ? "Статията е променена или изтрита. Презаредете страницата." : "The article changed or was deleted. Reload the page.") : (bg ? "Изтриването не успя. Опитайте отново." : "Delete failed. Try again.")} {failure === "session" && <Link href={`${adminUrl(locale)}/login?returnTo=${encodeURIComponent(editUrl)}`}>{bg ? "Вход" : "Sign in"}</Link>}{failure === "conflict" && <button type="button" onClick={() => window.location.reload()}>{bg ? "Презареди" : "Reload"}</button>}</p>}
+  </div>;
+}
 
 export function BlogIntro({ locale, eyebrow, headline, accent, lead }: { locale: Locale; eyebrow: string; headline: string; accent: string; lead: string }) {
   return <header className="blog-page__intro">

@@ -1,8 +1,9 @@
+import type { Readable } from "node:stream";
 import express, { type Request, type Response } from "express";
 import Busboy from "busboy";
 import { appConfig } from "../../lib/config.js";
 import { privateResponse, validCsrf, validOrigin, verifySession } from "../auth/security.js";
-import { adminArticle, adminArticles, BlogError, blogImageFile, createArticle, deleteArticle, updateArticle, type Upload } from "./service.js";
+import { adminArticle, adminArticles, BlogError, blogImageFile, createArticle, deleteArticle, logStorageFailure, storageAccessFailure, storageErrorInfo, updateArticle, type Upload } from "./service.js";
 
 export const blogRouter = express.Router();
 const imageRequests = new Map<string, { count: number; expires: number }>();
@@ -44,47 +45,65 @@ async function serveImage(req: Request, res: Response, head: boolean) {
   activeImageRequests++;
   activeImageIps.set(ip, (activeImageIps.get(ip) ?? 0) + 1);
   let released = false;
-  const deadline = setTimeout(() => imageError(res, 503), appConfig.blog.imageDeadlineMilliseconds);
-  deadline.unref();
+  let stream: Readable | undefined;
+  let idle: NodeJS.Timeout | undefined;
+  const expire = (phase: "first_byte" | "idle" | "transfer") => {
+    console.warn("Blog image timed out", phase === "first_byte" ? { phase } : { phase, waitingOn: res.writableNeedDrain ? "client" : "storage" });
+    stream?.destroy();
+    imageError(res, 503);
+  };
+  const timer = (phase: "first_byte" | "idle" | "transfer", milliseconds: number) => {
+    const handle = setTimeout(() => expire(phase), milliseconds);
+    handle.unref();
+    return handle;
+  };
+  const firstByte = timer("first_byte", appConfig.blog.imageDeadlineMilliseconds);
+  const transfer = timer("transfer", appConfig.blog.imageTransferMaxMilliseconds);
+  const resetIdle = () => {
+    if (released) return;
+    clearTimeout(idle);
+    idle = timer("idle", appConfig.blog.imageDeadlineMilliseconds);
+  };
   const release = () => {
     if (released) return;
     released = true;
-    clearTimeout(deadline);
+    clearTimeout(firstByte); clearTimeout(transfer); clearTimeout(idle);
+    if (stream && !stream.readableEnded) stream.destroy();
     activeImageRequests--;
     const remaining = (activeImageIps.get(ip) ?? 1) - 1;
     if (remaining) activeImageIps.set(ip, remaining); else activeImageIps.delete(ip);
   };
   res.once("close", release);
   res.once("finish", release);
+  const headers = (size: number) => res.set({ "Content-Type": "image/webp", "Content-Length": String(size), "Cache-Control": appConfig.blog.imageCacheControl }).status(200);
   try {
     const [metadata] = await file.getMetadata();
+    if (released || res.destroyed || res.writableEnded) return;
     const size = Number(metadata.size);
     if (!Number.isSafeInteger(size) || size < 1 || size > appConfig.blog.maxFileBytes || metadata.contentType !== "image/webp" || (metadata.contentEncoding && metadata.contentEncoding !== "identity") || !metadata.generation) {
       imageError(res, 404);
       return;
     }
-    if (res.destroyed || res.writableEnded) return;
-    if (head) {
-      res.set({ "Content-Type": "image/webp", "Content-Length": String(size), "Cache-Control": `public, max-age=${appConfig.blog.imageCacheSeconds}` }).status(200).end();
-      return;
-    }
-    const stream = blogImageFile(req.originalUrl, String(metadata.generation)).createReadStream();
-    res.once("close", () => { if (!res.writableFinished) stream.destroy(); });
-    stream.on("error", (error: unknown) => {
-      console.warn("Blog image read failed", { name: error instanceof Error ? error.name : "Unknown" });
-      imageError(res, error && typeof error === "object" && "code" in error && error.code === 404 ? 404 : 503);
+    if (head) { headers(size).end(); return; }
+    const source = blogImageFile(req.originalUrl, String(metadata.generation)).createReadStream();
+    stream = source;
+    source.on("error", (error: unknown) => {
+      imageError(res, logStorageFailure("Blog image read failed", error).status === 404 ? 404 : 503);
     });
-    stream.once("end", () => { if (!res.headersSent) imageError(res, 503); });
-    stream.once("data", (chunk: Buffer) => {
-      stream.pause();
-      if (res.destroyed) { stream.destroy(); return; }
-      res.set({ "Content-Type": "image/webp", "Content-Length": String(size), "Cache-Control": `public, max-age=${appConfig.blog.imageCacheSeconds}` }).status(200);
+    source.once("end", () => { if (!res.headersSent) imageError(res, 503); });
+    source.once("data", (chunk: Buffer) => {
+      source.pause();
+      if (released || res.destroyed) { source.destroy(); return; }
+      clearTimeout(firstByte);
+      resetIdle();
+      headers(size);
       res.write(chunk);
-      stream.pipe(res);
+      source.on("data", resetIdle);
+      res.on("drain", resetIdle);
+      source.pipe(res);
     });
   } catch (error) {
-    console.warn("Blog image lookup failed", { name: error instanceof Error ? error.name : "Unknown" });
-    imageError(res, error && typeof error === "object" && "code" in error && error.code === 404 ? 404 : 503);
+    imageError(res, logStorageFailure("Blog image lookup failed", error).status === 404 ? 404 : 503);
   }
 }
 
@@ -100,7 +119,9 @@ function safe(handler: (req: Request, res: Response) => Promise<void>) {
       if (error.status === 413) res.set("Connection", "close");
       res.status(error.status).json({ error: error.message }); return;
     }
-    console.error("Blog request failed", { name: error instanceof Error ? error.name : "Unknown" });
+    const info = storageErrorInfo(error);
+    if (storageAccessFailure(info)) console.error("Blog storage access failed", { context: "Blog request failed", ...info });
+    else console.error("Blog request failed", info);
     res.status(503).json({ error: "Blog temporarily unavailable" });
   }); };
 }

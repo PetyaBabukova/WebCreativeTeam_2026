@@ -3,6 +3,8 @@ import { BlogDetail } from "@/components/BlogContent";
 import { blogArticleUrl } from "@/lib/routing";
 import { getArticle } from "@/server/blog/service";
 import { siteOrigin } from "@/lib/config";
+import { cookies } from "next/headers";
+import { verifySessionCookie } from "@/server/auth/security";
 
 export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
@@ -14,5 +16,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const article = await getArticle((await params).slug, "en");
   if (!article) notFound();
-  return <BlogDetail locale="en" article={article} />;
+  const admin = Boolean(await verifySessionCookie((await cookies()).toString()));
+  return <BlogDetail locale="en" article={article} admin={admin} />;
 }

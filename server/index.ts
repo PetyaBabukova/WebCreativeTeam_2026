@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { appConfig } from "../lib/config.js";
 import { startOutboxWorker } from "./auth/outbox.js";
 import { startNewsletterWorker } from "./newsletter/service.js";
+import { startBlogStorageMonitor } from "./blog/service.js";
 
 const { loadEnvConfig } = nextEnv;
 
@@ -35,12 +36,14 @@ export async function startServer(options: {
   let ready = false;
   let stopOutbox = () => {};
   let stopNewsletter = () => {};
+  let stopBlogStorage = () => {};
   const handler = app.getRequestHandler();
   const server = createServer(createApp(async (req, res) => { await handler(req, res); }, () => ready));
   try {
     await app.prepare();
     stopOutbox = startOutboxWorker();
     stopNewsletter = startNewsletterWorker();
+    stopBlogStorage = startBlogStorageMonitor();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(options.port, appConfig.listenHost, () => { server.off("error", reject); ready = true; resolve(); });
@@ -48,6 +51,7 @@ export async function startServer(options: {
   } catch (error) {
     stopOutbox();
     stopNewsletter();
+    stopBlogStorage();
     await app.close();
     throw error;
   }
@@ -57,6 +61,7 @@ export async function startServer(options: {
     ready = false;
     stopOutbox();
     stopNewsletter();
+    stopBlogStorage();
     stopping = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => { server.closeAllConnections(); reject(new Error("Shutdown deadline exceeded")); }, options.shutdownMs ?? 5000);
       server.close((error) => {
@@ -80,7 +85,7 @@ export async function main() {
   } catch (error) {
     // Keep arbitrary framework/configuration error text out of production logs.
     const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
-    console.error(code === "EADDRINUSE" || code === "EACCES" || code === "CSP_CONFIG" ? `Server startup failed: ${code}` : "Server startup failed");
+    console.error(code === "EADDRINUSE" || code === "EACCES" || code === "CSP_CONFIG" || code === "BLOG_STORAGE_CONFIG" ? `Server startup failed: ${code}` : "Server startup failed");
     process.exitCode = 1;
   }
 }

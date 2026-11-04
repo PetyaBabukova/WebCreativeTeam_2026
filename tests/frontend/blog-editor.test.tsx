@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { ObjectId } from "mongodb";
 import { renderToStaticMarkup } from "react-dom/server";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { cleanHtml } from "@/server/blog/service";
 import { BlogIndex, BlogDetail } from "@/components/BlogContent";
+import BlogAdminScreen from "@/components/BlogAdminScreen";
+import { BlogDetailAdminActions } from "@/components/BlogMotion";
+import { appConfig, blogHexColor, blogHighlightColor, blogLinkUrl, blogTextColor } from "@/lib/config";
+import { blogEditorReturnUrl } from "@/lib/routing";
 import type { Article } from "@/server/blog/service";
 
 function sampleArticle(n: number): Article {
@@ -36,9 +42,69 @@ describe("public blog layout", () => {
     expect(detail).toContain('src="/api/blog/images/hero.webp"');
     expect(detail).toContain('alt="Основно изображение"');
   });
+  it("shows article actions only when the server has verified an administrator", () => {
+    const article = sampleArticle(4);
+    const publicHtml = renderToStaticMarkup(<BlogDetail locale="bg" article={article} />);
+    const adminHtml = renderToStaticMarkup(<BlogDetail locale="bg" article={article} admin />);
+    expect(publicHtml).not.toContain("blog-detail__admin");
+    expect(adminHtml).toContain("Редактирай");
+    expect(adminHtml).toContain("Изтрий");
+    expect(adminHtml).toContain(`/admin/articles?edit=${article._id.toHexString()}&amp;lang=bg`);
+  });
+  it("retries a forbidden delete once and reports a version conflict", async () => {
+    let deletes = 0;
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/csrf")) return Response.json({ csrf: "fresh-token" });
+      if (init?.method === "DELETE") return new Response(null, { status: ++deletes === 1 ? 403 : 409 });
+      throw new Error(`Unexpected request ${url}`);
+    });
+    vi.stubGlobal("fetch", request);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      const { unmount } = render(<BlogDetailAdminActions locale="bg" id="507f1f77bcf86cd799439011" version={2} />);
+      fireEvent.click(screen.getByRole("button", { name: "Изтрий" }));
+      expect((await screen.findByRole("alert")).textContent).toContain("променена или изтрита");
+      expect(deletes).toBe(2);
+      expect(request.mock.calls.filter(([url]) => url.endsWith("/csrf"))).toHaveLength(2);
+      unmount();
+    } finally { confirm.mockRestore(); vi.unstubAllGlobals(); }
+  });
 });
 
 describe("Quill article formats", () => {
+  it("returns from editing to the existing detail or the public blog list", () => {
+    expect(blogEditorReturnUrl("example", true, "en", "en")).toBe("/blog/example/en");
+    expect(blogEditorReturnUrl("example", false, "en", "en")).toBe("/blog/example/bg");
+    expect(blogEditorReturnUrl(null, false, "bg", "en")).toBe("/blog/en");
+  });
+  it("validates the shared color palette and link schemes", () => {
+    expect(blogTextColor("rgb(23, 76, 56)")).toBe("#174c38");
+    expect(blogTextColor("rgb(255, 0, 0)")).toBeNull();
+    expect(blogTextColor("var(--color-green)")).toBe("var(--color-green)");
+    expect(blogTextColor("var(--brand-orange)")).toBe("var(--brand-orange)");
+    expect(blogTextColor("var(--brand-green)")).toBe("var(--brand-green)");
+    expect(blogTextColor("var(--color-lime)")).toBe("var(--color-lime)");
+    expect(blogTextColor("var(--brand-orange, red)")).toBeNull();
+    expect(blogTextColor("var(--brand-orange) !important")).toBeNull();
+    expect(blogTextColor("var(--BRAND-orange)")).toBeNull();
+    expect(blogHexColor("rgb(255, 102, 0)")).toBe("#ff6600");
+    expect(blogHexColor("rgb(300, 102, 0)")).toBeNull();
+    expect(blogTextColor("var(--COLOR-green)")).toBeNull();
+    expect(blogHighlightColor("var(--brand-orange)")).toBe("var(--brand-orange)");
+    expect(blogHighlightColor("var(--color-green)")).toBeNull();
+    expect(blogLinkUrl("https://example.com/path")).toBe("https://example.com/path");
+    expect(blogLinkUrl("https://example.com/a b")).toBe("https://example.com/a%20b");
+    expect(blogLinkUrl("mailto:team@example.com")).toBe("mailto:team@example.com");
+    for (const url of ["www.example.com", "tel:+359123", "javascript:alert(1)", "https://user:pass@example.com", "https://example.com/\u200bpath"]) expect(blogLinkUrl(url)).toBeNull();
+  });
+  it("keeps every editor token backed by a global six-digit color", () => {
+    const css = readFileSync("styles/globals.css", "utf8");
+    for (const { value } of [...appConfig.blog.globalTextColors, ...appConfig.blog.highlightColors]) {
+      const name = value.slice(4, -1);
+      const match = new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6});`).exec(css);
+      expect(match, `${name} must resolve to a global hex color for paste mapping`).not.toBeNull();
+    }
+  });
   it("exports bullet lists and code blocks as semantic HTML", async () => {
     const { default: Quill } = await import("quill");
     const host = document.createElement("div");
@@ -68,5 +134,170 @@ describe("Quill article formats", () => {
     image!.alt = "Article illustration";
     expect(editor.getSemanticHTML()).toContain('alt="Article illustration"');
     host.remove();
+  });
+  it("preserves palette colors on formatted text and links, but removes unsafe styles and URLs", () => {
+    const id = new ObjectId("507f1f77bcf86cd799439011");
+    const html = cleanHtml('<p><strong style="color: rgb(23, 76, 56)">Bold</strong> <em style="color: #174a87">Emphasis</em> <a href="https://example.com/" style="color: #8f2938">Link</a> <span style="color: red; background: url(javascript:alert(1))">Unsafe color</span> <a href="javascript:alert(1)">Unsafe link</a></p>', id);
+    expect(html).toContain('color:rgb(23, 76, 56)');
+    expect(html).toContain('color:#174a87');
+    expect(html).toContain('color:#8f2938');
+    expect(html).toContain('href="https://example.com/"');
+    expect(html).not.toContain('javascript:');
+    expect(html).not.toContain('background:');
+    expect(html).not.toContain('color:red');
+  });
+  it("round trips colored bold and linked text through Quill and the sanitizer", async () => {
+    const { default: Quill } = await import("quill");
+    const first = document.createElement("div");
+    const second = document.createElement("div");
+    document.body.append(first, second);
+    const editor = new Quill(first);
+    editor.setContents([
+      { insert: "Bold", attributes: { bold: true, color: "#174c38" } },
+      { insert: " " },
+      { insert: "Link", attributes: { link: "https://example.com/", color: "#174a87" } },
+      { insert: "\n" },
+    ]);
+    const saved = cleanHtml(editor.getSemanticHTML(), new ObjectId("507f1f77bcf86cd799439011"));
+    const reopened = new Quill(second);
+    reopened.clipboard.dangerouslyPasteHTML(saved);
+    expect(reopened.getFormat(0, 4).color).toBe("#174c38");
+    expect(reopened.getFormat(5, 4).link).toBe("https://example.com/");
+    expect(reopened.getFormat(5, 4).color).toBe("#174a87");
+    first.remove(); second.remove();
+  });
+  it("keeps global text and highlight tokens on bold text and links", async () => {
+    const { default: Quill } = await import("quill");
+    const first = document.createElement("div");
+    const second = document.createElement("div");
+    document.body.append(first, second);
+    const editor = new Quill(first);
+    editor.setContents([
+      { insert: "Bold", attributes: { bold: true, color: "var(--brand-orange)" } },
+      { insert: " " },
+      { insert: "Link", attributes: { link: "https://example.com/", color: "var(--brand-green)", background: "var(--color-lime)" } },
+      { insert: "\n" },
+    ]);
+    const saved = cleanHtml(editor.getSemanticHTML(), new ObjectId("507f1f77bcf86cd799439011"));
+    expect(saved).toContain("var(--brand-orange)");
+    expect(saved).toContain("var(--brand-green)");
+    expect(saved).toContain("var(--color-lime)");
+    expect(saved).toContain('href="https://example.com/"');
+    const reopened = new Quill(second);
+    reopened.clipboard.dangerouslyPasteHTML(saved);
+    expect(reopened.getFormat(0, 4)).toMatchObject({ color: "var(--brand-orange)", bold: true });
+    expect(reopened.getFormat(5, 4)).toMatchObject({ link: "https://example.com/", color: "var(--brand-green)", background: "var(--color-lime)" });
+    first.remove(); second.remove();
+  });
+  it("rejects unsupported CSS tokens and properties during sanitization", () => {
+    const saved = cleanHtml('<p><span style="color: var(--COLOR-green); background-color: var(--unknown); position: fixed">Unsafe</span> <span style="color: var(--brand-orange, red)">Fallback</span> <span style="color: var(--brand-orange) !important">Important</span> <a href="https://example.com" style="color: var(--brand-orange); background-color: var(--brand-green); position: fixed">Safe</a> <a href="javascript:alert(1)" style="color: var(--brand-orange)">Invalid colored link</a></p>', new ObjectId("507f1f77bcf86cd799439011"));
+    expect(saved).not.toContain("--COLOR-green");
+    expect(saved).not.toContain("--unknown");
+    expect(saved).not.toContain("--brand-orange, red");
+    expect(saved).not.toContain("!important");
+    expect(saved).not.toContain("position:");
+    expect(saved).toContain("var(--brand-orange)");
+    expect(saved).toContain("var(--brand-green)");
+    expect(saved).toContain('<span style="color:var(--brand-orange)">Invalid colored link</span>');
+  });
+  it("keeps a Quill link through export and server sanitization", async () => {
+    const { default: Quill } = await import("quill");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const editor = new Quill(host);
+    editor.insertText(0, "Example", { link: "https://example.com/" });
+    const saved = cleanHtml(editor.getSemanticHTML(), new ObjectId("507f1f77bcf86cd799439011"));
+    expect(saved).toContain('href="https://example.com/"');
+    expect(saved).toContain('rel="noopener noreferrer"');
+    host.remove();
+  });
+  it("applies a link without submitting the outer article form", async () => {
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.endsWith("/admin") || init?.method) throw new Error(`Unexpected request ${url}`);
+      return new Response(JSON.stringify({ articles: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      const { container, unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      await waitFor(() => expect(container.querySelector(".ql-link")).not.toBeNull());
+      expect(screen.getByRole("button", { name: "Отказ от редакцията" })).toHaveAttribute("type", "button");
+      expect(container.querySelector('.ql-color .ql-picker-item[data-value="var(--brand-orange)"]')).toHaveAttribute("aria-label", "Бранд оранжево");
+      expect(container.querySelector('.ql-background .ql-picker-item[data-value="var(--brand-orange)"]')).toHaveAttribute("aria-label", "Маркиране: Бранд оранжево");
+      expect(screen.getByText(/Ярките цветове може да са трудно четими/)).not.toBeNull();
+      fireEvent.click(container.querySelector(".ql-link")!);
+      expect(container.querySelectorAll("form")).toHaveLength(1);
+      fireEvent.change(screen.getByLabelText("Текст на линка"), { target: { value: "Example" } });
+      fireEvent.change(screen.getByLabelText("Адрес на линка"), { target: { value: "https://example.com" } });
+      fireEvent.click(screen.getByRole("button", { name: "Добави линк" }));
+      expect(container.querySelector('.ql-editor a[href="https://example.com/"]')?.textContent).toBe("Example");
+      expect(request.mock.calls.every(([, init]) => !init?.method)).toBe(true);
+      unmount();
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("applies brand orange from the text picker in both editor languages", async () => {
+    const { default: Quill } = await import("quill");
+    const originalBounds = Range.prototype.getBoundingClientRect;
+    Range.prototype.getBoundingClientRect = () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 } as DOMRect);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ articles: [] })));
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      for (const locale of ["bg", "en"] as const) {
+        const { container, unmount } = render(<BlogAdminScreen locale={locale} base="/admin" csrf="test" />);
+        try {
+          await waitFor(() => expect(container.querySelector(".ql-container")).not.toBeNull());
+          const quill = Quill.find(container.querySelector(".ql-container")!);
+          if (!(quill instanceof Quill)) throw new Error("Editor did not initialize");
+          const swatch = container.querySelector<HTMLElement>('.ql-color .ql-picker-item[data-value="var(--brand-orange)"]');
+          expect(swatch).toHaveAttribute("aria-label", locale === "bg" ? "Бранд оранжево" : "Brand orange");
+          quill.insertText(0, "Orange", "user");
+          quill.setSelection(0, 6, "silent");
+          fireEvent.click(swatch!);
+          expect(quill.getFormat(0, 6).color).toBe("var(--brand-orange)");
+          expect(swatch).toHaveClass("ql-selected");
+          quill.removeFormat(0, 6, "user");
+          expect(quill.getFormat(0, 6).color).toBeUndefined();
+        } finally { unmount(); }
+      }
+    } finally { Range.prototype.getBoundingClientRect = originalBounds; vi.unstubAllGlobals(); }
+  });
+  it("filters pasted colors and links through the editor matcher", async () => {
+    const { default: Quill } = await import("quill");
+    document.documentElement.style.setProperty("--brand-orange", "#ff6600");
+    const request = vi.fn(async () => Response.json({ articles: [] }));
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      const { container, unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      await waitFor(() => expect(container.querySelector(".ql-container")).not.toBeNull());
+      const quill = Quill.find(container.querySelector(".ql-container")!);
+      if (!(quill instanceof Quill)) throw new Error("Editor did not initialize");
+      const delta = quill.clipboard.convert({ html: '<p><span style="color: var(--color-green); background-color: var(--brand-orange)">Allowed</span> <span style="color: rgb(255, 102, 0)">Orange RGB</span> <span style="color: #ff6600">Orange hex</span> <span style="background-color: rgb(255, 102, 0)">Orange highlight</span> <span style="color: var(--unknown); background-color: var(--unknown)">Unknown</span> <a href="javascript:alert(1)">Unsafe link</a></p>', text: "" });
+      const allowed = delta.ops.find((op) => op.insert === "Allowed");
+      const unknown = delta.ops.find((op) => op.insert === "Unknown");
+      const unsafe = delta.ops.find((op) => op.insert === "Unsafe link");
+      expect(allowed?.attributes).toMatchObject({ color: "var(--color-green)", background: "var(--brand-orange)" });
+      expect(delta.ops.find((op) => op.insert === "Orange RGB")?.attributes?.color).toBe("var(--brand-orange)");
+      expect(delta.ops.find((op) => op.insert === "Orange hex")?.attributes?.color).toBe("var(--brand-orange)");
+      expect(delta.ops.find((op) => op.insert === "Orange highlight")?.attributes?.background).toBe("var(--brand-orange)");
+      expect(unknown?.attributes?.color).toBeUndefined();
+      expect(unknown?.attributes?.background).toBeUndefined();
+      expect(unsafe?.attributes?.link).toBeUndefined();
+      unmount();
+    } finally { document.documentElement.style.removeProperty("--brand-orange"); vi.unstubAllGlobals(); }
+  });
+  it("opens the first English translation from the administrator list", async () => {
+    const article = sampleArticle(5);
+    const row = { ...article, _id: article._id.toHexString() };
+    const request = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith("/admin") ? { articles: [row] } : { article: row }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      const { unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Превод" }));
+      expect(await screen.findByRole("heading", { name: "Английски превод" })).not.toBeNull();
+      expect((screen.getByLabelText("Заглавие") as HTMLInputElement).value).toBe("");
+      unmount();
+    } finally { vi.unstubAllGlobals(); }
   });
 });

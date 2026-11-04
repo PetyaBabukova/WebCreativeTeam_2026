@@ -17,10 +17,24 @@
 .auth-list { display: grid; gap: .7rem; padding: 0; margin: 0 0 1rem; list-style: none; }
 .auth-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .7rem 0; border-bottom: .0625rem solid #d8e4da; overflow-wrap: anywhere; }
 .auth-list button { border: .0625rem solid var(--color-primary); border-radius: .5rem; padding: .35rem .65rem; background: transparent; color: #9b3a00; cursor: pointer; }
+.auth-panel .button--outline, .auth-panel .button--outline:hover { color: var(--color-orange-deep); border-color: var(--color-orange-deep); }
 .auth-mail-failed { color: #9b3a00; }
 .auth-panel .ql-toolbar.ql-snow { border-color: #54816b; border-radius: .6rem .6rem 0 0; }
 .auth-panel .ql-container.ql-snow { border-color: #54816b; border-radius: 0 0 .6rem .6rem; font-family: inherit; font-size: 1rem; }
 .auth-panel .ql-editor { min-height: 12rem; }
+.auth-panel .ql-editor [style*="background-color"], .auth-panel .ql-editor [style*="background-color"] * { color: var(--color-ink) !important; }
+.auth-panel .ql-toolbar { display: flex; flex-wrap: wrap; }
+.auth-panel .blog-rich-editor .ql-color-picker .ql-picker-item { width: 1.5rem; height: 1.5rem; border: .0625rem solid var(--color-deep); }
+.blog-rich-editor .ql-color-picker .ql-picker-item:is(.ql-selected, :hover, :focus-visible) { outline: .125rem solid var(--color-deep-green-on-light); outline-offset: .0625rem; }
+.blog-rich-editor .ql-color-picker .ql-picker-item:is([data-value=""], :not([data-value]))::after { display: grid; place-items: center; width: 100%; height: 100%; color: var(--color-deep); font-size: 1rem; line-height: 1; content: "╱"; }
+.blog-rich-editor__color-hint { margin: .6rem 0 0; color: var(--color-deep-green-on-light); font-size: .9rem; }
+.blog-rich-editor__link { display: grid; gap: .7rem; margin-top: .75rem; padding: 1rem; border: .0625rem solid #54816b; border-radius: .6rem; }
+.blog-rich-editor__link label { display: grid; gap: .35rem; font-weight: 650; }
+.blog-rich-editor__link input { width: 100%; min-height: 2.75rem; padding: .5rem .7rem; border: .0625rem solid #54816b; border-radius: .5rem; font: inherit; }
+.blog-rich-editor__link input:focus-visible { outline: .1875rem solid var(--color-primary); outline-offset: .15rem; }
+.blog-rich-editor__link p { margin: 0; color: var(--color-orange-deep); }
+.blog-rich-editor__link > div { display: flex; flex-wrap: wrap; gap: .5rem; }
+.blog-rich-editor .ql-tooltip { display: none !important; }
 .auth-reauth { width: min(calc(100% - 2rem), 28rem); padding: clamp(1.25rem, 3vw, 2rem); border: .0625rem solid #bfd2c3; border-radius: 1rem; color: var(--color-deep-green-on-light); background: var(--color-white); box-shadow: 0 .7rem 2rem #00251740; }
 .auth-reauth::backdrop { background: #001d16aa; }
 .auth-reauth__actions { display: flex; flex-wrap: wrap; gap: .75rem; }

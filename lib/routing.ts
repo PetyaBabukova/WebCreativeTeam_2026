@@ -17,6 +17,15 @@ export function serviceUrl(slug: ServiceSlug, locale: Locale): string {
 export function blogArticleUrl(slug: string, locale: Locale): string {
   return `${appConfig.paths.blog}/${slug}/${locale}`;
 }
+export function blogEditorReturnUrl(slug: string | null, hasEnglish: boolean, language: Locale, interfaceLocale: Locale): string {
+  return slug ? blogArticleUrl(slug, language === "en" && hasEnglish ? "en" : "bg") : pageUrl("blog", interfaceLocale);
+}
+export function adminUrl(locale: Locale): string {
+  return `${appConfig.paths.admin}${locale === "en" ? "/en" : ""}`;
+}
+export function blogAdminEditUrl(id: string, locale: Locale): string {
+  return `${adminUrl(locale)}/articles?edit=${encodeURIComponent(id)}&lang=${locale}`;
+}
 
 export function portfolioUrl(locale: Locale): string {
   return localizedPath(appConfig.paths.portfolio, locale);

@@ -3,7 +3,7 @@ import { Storage } from "@google-cloud/storage";
 import { ObjectId, type Collection } from "mongodb";
 import sanitizeHtml from "sanitize-html";
 import sharp from "sharp";
-import { appConfig, type Locale } from "../../lib/config.ts";
+import { appConfig, blogLinkUrl, type Locale } from "../../lib/config.ts";
 import { authConnection } from "../auth/db.ts";
 
 export type BlogText = { title: string; subtitle?: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt: Date };
@@ -16,13 +16,49 @@ export type Upload = { name: string; bytes: Buffer };
 export type LegacyArticle = { _id: ObjectId; articleTitle: string; articleImage: string; articleThumbnailImage: string; articleAlt: string; articleContent: string; articleMetaTitle: string; articleMetaDescription: string; dateCreated: string };
 export class BlogError extends Error { constructor(public status: number, message: string) { super(message); } }
 
-const storage = new Storage();
+const storage = new Storage({ retryOptions: { totalTimeout: appConfig.blog.storageRetryTotalTimeoutSeconds } });
 let indexes: Promise<void> | undefined;
+
+export type StorageErrorInfo = { name: string; status?: number; numericCode?: number; code?: string; reason?: string };
+const accessReasons = new Set(["invalid_grant", "invalid_client", "unauthorized_client", "invalid_target", "no_credentials"]);
+const httpStatus = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 100 && value <= 599;
+function field(value: unknown, key: string): unknown {
+  return value && typeof value === "object" && key in value ? (value as Record<string, unknown>)[key] : undefined;
+}
+function firstEntry(value: unknown): unknown { return Array.isArray(value) ? value[0] : undefined; }
+// Only fixed-shape fields leave this function: never messages, request config, headers, URLs or object keys.
+export function storageErrorInfo(error: unknown): StorageErrorInfo {
+  const info: StorageErrorInfo = { name: error instanceof Error && /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : "Unknown" };
+  const response = field(error, "response");
+  const code = field(error, "code");
+  // A numeric code is an HTTP status only on Google API errors (they carry `errors` or `response`); MongoDB codes stay separate.
+  const googleError = Boolean(error && typeof error === "object" && ("errors" in error || "response" in error));
+  const status = [field(error, "status"), field(response, "status"), googleError ? code : undefined].find(httpStatus);
+  if (status !== undefined) info.status = status;
+  else if (typeof code === "number" && Number.isSafeInteger(code)) info.numericCode = code;
+  if (typeof code === "string" && /^[A-Z0-9_]{1,40}$/.test(code)) info.code = code;
+  const responseError = field(field(response, "data"), "error");
+  const reason = [responseError, field(firstEntry(field(responseError, "errors")), "reason"), field(firstEntry(field(error, "errors")), "reason")]
+    .find((value): value is string => typeof value === "string" && /^[A-Za-z_]{1,40}$/.test(value));
+  if (reason) info.reason = reason;
+  // Missing ADC, or GOOGLE_APPLICATION_CREDENTIALS pointing at a missing file.
+  else if (error instanceof Error && (error.message.startsWith("Could not load the default credentials") || code === "ENOENT")) info.reason = "no_credentials";
+  return info;
+}
+export function storageAccessFailure(info: StorageErrorInfo): boolean {
+  return info.status === 401 || info.status === 403 || Boolean(info.reason && accessReasons.has(info.reason));
+}
+export function logStorageFailure(context: string, error: unknown): StorageErrorInfo {
+  const info = storageErrorInfo(error);
+  if (storageAccessFailure(info)) console.error("Blog storage access failed", { context, ...info });
+  else console.warn(context, info);
+  return info;
+}
 
 export function bucketName(): string | undefined {
   const name = process.env[appConfig.blog.bucketEnv];
   if (!name) return undefined;
-  if (!/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(name) || name.includes("..")) throw new Error("Invalid blog storage configuration");
+  if (!/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(name) || name.includes("..")) throw Object.assign(new Error("Invalid blog storage configuration"), { code: "BLOG_STORAGE_CONFIG" });
   return name;
 }
 function bucket() { const name = bucketName(); if (!name) throw new BlogError(503, "Blog storage is not configured"); return storage.bucket(name); }
@@ -36,6 +72,46 @@ export function objectKey(url: string, articleId?: ObjectId): string {
   return `${appConfig.blog.imagePrefix}/${suffix}`;
 }
 export function blogImageFile(url: string, generation?: string) { const key = objectKey(url); return bucket().file(key, generation ? { generation } : undefined); }
+
+// Proves identity, bucket existence, list and (when an image exists) the object read used by the image route.
+// Write permission surfaces on upload.
+export async function checkBlogStorage(): Promise<void> {
+  const [files] = await bucket().getFiles({ prefix: `${appConfig.blog.imagePrefix}/`, maxResults: 1, autoPaginate: false });
+  if (files[0]) await files[0].getMetadata();
+}
+export function startBlogStorageMonitor(): () => void {
+  if (!process.env.AUTH_MONGODB_URI) return () => {};
+  if (!bucketName()) { console.error("Blog storage is not configured"); return () => {}; }
+  let stopped = false;
+  let running = false;
+  let state: "ready" | "access" | "failed" | undefined;
+  const report = (next: NonNullable<typeof state>, info?: StorageErrorInfo) => {
+    if (stopped || next === state) return;
+    state = next;
+    if (next === "ready") console.info("Blog storage ready");
+    else console.error(next === "access" ? "Blog storage access failed" : "Blog storage check failed", { context: "check", ...info });
+  };
+  const run = () => {
+    if (running || stopped) return;
+    running = true;
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error("Blog storage check timed out"), { code: "TIMEOUT" })), appConfig.blog.storageCheckTimeoutMilliseconds);
+      timer.unref();
+    });
+    const check = checkBlogStorage();
+    // The timeout reports a hung check, but a new check starts only after this one settles.
+    void check.finally(() => { clearTimeout(timer); running = false; }).catch(() => {});
+    void Promise.race([check, timeout]).then(() => report("ready"), (error: unknown) => {
+      const info = storageErrorInfo(error);
+      report(storageAccessFailure(info) ? "access" : "failed", info);
+    });
+  };
+  run();
+  const interval = setInterval(run, appConfig.blog.storageCheckMilliseconds);
+  interval.unref();
+  return () => { stopped = true; clearInterval(interval); };
+}
 
 function text(value: unknown, max: number, required = true): string {
   if (typeof value !== "string") throw new BlogError(400, "Invalid article field");
@@ -55,20 +131,33 @@ export function cleanHtml(value: unknown, articleId: ObjectId): string {
   if (typeof value !== "string") throw new BlogError(400, "Invalid article content");
   const source = value.normalize("NFC").replace(/\r\n?/g, "\n").trim();
   if (!source || Buffer.byteLength(source, "utf8") > appConfig.blog.maxHtmlBytes || [...source].some((char) => { const code = char.codePointAt(0)!; return code < 32 && code !== 9 && code !== 10 || code === 127 || /\p{Cf}/u.test(char); })) throw new BlogError(400, "Invalid article content");
+  const colorValues = appConfig.blog.textColors.flatMap(({ value }) => {
+    const [red, green, blue] = [1, 3, 5].map((at) => parseInt(value.slice(at, at + 2), 16));
+    return [value, `rgb\\(\\s*${red}\\s*,\\s*${green}\\s*,\\s*${blue}\\s*\\)`];
+  });
+  const allowedColor = new RegExp(`^(?:${colorValues.join("|")})$`, "i");
+  const tokenRule = (value: string) => new RegExp(`^var\\(${value.slice(4, -1)}\\)$`);
+  const textColorRules = [allowedColor, ...appConfig.blog.globalTextColors.map(({ value }) => tokenRule(value))];
+  const highlightRules = appConfig.blog.highlightColors.map(({ value }) => tokenRule(value));
+  const safeInlineStyle = (attrs: Record<string, string>): Record<string, string> => attrs.style && !attrs.style.includes("!") ? { style: attrs.style } : {};
+  const inlineTag = (tagName: string, attrs: Record<string, string>) => ({ tagName, attribs: safeInlineStyle(attrs) });
   const clean = sanitizeHtml(source, {
-    allowedTags: ["p", "br", "h2", "h3", "h4", "strong", "em", "u", "s", "blockquote", "pre", "code", "ol", "ul", "li", "a", "img"],
-    allowedAttributes: { a: ["href", "target", "rel"], img: ["src", "alt"], p: ["class"], h2: ["class"], h3: ["class"], h4: ["class"], li: ["class"], pre: ["class"] },
+    allowedTags: ["p", "br", "h2", "h3", "h4", "strong", "em", "u", "s", "span", "blockquote", "pre", "code", "ol", "ul", "li", "a", "img"],
+    allowedAttributes: { a: ["href", "target", "rel", "style"], span: ["style"], strong: ["style"], em: ["style"], u: ["style"], s: ["style"], img: ["src", "alt"], p: ["class"], h2: ["class"], h3: ["class"], h4: ["class"], li: ["class"], pre: ["class"] },
+    allowedStyles: Object.fromEntries(["a", "span", "strong", "em", "u", "s"].map((tag) => [tag, { color: textColorRules, "background-color": highlightRules }])),
     allowedClasses: { p: ["ql-align-center", "ql-align-right", "ql-align-justify"], h2: ["ql-align-center", "ql-align-right", "ql-align-justify"], h3: ["ql-align-center", "ql-align-right", "ql-align-justify"], h4: ["ql-align-center", "ql-align-right", "ql-align-justify"], li: ["ql-indent-1", "ql-indent-2"], pre: ["ql-syntax"] },
     allowedSchemes: ["http", "https", "mailto"], allowedSchemesByTag: { img: ["https"] }, allowProtocolRelative: false,
     transformTags: {
+      span: inlineTag, strong: inlineTag, em: inlineTag, u: inlineTag, s: inlineTag,
       img: (_tag, attrs) => {
         objectKey(attrs.src ?? "", articleId);
         if (!attrs.alt || !attrs.alt.trim() || attrs.alt.length > 180) throw new BlogError(400, "Image alt text is required");
         return { tagName: "img", attribs: { src: attrs.src, alt: text(attrs.alt, 180) } };
       },
       a: (_tag, attrs) => {
-        if (!attrs.href || !/^(https?:\/\/|mailto:)/i.test(attrs.href)) return { tagName: "span", attribs: {} as Record<string, string> };
-        return { tagName: "a", attribs: { href: attrs.href, rel: "noopener noreferrer", target: "_blank" } };
+        const href = blogLinkUrl(attrs.href ?? "");
+        if (!href) return { tagName: "span", attribs: safeInlineStyle(attrs) };
+        return { tagName: "a", attribs: { href, rel: "noopener noreferrer", target: "_blank", ...safeInlineStyle(attrs) } };
       },
     },
   });
@@ -103,7 +192,7 @@ async function upload(id: ObjectId, item: Upload, batchId: string): Promise<{ ur
   const hash = createHash("sha256").update(processed).digest("hex");
   const key = `${appConfig.blog.imagePrefix}/${id.toHexString()}/${role}/${hash}-${batchId}.webp`;
   try {
-    await bucket().file(key).save(processed, { resumable: false, contentType: "image/webp", metadata: { cacheControl: "public, max-age=31536000, immutable" }, preconditionOpts: { ifGenerationMatch: 0 } });
+    await bucket().file(key).save(processed, { resumable: false, contentType: "image/webp", metadata: { cacheControl: appConfig.blog.imageCacheControl }, preconditionOpts: { ifGenerationMatch: 0 } });
     return { url: imageUrl(key), created: true };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === 412) return { url: imageUrl(key), created: false };
@@ -113,7 +202,7 @@ async function upload(id: ObjectId, item: Upload, batchId: string): Promise<{ ur
 async function discardImages(id: ObjectId, urls: string[]) {
   await Promise.allSettled(urls.map(async (url) => {
     try { await bucket().file(objectKey(url, id)).delete({ ignoreNotFound: true }); }
-    catch (error) { console.warn("Blog image cleanup failed", { name: error instanceof Error ? error.name : "Unknown" }); }
+    catch (error) { logStorageFailure("Blog image cleanup failed", error); }
   }));
 }
 export function resolveInlinePlaceholders(html: string, urls: ReadonlyMap<string, string>): string {

@@ -145,6 +145,30 @@ export const appConfig = {
   blog: {
     collection: "articles",
     pageSize: 9,
+    textColors: [
+      { value: "#174c38", bg: "Тъмнозелено", en: "Dark green" },
+      { value: "#174a87", bg: "Синьо", en: "Blue" },
+      { value: "#8f2938", bg: "Червено", en: "Red" },
+      { value: "#654081", bg: "Лилаво", en: "Purple" },
+      { value: "#82511b", bg: "Кафяво", en: "Brown" },
+    ],
+    globalTextColors: [
+      { value: "var(--color-ink)", bg: "Мастилено", en: "Ink" },
+      { value: "var(--color-deep)", bg: "Тъмно", en: "Deep" },
+      { value: "var(--brand-dark-green)", bg: "Бранд тъмнозелено", en: "Brand dark green" },
+      { value: "var(--color-deep-green-on-light)", bg: "Тъмнозелено върху светло", en: "Deep green on light" },
+      { value: "var(--color-green)", bg: "Зелено", en: "Green" },
+      { value: "var(--brand-green)", bg: "Бранд зелено", en: "Brand green" },
+      { value: "var(--brand-orange)", bg: "Бранд оранжево", en: "Brand orange" },
+      { value: "var(--color-lime)", bg: "Лайм", en: "Lime" },
+      { value: "var(--color-orange-deep)", bg: "Тъмнооранжево", en: "Deep orange" },
+    ],
+    highlightColors: [
+      { value: "var(--brand-green)", bg: "Бранд зелено", en: "Brand green" },
+      { value: "var(--brand-orange)", bg: "Бранд оранжево", en: "Brand orange" },
+      { value: "var(--color-lime)", bg: "Лайм", en: "Lime" },
+      { value: "var(--color-background-warm)", bg: "Топъл фон", en: "Warm background" },
+    ],
     bucketEnv: "BLOG_GCS_BUCKET",
     imagePrefix: "blog",
     imageRoute: "/images",
@@ -154,7 +178,11 @@ export const appConfig = {
     imageConcurrentLimit: 128,
     imageConcurrentIpLimit: 32,
     imageDeadlineMilliseconds: 20 * 1000,
-    imageCacheSeconds: 24 * 60 * 60,
+    imageTransferMaxMilliseconds: 5 * 60 * 1000,
+    imageCacheControl: "private, max-age=31536000, immutable",
+    storageRetryTotalTimeoutSeconds: 15,
+    storageCheckMilliseconds: 5 * 60 * 1000,
+    storageCheckTimeoutMilliseconds: 30 * 1000,
     legacyImagePrefix: "https://filedn.com/lL84jfUjkOJ5JauGvrOlJsV/webcreativeteam/blogimages/",
     maxFileBytes: 8 * 1024 * 1024,
     maxTotalBytes: 20 * 1024 * 1024,
@@ -164,6 +192,36 @@ export const appConfig = {
     maxWords: 2000,
   },
 } as const;
+
+export function blogHexColor(value: string): string | null {
+  const match = /^(?:#([0-9a-f]{6})|rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\))$/i.exec(value.trim());
+  if (!match) return null;
+  if ([match[2], match[3], match[4]].some((part) => part !== undefined && Number(part) > 255)) return null;
+  return match[1] ? `#${match[1].toLowerCase()}` : `#${[match[2], match[3], match[4]].map((part) => Number(part).toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function blogTextColor(value: string): string | null {
+  const candidate = value.trim();
+  if (appConfig.blog.globalTextColors.some((color) => color.value === candidate)) return candidate;
+  const hex = blogHexColor(candidate);
+  return hex && appConfig.blog.textColors.some((color) => color.value === hex) ? hex : null;
+}
+
+export function blogHighlightColor(value: string): string | null {
+  const candidate = value.trim();
+  return appConfig.blog.highlightColors.some((color) => color.value === candidate) ? candidate : null;
+}
+
+export function blogLinkUrl(value: string): string | null {
+  const url = value.trim();
+  if (!url || /[\p{Cc}\p{Cf}]/u.test(url) || !/^(?:https?:\/\/|mailto:)/i.test(url)) return null;
+  try {
+    const parsed = new URL(url);
+    if ((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.hostname && !parsed.username && !parsed.password) return parsed.href;
+    if (parsed.protocol === "mailto:" && /^[^@/?#]+@[^@/?#]+\.[^@/?#]+$/u.test(parsed.pathname)) return parsed.href;
+  } catch { /* invalid URL */ }
+  return null;
+}
 
 export type CookieChoice = "all" | "rejected" | "necessary";
 

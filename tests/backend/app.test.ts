@@ -2,10 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import nodemailer from "nodemailer";
 import { Readable } from "node:stream";
+import { createServer, get as httpGet } from "node:http";
+import type { AddressInfo } from "node:net";
 import { createApp } from "../../server/app.js";
 import { appConfig } from "../../lib/config.js";
 import * as newsletterService from "../../server/newsletter/service.js";
 import * as blogService from "../../server/blog/service.js";
+import * as security from "../../server/auth/security.js";
 
 describe("Express HTTP boundaries", () => {
   it("serves a private blog image publicly, while HEAD only reads metadata", async () => {
@@ -16,10 +19,11 @@ describe("Express HTTP boundaries", () => {
       const app = createApp((_req, res) => { res.send("next"); }, () => true);
       const head = await request(app).head(image).expect(200);
       expect(head.headers["content-length"]).toBe("3");
+      expect(head.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
       expect(file.createReadStream).not.toHaveBeenCalled();
       const get = await request(app).get(image).expect(200);
       expect(get.headers["content-type"]).toMatch(/^image\/webp/);
-      expect(get.headers["cache-control"]).toBe("public, max-age=86400");
+      expect(get.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
       expect(get.headers["content-length"]).toBe("3");
       expect(file.createReadStream).toHaveBeenCalledTimes(1);
       expect(lookup).toHaveBeenCalledWith(image);
@@ -31,7 +35,7 @@ describe("Express HTTP boundaries", () => {
     const app = createApp((_req, res) => { res.send("next"); }, () => true);
     const invalid = await request(app).get(`${image}?x=1`).expect(404);
     expect(invalid.headers["cache-control"]).toBe("no-store");
-    const file = { getMetadata: vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { code: 404 })) };
+    const file = { getMetadata: vi.fn().mockRejectedValue(Object.assign(new Error("missing"), { code: 404, errors: undefined, response: undefined })) };
     const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -640,5 +644,161 @@ describe("Express HTTP boundaries", () => {
       verify.mockRestore();
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("blog image delivery resilience", () => {
+  const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+  const app = () => createApp((_req, res) => { res.send("next"); }, () => true);
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  function imageFile(createReadStream: () => Readable, size = 3) {
+    return { getMetadata: vi.fn().mockResolvedValue([{ size: String(size), contentType: "image/webp", generation: "1" }]), createReadStream: vi.fn(createReadStream) };
+  }
+  async function withLimits(values: Record<string, number>, run: () => Promise<void>) {
+    const limits = appConfig.blog as unknown as Record<string, number>;
+    const previous = Object.fromEntries(Object.keys(values).map((key) => [key, limits[key]]));
+    Object.assign(limits, values);
+    try { await run(); } finally { Object.assign(limits, previous); }
+  }
+  async function until(check: () => boolean) {
+    for (let attempt = 0; attempt < 300 && !check(); attempt++) await sleep(10);
+    expect(check()).toBe(true);
+  }
+  const timedOut = (warn: { mock: { calls: unknown[][] } }, phase: string) => warn.mock.calls.some(([message, info]) => message === "Blog image timed out" && (info as { phase?: string }).phase === phase);
+
+  it("reports expired storage credentials as an access failure without leaking secrets", async () => {
+    const failure = Object.assign(new Error("refresh ya29.secret-token failed"), {
+      status: 400, response: { status: 400, data: { error: "invalid_grant", error_subtype: "invalid_rapt" } },
+      config: { headers: { authorization: "Bearer ya29.secret-token" }, url: "https://oauth2.googleapis.com/token" },
+    });
+    const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue({ getMetadata: vi.fn().mockRejectedValue(failure) } as never);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await request(app()).get(image).expect(503);
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(error).toHaveBeenCalledWith("Blog storage access failed", { context: "Blog image lookup failed", name: "Error", status: 400, reason: "invalid_grant" });
+      expect(JSON.stringify(error.mock.calls)).not.toMatch(/ya29|authorization|oauth2/);
+    } finally { lookup.mockRestore(); error.mockRestore(); }
+  });
+  it("classifies failed admin blog requests without leaking error text", async () => {
+    const session = vi.spyOn(security, "verifySession").mockResolvedValue({ session: {}, user: {} } as never);
+    const list = vi.spyOn(blogService, "adminArticles")
+      .mockRejectedValueOnce(Object.assign(new Error("Could not load the default credentials. Browse to https://cloud.google.com")))
+      .mockRejectedValueOnce(Object.assign(new Error("mongodb://user:password@host refused"), { code: "ECONNREFUSED" }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await request(app()).get(`${appConfig.paths.blogApi}/admin`).expect(503);
+      expect(error).toHaveBeenLastCalledWith("Blog storage access failed", { context: "Blog request failed", name: "Error", reason: "no_credentials" });
+      await request(app()).get(`${appConfig.paths.blogApi}/admin`).expect(503);
+      expect(error).toHaveBeenLastCalledWith("Blog request failed", { name: "Error", code: "ECONNREFUSED" });
+      expect(JSON.stringify(error.mock.calls)).not.toMatch(/password|mongodb:|cloud\.google/);
+    } finally { session.mockRestore(); list.mockRestore(); error.mockRestore(); }
+  });
+  it("reports a forbidden storage stream as an access failure", async () => {
+    const forbidden = Object.assign(new Error("denied"), { code: 403, errors: [{ reason: "forbidden" }] });
+    const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(imageFile(() => new Readable({ read() { this.destroy(forbidden); } })) as never);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await request(app()).get(image).expect(503);
+      expect(error).toHaveBeenCalledWith("Blog storage access failed", expect.objectContaining({ context: "Blog image read failed", status: 403, reason: "forbidden" }));
+    } finally { lookup.mockRestore(); error.mockRestore(); }
+  });
+  it("completes a slow but progressing download that outlasts the first-byte deadline", async () => {
+    await withLimits({ imageDeadlineMilliseconds: 250 }, async () => {
+      const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(imageFile(() => Readable.from((async function* () {
+        for (let index = 0; index < 4; index++) { await sleep(100); yield Buffer.from("x"); }
+      })()), 4) as never);
+      try {
+        const response = await request(app()).get(image).buffer(true).parse((res, done) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (chunk: Buffer) => chunks.push(chunk));
+          res.on("end", () => done(null, Buffer.concat(chunks)));
+        }).expect(200);
+        expect((response.body as Buffer).toString()).toBe("xxxx");
+      } finally { lookup.mockRestore(); }
+    });
+  });
+  it("answers 503 and destroys the storage stream when no byte arrives in time", async () => {
+    await withLimits({ imageDeadlineMilliseconds: 50 }, async () => {
+      const source = new Readable({ read() {} });
+      const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(imageFile(() => source) as never);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const response = await request(app()).get(image).expect(503);
+        expect(response.headers["cache-control"]).toBe("no-store");
+        await until(() => source.destroyed);
+        expect(timedOut(warn, "first_byte")).toBe(true);
+      } finally { lookup.mockRestore(); warn.mockRestore(); }
+    });
+  });
+  it("does not open a storage stream when metadata arrives after the deadline", async () => {
+    await withLimits({ imageDeadlineMilliseconds: 30 }, async () => {
+      const file = imageFile(() => Readable.from([Buffer.from("abc")]));
+      file.getMetadata.mockImplementation(async () => { await sleep(120); return [{ size: "3", contentType: "image/webp", generation: "1" }]; });
+      const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await request(app()).get(image).expect(503);
+        await sleep(150);
+        expect(file.createReadStream).not.toHaveBeenCalled();
+      } finally { lookup.mockRestore(); warn.mockRestore(); }
+    });
+  });
+  it("aborts a stalled stream and frees the per-IP slot", async () => {
+    await withLimits({ imageDeadlineMilliseconds: 80, imageConcurrentIpLimit: 1 }, async () => {
+      const stalled = new Readable({ read() {} });
+      stalled.push(Buffer.from("a"));
+      const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(imageFile(() => stalled) as never);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const server = app();
+        await expect(request(server).get(image)).rejects.toThrow();
+        await until(() => stalled.destroyed);
+        expect(warn).toHaveBeenCalledWith("Blog image timed out", { phase: "idle", waitingOn: "storage" });
+        lookup.mockReturnValue(imageFile(() => Readable.from([Buffer.from("abc")])) as never);
+        await request(server).get(image).expect(200);
+      } finally { lookup.mockRestore(); warn.mockRestore(); }
+    });
+  });
+  it("caps the total transfer time of a trickling download", async () => {
+    await withLimits({ imageDeadlineMilliseconds: 100, imageTransferMaxMilliseconds: 250 }, async () => {
+      let source: Readable | undefined;
+      const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(imageFile(() => {
+        source = Readable.from((async function* () { for (;;) { await sleep(40); yield Buffer.from("x"); } })());
+        return source;
+      }, 1000) as never);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await expect(request(app()).get(image)).rejects.toThrow();
+        expect(timedOut(warn, "transfer")).toBe(true);
+        await until(() => Boolean(source?.destroyed));
+      } finally { lookup.mockRestore(); warn.mockRestore(); }
+    });
+  });
+  it("aborts a download when the client stops reading", async () => {
+    const size = 64 * 1024 * 1024;
+    await withLimits({ imageDeadlineMilliseconds: 150, maxFileBytes: size }, async () => {
+      const chunk = Buffer.alloc(64 * 1024);
+      let sent = 0;
+      const source = new Readable({ read() { if (sent >= size) { this.push(null); return; } sent += chunk.length; this.push(chunk); } });
+      const lookup = vi.spyOn(blogService, "blogImageFile").mockReturnValue(imageFile(() => source, size) as never);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const server = createServer(app());
+      await new Promise<void>((resolve) => server.listen(0, appConfig.testHost, resolve));
+      try {
+        const { port } = server.address() as AddressInfo;
+        const client = httpGet(`http://${appConfig.testHost}:${port}${image}`, (res) => { res.pause(); });
+        client.on("error", () => {});
+        await until(() => timedOut(warn, "idle"));
+        expect(warn).toHaveBeenCalledWith("Blog image timed out", { phase: "idle", waitingOn: "client" });
+        expect(source.destroyed).toBe(true);
+        expect(sent).toBeLessThan(size);
+        client.destroy();
+      } finally {
+        lookup.mockRestore(); warn.mockRestore();
+        server.closeAllConnections();
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
   });
 });
