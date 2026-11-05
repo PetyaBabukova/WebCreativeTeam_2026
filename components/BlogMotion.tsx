@@ -20,7 +20,7 @@ export function BlogDetailAdminActions({ locale, id, version }: { locale: Locale
     return (await response.json()).csrf as string;
   }
   async function remove() {
-    if (busy || !window.confirm(bg ? "Да изтрия ли статията окончателно?" : "Delete this article permanently?")) return;
+    if (busy || !window.confirm(bg ? "Статията ще се скрие веднага, а снимките ще се изтрият. Продължаваме ли?" : "The article will be hidden now and its images deleted. Continue?")) return;
     setBusy(true); setFailure(null);
     let navigated = false;
     try {
@@ -54,7 +54,7 @@ export function BlogIntro({ locale, eyebrow, headline, accent, lead }: { locale:
   </header>;
 }
 
-export function BlogDetailHeader({ locale, title, subtitle }: { locale: Locale; title: string; subtitle: string }) {
+export function BlogDetailHeader({ locale, title, subtitle, imageUrl, imageAlt }: { locale: Locale; title: string; subtitle: string; imageUrl: string; imageAlt: string }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const titleInView = useInView(titleRef, { once: true, amount: .2 });
   const cookieChoice = useCookieChoice();
@@ -64,19 +64,25 @@ export function BlogDetailHeader({ locale, title, subtitle }: { locale: Locale; 
   return <MotionConfig reducedMotion="never">
     <header className="blog-article__header">
       <h1 ref={titleRef}><span className="blog-detail__title-mask"><motion.span className="blog-detail__title-line" initial={{ ...reveal.initial, filter: "blur(10px)" }} animate={titleReady ? { ...reveal.animate, filter: "blur(0px)" } : { ...reveal.initial, filter: "blur(10px)" }} transition={reveal.transition} onAnimationComplete={() => { if (titleReady) setSubtitleReady(true); }}>{title}</motion.span></span></h1>
-      {subtitle && <motion.p className="blog-article__subtitle" initial={{ opacity: 0, y: 24 }} animate={subtitleReady ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }} transition={{ duration: .65, ease: [.33, 1, .68, 1] }}><ServiceTypewriter text={subtitle} locale={locale} className="blog-detail__subtitle-text" mode="motion" play={subtitleReady} totalDuration={4.5} /></motion.p>}
+      <div className="blog-article__hero-row">
+        {subtitle && <motion.p className="blog-article__subtitle" initial={{ opacity: 0, y: 24 }} animate={subtitleReady ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 }} transition={{ duration: .65, ease: [.33, 1, .68, 1] }}><ServiceTypewriter text={subtitle} locale={locale} className="blog-detail__subtitle-text" mode="motion" play={subtitleReady} totalDuration={4.5} /></motion.p>}
+        <div className="blog-article__visual"><img src={imageUrl} alt={imageAlt} loading="eager" fetchPriority="high" decoding="async" /></div>
+      </div>
     </header>
     <noscript><style>{`.blog-detail__title-line,.blog-article__subtitle{opacity:1!important;transform:none!important;filter:none!important}.blog-detail .service-typewriter__motion-char{visibility:visible!important}.blog-detail .service-typewriter__motion-cursor{display:none!important}`}</style></noscript>
   </MotionConfig>;
 }
 
-export function BlogCard({ href, imageUrl, title, date, dateTime, featured = false }: { href: string; imageUrl: string; title: string; date: string; dateTime: string; featured?: boolean }) {
-  return <article className={`blog-card${featured ? " blog-card--featured" : ""}`}>
+export function BlogCard({ href, imageUrl, category, title, date, dateTime, eager, priority }: { href: string; imageUrl: string; category?: string; title: string; date: string; dateTime: string; eager: boolean; priority: boolean }) {
+  return <article className="blog-card">
     <Link className="blog-card__link" href={href}>
       <div className="blog-card__visual">
-        <img className="blog-card__image" src={imageUrl} alt="" loading={featured ? "eager" : "lazy"} fetchPriority={featured ? "high" : undefined} decoding="async" />
-        {featured ? <h2 className="blog-card__title">{title}</h2> : <h3 className="blog-card__title">{title}</h3>}
-        <time dateTime={dateTime}>{date}</time>
+        <img className="blog-card__image" src={imageUrl} alt="" loading={eager ? "eager" : "lazy"} fetchPriority={priority ? "high" : undefined} decoding="async" />
+      </div>
+      <div className="blog-card__copy">
+        {category && <p className="blog-card__category">{category}</p>}
+        <h3 className="blog-card__title">{title}</h3>
+        <time className="blog-card__date" dateTime={dateTime}>{date}</time>
       </div>
     </Link>
   </article>;

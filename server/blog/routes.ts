@@ -3,7 +3,7 @@ import express, { type Request, type Response } from "express";
 import Busboy from "busboy";
 import { appConfig } from "../../lib/config.js";
 import { privateResponse, validCsrf, validOrigin, verifySession } from "../auth/security.js";
-import { adminArticle, adminArticles, BlogError, blogImageFile, createArticle, deleteArticle, logStorageFailure, storageAccessFailure, storageErrorInfo, updateArticle, type Upload } from "./service.js";
+import { adminArticle, adminArticles, BlogError, blogImageFile, createArticle, deleteArticle, imageArticleVisible, logStorageFailure, processDueBlogCleanup, retryArticleImageCleanup, storageAccessFailure, storageErrorInfo, updateArticle, type Upload } from "./service.js";
 
 export const blogRouter = express.Router();
 const imageRequests = new Map<string, { count: number; expires: number }>();
@@ -76,6 +76,9 @@ async function serveImage(req: Request, res: Response, head: boolean) {
   res.once("close", release);
   res.once("finish", release);
   const headers = (size: number) => res.set({ "Content-Type": "image/webp", "Content-Length": String(size), "Cache-Control": appConfig.blog.imageCacheControl }).status(200);
+  try { if (!await imageArticleVisible(String(req.params.articleId))) { imageError(res, 404); return; } }
+  catch (error) { console.error("Blog image article lookup failed", storageErrorInfo(error)); imageError(res, 503); return; }
+  if (released || res.destroyed || res.writableEnded) return;
   try {
     const [metadata] = await file.getMetadata();
     if (released || res.destroyed || res.writableEnded) return;
@@ -181,6 +184,7 @@ function multipart(req: Request): Promise<{ input: Record<string, unknown>; file
 blogRouter.use("/admin", (_req, res, next) => { privateResponse(res); next(); });
 blogRouter.get("/admin", safe(async (req, res) => {
   if (!await admin(req, res)) return;
+  void processDueBlogCleanup();
   res.json({ articles: await adminArticles() });
 }));
 blogRouter.get("/admin/:id", safe(async (req, res) => {
@@ -203,9 +207,15 @@ blogRouter.put("/admin/:id", safe(async (req, res) => {
   const article = await updateArticle(String(req.params.id), input, files, verified.user._id);
   res.json({ article });
 }));
+blogRouter.post("/admin/:id/cleanup", safe(async (req, res) => {
+  if (!await admin(req, res, true)) return;
+  const result = await retryArticleImageCleanup(String(req.params.id));
+  res.status(result.complete ? 200 : 202).json({ complete: result.complete, remainingCount: result.remaining });
+}));
 blogRouter.delete("/admin/:id", express.json({ limit: "1kb" }), safe(async (req, res) => {
   if (!await admin(req, res, true)) return;
   if (!req.is("application/json") || !req.body || Object.keys(req.body).length !== 1 || typeof req.body.version !== "number") throw new BlogError(400, "Invalid request");
-  await deleteArticle(String(req.params.id), req.body.version);
-  res.status(204).end();
+  const result = await deleteArticle(String(req.params.id), req.body.version);
+  if (result.complete) res.status(204).end();
+  else res.status(202).json({ state: "deleting", remainingCount: result.remaining });
 }));

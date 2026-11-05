@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ObjectId } from "mongodb";
 import { Storage } from "@google-cloud/storage";
 import { appConfig } from "../../lib/config.js";
-import { BlogError, bucketName, cleanHtml, normalizeSubtitle, objectKey, resolveInlinePlaceholders, startBlogStorageMonitor, storageAccessFailure, storageErrorInfo } from "../../server/blog/service.js";
+import { adminArticle, adminArticles, auditBlogImages, BlogError, bucketName, cleanHtml, createArticle, deleteArticle, deleteAuditedImages, importLegacyArticle, normalizeSubtitle, objectKey, processDueBlogCleanup, resolveInlinePlaceholders, startBlogStorageMonitor, storageAccessFailure, storageErrorInfo, updateArticle, type LegacyArticle } from "../../server/blog/service.js";
+import * as db from "../../server/auth/db.js";
+import { runImageReconciliation } from "../../server/blog/reconcile.js";
 
 const id = new ObjectId("507f1f77bcf86cd799439011");
 const ownImage = `/api/blog/images/${id.toHexString()}/inline-0/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
@@ -15,6 +17,16 @@ describe("blog HTML boundary", () => {
     for (const subtitle of [undefined, "  ", "x".repeat(241), "Hello\u0000world"]) {
       expect(() => normalizeSubtitle(subtitle, true)).toThrow(BlogError);
     }
+  });
+  it("rejects missing, blank, unsafe and oversized categories for new articles", async () => {
+    const connection = vi.spyOn(db, "authConnection").mockRejectedValue(new Error("Unexpected database access"));
+    const valid = { locale: "bg", title: "Example", subtitle: "Subtitle", html: "<p>Hello</p>", seoTitle: "Example", seoDescription: "Description", heroAlt: "Hero", thumbnailAlt: "Thumbnail", createKey: "00000000-0000-0000-0000-000000000001" };
+    try {
+      for (const category of [undefined, "  ", "x".repeat(61), "Brand\u0000ing"]) {
+        await expect(createArticle({ ...valid, category }, [], id)).rejects.toMatchObject({ status: 400 });
+      }
+      expect(connection).not.toHaveBeenCalled();
+    } finally { connection.mockRestore(); }
   });
   it("keeps permitted formatting while stripping scripts and unsafe links", () => {
     vi.stubEnv("BLOG_GCS_BUCKET", "blog-test");
@@ -76,6 +88,221 @@ describe("blog storage diagnostics", () => {
   it("fails startup on an invalid bucket name with a loggable code", () => {
     vi.stubEnv("BLOG_GCS_BUCKET", "Bad_Bucket..name");
     expect(() => bucketName()).toThrow(expect.objectContaining({ code: "BLOG_STORAGE_CONFIG" }));
+  });
+});
+
+describe("blog image reconciliation", () => {
+  it("excludes hidden deletions from both admin reads", async () => {
+    const find = vi.fn((filter: unknown) => { void filter; return { sort: () => ({ toArray: async () => [] }) }; });
+    const findOne = vi.fn(async (filter: unknown) => { void filter; return null; });
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: () => ({ find, findOne }) } } as never);
+    try {
+      await adminArticles();
+      await adminArticle(id.toHexString());
+      expect(find.mock.calls[0][0]).toEqual({ state: { $nin: ["deleting", "deleted"] } });
+      expect(findOne.mock.calls[0][0]).toEqual({ _id: id, state: { $nin: ["deleting", "deleted"] } });
+    } finally { connection.mockRestore(); }
+  });
+  it("requires explicit historical-delete approval before scanning", async () => {
+    await expect(runImageReconciliation("execute", "0".repeat(64))).rejects.toThrow("Explicit approval flag is required");
+  });
+  it("does not execute a manual deletion while lifecycle writes are disabled", async () => {
+    vi.stubEnv("BLOG_IMAGE_LIFECYCLE_WRITES", "");
+    await expect(deleteAuditedImages("0".repeat(64))).rejects.toMatchObject({ status: 503 });
+  });
+  it("measures orphan age at audit start even when scanning is slow", async () => {
+    vi.stubEnv("BLOG_GCS_BUCKET", "blog-test");
+    const started = Date.now();
+    const key = `blog/507f1f77bcf86cd799439012/hero/${"e".repeat(64)}-${"f".repeat(16)}.webp`;
+    const clock = vi.spyOn(Date, "now").mockReturnValueOnce(started).mockReturnValue(started + 2 * 60_000);
+    const bucket = vi.spyOn(Storage.prototype, "bucket").mockReturnValue({ getFiles: vi.fn().mockResolvedValue([[{ name: key, metadata: { timeCreated: new Date(started - appConfig.blog.imageDeleteGraceMilliseconds + 1).toISOString() } }], null]) } as never);
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: () => ({ find: () => ({ async *[Symbol.asyncIterator]() { /* No articles. */ } }) }) } } as never);
+    try {
+      const audit = await auditBlogImages();
+      expect(audit.candidates).toEqual([]);
+      expect(audit.recent).toBe(1);
+    } finally { clock.mockRestore(); bucket.mockRestore(); connection.mockRestore(); }
+  });
+  it("queues a replaced inline image in the same versioned article update", async () => {
+    vi.stubEnv("BLOG_IMAGE_LIFECYCLE_WRITES", "true");
+    vi.stubEnv("AUTH_MONGODB_URI", "");
+    const hero = `/api/blog/images/${id.toHexString()}/hero/${"1".repeat(64)}-${"2".repeat(16)}.webp`;
+    const thumbnail = `/api/blog/images/${id.toHexString()}/thumbnail/${"3".repeat(64)}-${"4".repeat(16)}.webp`;
+    const old = { title: "Example", category: "Branding", html: `<p>Hello <img src="${ownImage}" alt="Example"></p>`, seoTitle: "Example", seoDescription: "Example", heroAlt: "Hero", thumbnailAlt: "Thumbnail", updatedAt: new Date() };
+    const previous = { _id: id, version: 2, heroUrl: hero, thumbnailUrl: thumbnail, locales: { bg: old } };
+    const current = { ...previous, version: 3, locales: { bg: { ...old, html: "<p>Hello</p>" } }, pendingImageCleanup: [ownImage] };
+    const findOne = vi.fn().mockResolvedValueOnce(previous).mockResolvedValueOnce(current);
+    const findOneAndUpdate = vi.fn().mockResolvedValue(previous);
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: () => ({ findOne, findOneAndUpdate }) } } as never);
+    try {
+      const saved = await updateArticle(id.toHexString(), { locale: "bg", title: "Example", html: "<p>Hello</p>", seoTitle: "Example", seoDescription: "Example", heroAlt: "Hero", thumbnailAlt: "Thumbnail", version: 2 }, [], id);
+      expect(saved).toBe(current);
+      const update = findOneAndUpdate.mock.calls[0][1];
+      expect(update.$addToSet.pendingImageCleanup.$each).toEqual([ownImage]);
+      expect(update.$set.cleanupNextAt).toBeInstanceOf(Date);
+      expect(update.$inc.version).toBe(1);
+      expect(update.$set["locales.bg"].category).toBe("Branding");
+    } finally { connection.mockRestore(); }
+  });
+  it("does not allow clearing an existing category during an update", async () => {
+    const hero = ownImage.replace("/inline-0/", "/hero/");
+    const thumbnail = ownImage.replace("/inline-0/", "/thumbnail/");
+    const previous = { _id: id, version: 2, heroUrl: hero, thumbnailUrl: thumbnail, locales: { bg: { title: "Example", category: "Branding", html: "<p>Hello</p>", seoTitle: "Example", seoDescription: "Description", heroAlt: "Hero", thumbnailAlt: "Thumbnail" } } };
+    const input = { locale: "bg", title: "Example", category: "", html: "<p>Hello</p>", seoTitle: "Example", seoDescription: "Description", heroAlt: "Hero", thumbnailAlt: "Thumbnail", version: 2 };
+    const findOne = vi.fn().mockResolvedValue(previous);
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: () => ({ findOne }) } } as never);
+    try {
+      await expect(updateArticle(id.toHexString(), input, [], id)).rejects.toMatchObject({ status: 400 });
+      expect(findOne).toHaveBeenCalledTimes(1);
+    } finally { connection.mockRestore(); }
+  });
+  it("allows an uncategorized legacy article to save and requires a category for its first English translation", async () => {
+    const hero = ownImage.replace("/inline-0/", "/hero/");
+    const thumbnail = ownImage.replace("/inline-0/", "/thumbnail/");
+    const old = { title: "Example", html: "<p>Hello</p>", seoTitle: "Example", seoDescription: "Description", heroAlt: "Hero", thumbnailAlt: "Thumbnail" };
+    const previous = { _id: id, version: 2, heroUrl: hero, thumbnailUrl: thumbnail, locales: { bg: old } };
+    const current = { ...previous, version: 3 };
+    const findOne = vi.fn().mockResolvedValueOnce(previous).mockResolvedValueOnce(current).mockResolvedValueOnce(previous);
+    const findOneAndUpdate = vi.fn().mockResolvedValue(previous);
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: () => ({ findOne, findOneAndUpdate }) } } as never);
+    const input = { title: "Example", html: "<p>Hello</p>", seoTitle: "Example", seoDescription: "Description", heroAlt: "Hero", thumbnailAlt: "Thumbnail", version: 2, category: "" };
+    try {
+      await updateArticle(id.toHexString(), { ...input, locale: "bg" }, [], id);
+      expect(findOneAndUpdate.mock.calls[0][1].$set["locales.bg"].category).toBeUndefined();
+      await expect(updateArticle(id.toHexString(), { ...input, locale: "en", subtitle: "English subtitle" }, [], id)).rejects.toMatchObject({ status: 400 });
+      expect(findOneAndUpdate).toHaveBeenCalledTimes(1);
+    } finally { connection.mockRestore(); }
+  });
+  it("pages through storage and deletes only aged, unreferenced article images", async () => {
+    vi.stubEnv("BLOG_GCS_BUCKET", "blog-test");
+    vi.stubEnv("BLOG_IMAGE_LIFECYCLE_WRITES", "true");
+    const base = `blog/${id.toHexString()}`;
+    const live = `${base}/inline-0/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+    const orphan = `${base}/inline-1/${"c".repeat(64)}-${"d".repeat(16)}.webp`;
+    const missing = `blog/507f1f77bcf86cd799439012/hero/${"e".repeat(64)}-${"f".repeat(16)}.webp`;
+    const recent = `${base}/inline-2/${"1".repeat(64)}-${"2".repeat(16)}.webp`;
+    const invalid = "blog/notes.txt";
+    const oldTime = new Date(Date.now() - 60 * 60_000).toISOString();
+    const getFiles = vi.fn(async (options: { pageToken?: string }) => options.pageToken
+      ? [[{ name: missing, metadata: { timeCreated: oldTime } }, { name: recent, metadata: { timeCreated: new Date().toISOString() } }, { name: invalid, metadata: { timeCreated: oldTime } }], null]
+      : [[{ name: live, metadata: { timeCreated: oldTime } }, { name: orphan, metadata: { timeCreated: oldTime } }], { pageToken: "next" }]);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const bucket = vi.spyOn(Storage.prototype, "bucket").mockReturnValue({ getFiles, file: vi.fn(() => ({ delete: remove })) } as never);
+    const article = { _id: id, heroUrl: ownImage, thumbnailUrl: ownImage, locales: { bg: { html: `<p><img src="${ownImage}" alt="Live"></p>` } } };
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: (name: string) => ({ find: () => ({ async *[Symbol.asyncIterator]() { if (name === appConfig.blog.collection) yield article; } }) }) } } as never);
+    try {
+      const audit = await auditBlogImages();
+      expect(audit.candidates.map((candidate) => candidate.key)).toEqual([orphan, missing]);
+      expect(audit.recent).toBe(1);
+      expect(audit.invalidKeys).toEqual([invalid]);
+      expect(audit.foreignReferences).toEqual([]);
+      await expect(deleteAuditedImages("0".repeat(64))).rejects.toMatchObject({ status: 409 });
+      expect(await deleteAuditedImages(audit.digest)).toEqual({ deleted: 2, failed: 0 });
+      expect(remove).toHaveBeenCalledTimes(2);
+      expect(getFiles).toHaveBeenCalledWith(expect.objectContaining({ prefix: "blog/", autoPaginate: false }));
+    } finally { bucket.mockRestore(); connection.mockRestore(); }
+  });
+  it("removes the article after the first sweep and keeps a marker for the second", async () => {
+    vi.stubEnv("BLOG_GCS_BUCKET", "blog-test");
+    vi.stubEnv("BLOG_IMAGE_LIFECYCLE_WRITES", "true");
+    vi.stubEnv("AUTH_MONGODB_URI", "mongodb://127.0.0.1");
+    const events: string[] = [];
+    const article = { _id: id, version: 1, state: "active", cleanupClaim: "" };
+    let removed = false;
+    let marker: { _id: ObjectId; dueAt: Date; cleanupClaim?: string } | null = null;
+    const getFiles = vi.fn()
+      .mockResolvedValueOnce([[{ name: `blog/${id.toHexString()}/hero/file.webp`, delete: vi.fn(async () => { events.push("gcs-delete"); }) }]])
+      .mockResolvedValueOnce([[]])
+      .mockResolvedValueOnce([[]]);
+    const bucket = vi.spyOn(Storage.prototype, "bucket").mockReturnValue({ getFiles } as never);
+    const collection = {
+      createIndex: vi.fn().mockResolvedValue("index"),
+      findOne: vi.fn(async () => removed ? null : article),
+      find: vi.fn(() => ({ async *[Symbol.asyncIterator]() { /* No foreign references. */ }, toArray: async () => [] })),
+      findOneAndUpdate: vi.fn(async (_filter: unknown, update: { $set: Record<string, unknown>; $inc?: Record<string, number> }) => {
+        Object.assign(article, update.$set);
+        if (update.$inc?.version) article.version += update.$inc.version;
+        return { ...article };
+      }),
+      updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }),
+      deleteOne: vi.fn(async () => { expect(marker).not.toBeNull(); events.push("mongo-delete"); removed = true; return { deletedCount: 1 }; }),
+    };
+    const markerCollection = {
+      createIndex: vi.fn().mockResolvedValue("index"),
+      findOne: vi.fn(async () => marker),
+      find: vi.fn(() => ({ toArray: async () => marker ? [{ _id: id }] : [] })),
+      updateOne: vi.fn(async (_filter: unknown, update: { $setOnInsert?: { _id: ObjectId; dueAt: Date } }) => { if (!marker && update.$setOnInsert) marker = { ...update.$setOnInsert }; return { matchedCount: 1 }; }),
+      findOneAndUpdate: vi.fn(async (_filter: unknown, update: { $set: { cleanupClaim: string } }) => { if (!marker) return null; marker.cleanupClaim = update.$set.cleanupClaim; return { ...marker }; }),
+      deleteOne: vi.fn(async () => { marker = null; events.push("marker-delete"); return { deletedCount: 1 }; }),
+    };
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: (name: string) => name === appConfig.blog.cleanupCollection ? markerCollection : collection } } as never);
+    try {
+      expect(await deleteArticle(id.toHexString(), 1)).toEqual({ complete: false, remaining: 0 });
+      expect(removed).toBe(true);
+      expect(marker).toMatchObject({ _id: id, dueAt: expect.any(Date) });
+      expect(await deleteArticle(id.toHexString(), 1)).toEqual({ complete: false, remaining: 0 });
+      marker!.dueAt = new Date(Date.now() - 1);
+      removed = false;
+      article.state = "active";
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      try { await processDueBlogCleanup(); } finally { error.mockRestore(); }
+      expect(marker).not.toBeNull();
+      expect(getFiles).toHaveBeenCalledTimes(2);
+      removed = true;
+      await processDueBlogCleanup();
+      expect(await deleteArticle(id.toHexString(), 1)).toEqual({ complete: true, remaining: 0 });
+      expect(events).toEqual(["gcs-delete", "mongo-delete", "marker-delete"]);
+    } finally { bucket.mockRestore(); connection.mockRestore(); }
+  });
+  it("keeps a failed GCS deletion hidden and available for retry", async () => {
+    vi.stubEnv("BLOG_GCS_BUCKET", "blog-test");
+    vi.stubEnv("BLOG_IMAGE_LIFECYCLE_WRITES", "true");
+    const article = { _id: id, version: 1, state: "active", cleanupClaim: "" };
+    const bucket = vi.spyOn(Storage.prototype, "bucket").mockReturnValue({ getFiles: vi.fn().mockRejectedValue(new Error("storage unavailable")) } as never);
+    const collection = {
+      findOne: vi.fn(async () => article),
+      find: vi.fn(() => ({ async *[Symbol.asyncIterator]() { /* No foreign references. */ } })),
+      findOneAndUpdate: vi.fn(async (_filter: unknown, update: { $set: Record<string, unknown>; $inc?: { version?: number } }) => { Object.assign(article, update.$set); article.version += update.$inc?.version ?? 0; return { ...article }; }),
+      updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }),
+      deleteOne: vi.fn(),
+    };
+    const markerCollection = { updateOne: vi.fn() };
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: (name: string) => name === appConfig.blog.cleanupCollection ? markerCollection : collection } } as never);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(await deleteArticle(id.toHexString(), 1)).toEqual({ complete: false, remaining: 0 });
+      expect(article.state).toBe("deleting");
+      expect(collection.deleteOne).not.toHaveBeenCalled();
+      expect(markerCollection.updateOne).not.toHaveBeenCalled();
+    } finally { error.mockRestore(); bucket.mockRestore(); connection.mockRestore(); }
+  });
+  it("does not start a legacy deletion if the migration guard cannot be stored", async () => {
+    vi.stubEnv("BLOG_IMAGE_LIFECYCLE_WRITES", "true");
+    const article = { _id: id, version: 1, state: "active", legacyId: id.toHexString() };
+    const collection = {
+      findOne: vi.fn(async () => article),
+      find: vi.fn(() => ({ async *[Symbol.asyncIterator]() { /* No foreign references. */ } })),
+      findOneAndUpdate: vi.fn(),
+    };
+    const control = { updateOne: vi.fn().mockResolvedValue({ matchedCount: 0 }) };
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: (name: string) => name === "adminControl" ? control : collection } } as never);
+    try {
+      await expect(deleteArticle(id.toHexString(), 1)).rejects.toMatchObject({ status: 503 });
+      expect(article.state).toBe("active");
+      expect(collection.findOneAndUpdate).not.toHaveBeenCalled();
+    } finally { connection.mockRestore(); }
+  });
+  it("blocks unrestricted legacy import after deletion and reuse of a cleanup marker", async () => {
+    const collection = { createIndex: vi.fn().mockResolvedValue("index"), findOne: vi.fn().mockResolvedValue(null) };
+    const markerCollection = { createIndex: vi.fn().mockResolvedValue("index"), findOne: vi.fn().mockResolvedValue({ _id: id }) };
+    const control = { findOne: vi.fn().mockResolvedValue({ blogMigrationClosed: true }) };
+    const connection = vi.spyOn(db, "authConnection").mockResolvedValue({ db: { collection: (name: string) => name === "adminControl" ? control : name === appConfig.blog.cleanupCollection ? markerCollection : collection } } as never);
+    const raw = { _id: id } as LegacyArticle;
+    try {
+      await expect(importLegacyArticle(raw, id, [], "")).rejects.toMatchObject({ status: 409 });
+      await expect(importLegacyArticle(raw, id, [], "", new Set([id.toHexString()]))).rejects.toMatchObject({ status: 409 });
+      expect(markerCollection.findOne).toHaveBeenCalledTimes(1);
+    } finally { connection.mockRestore(); }
   });
 });
 

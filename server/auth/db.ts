@@ -57,6 +57,7 @@ export type AdminControl = {
   ownerUserId?: ObjectId;
   activeCount: number;
   tokenSerial?: number;
+  blogMigrationClosed?: boolean;
 };
 
 export type AuthOutbox = {

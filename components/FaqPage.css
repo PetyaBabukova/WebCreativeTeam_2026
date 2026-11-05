@@ -9,7 +9,7 @@
 .faq__hero { display: flex; min-height: min(66svh, 40rem); padding-top: var(--site-header-content-start); padding-bottom: 2rem; }
 .faq__hero-copy { width: 100%; container-type: inline-size; }
 .faq__hero .section-eyebrow--rule { margin-bottom: clamp(1.5rem, 3vw, 3rem); }
-.faq__title { margin: 0; font-size: clamp(2rem, 10cqi, 9rem); font-weight: 800; line-height: .97; letter-spacing: var(--heading-bold-letter-spacing); }
+.faq__title { margin: 0; font-size: clamp(2rem, 6cqi, 5.4rem); font-weight: 800; line-height: .97; letter-spacing: var(--heading-bold-letter-spacing); }
 .faq__title-mask { display: block; overflow: hidden; padding: 0 .025em .08em; }
 .faq__title-line { display: block; width: fit-content; max-width: 100%; white-space: nowrap; }
 .faq__title-line--1 { padding-inline-end: .12em; background: var(--gradient-brand-compact); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
@@ -84,9 +84,8 @@
 @media (width <= 47.5rem) {
   .faq { padding-bottom: 5rem; }
   .faq__shade { background: linear-gradient(0deg, #00181070, transparent 45%), linear-gradient(180deg, #00181026, #00181040 50%, #00181026); }
-  .faq__hero-copy { text-align: center; }
-  .faq__hero .section-eyebrow--rule { justify-content: center; }
-  .faq__title-line { margin-inline: auto; }
+  .faq__title { font-size: calc(3.15rem - 1vw); }
+  .faq__title-line { white-space: normal; }
   .faq__lead { width: min(100%, 32rem); margin: 1.4rem auto 0; text-align: left; font-size: clamp(1rem, 3.5vw, 1.2rem); }
   .faq__card { padding: 1.15rem 1.2rem; }
   .faq__number { display: none; }
@@ -95,6 +94,10 @@
   .faq__answer-shell { --faq-answer-gap: 1.05rem; }
   .faq__answer { font-size: 1rem; }
   .faq__related { flex-direction: column; align-items: center; }
+}
+
+@media (width <= 30rem) {
+  .faq__title { font-size: clamp(2.6rem, 13cqi, 2.9rem); }
 }
 
 

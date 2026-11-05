@@ -13,13 +13,9 @@ function publishedDate(article: Article, locale: Locale) {
 
 export function BlogIndex({ locale, rows, page, pages }: { locale: Locale; rows: Article[]; page: number; pages: number }) {
   const copy = messages[locale].blog;
-  const featured = page === 1 ? rows[0] : undefined;
-  const grid = featured ? rows.slice(1) : rows;
-  const card = (article: Article, isFeatured = false) => <BlogCard key={article._id.toHexString()} href={blogArticleUrl(article.slug, locale)} imageUrl={isFeatured ? article.heroUrl : article.thumbnailUrl} title={article.locales[locale]!.title} date={publishedDate(article, locale)} dateTime={article.publishedAt.toISOString()} featured={isFeatured} />;
   const list = <main id="main" className="container standard-page blog-page" tabIndex={-1}>
     <BlogIntro locale={locale} eyebrow={messages[locale].blogLabel} headline={copy.headline} accent={copy.titleAccent} lead={copy.intro} />
-    {featured && <div className="blog-page__featured">{card(featured, true)}</div>}
-    {grid.length > 0 && <section className="blog-page__archive" aria-labelledby="blog-all-articles"><h2 id="blog-all-articles">{copy.allArticles}</h2><div className="blog-page__grid">{grid.map((article) => card(article))}</div></section>}
+    {rows.length > 0 && <section className="blog-page__archive" aria-labelledby="blog-all-articles"><h2 className="sr-only" id="blog-all-articles">{copy.allArticles}</h2><div className="blog-page__grid">{rows.map((article, index) => <BlogCard key={article._id.toHexString()} href={blogArticleUrl(article.slug, locale)} imageUrl={article.thumbnailUrl} category={article.locales[locale]?.category} title={article.locales[locale]!.title} date={publishedDate(article, locale)} dateTime={article.publishedAt.toISOString()} priority={index === 0} eager={index < 3} />)}</div></section>}
     {!rows.length && <p className="blog-page__empty">{copy.empty}</p>}
     {pages > 1 && <nav className="blog-page__pagination" aria-label={copy.pages}>
       {page > 1 && <Link href={`${pageUrl("blog", locale)}${page - 1 > 1 ? `?page=${page - 1}` : ""}`}>{copy.previous}</Link>}
@@ -36,10 +32,9 @@ export function BlogDetail({ locale, article, admin = false }: { locale: Locale;
   const subtitle = text.subtitle?.trim() || text.seoDescription;
   const detail = <main id="main" className="container standard-page blog-detail" tabIndex={-1}>
     <article className="blog-article">
-      <BlogDetailHeader locale={locale} title={text.title} subtitle={subtitle} />
-      <div className="blog-article__visual"><img src={article.heroUrl} alt={text.heroAlt} loading="eager" fetchPriority="high" decoding="async" /></div>
+      <BlogDetailHeader locale={locale} title={text.title} subtitle={subtitle} imageUrl={article.heroUrl} imageAlt={text.heroAlt} />
       <div className="blog-article__body" dangerouslySetInnerHTML={{ __html: text.html }} />
-      <time className="blog-article__date" dateTime={article.publishedAt.toISOString()}>{publishedDate(article, locale)}</time>
+      <div className="blog-article__meta">{text.category && <p className="blog-article__category">{text.category}</p>}<time className="blog-article__date" dateTime={article.publishedAt.toISOString()}>{publishedDate(article, locale)}</time></div>
       {admin && <BlogDetailAdminActions locale={locale} id={article._id.toHexString()} version={article.version} />}
     </article>
     <div className="blog-detail__bottom"><Link className="button button--outline blog-detail__back" href={pageUrl("blog", locale)}><span aria-hidden="true">←</span><span>{copy.backToArticles}</span></Link></div>

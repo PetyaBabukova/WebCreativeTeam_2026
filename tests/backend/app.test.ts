@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import nodemailer from "nodemailer";
 import { Readable } from "node:stream";
@@ -10,6 +10,9 @@ import * as newsletterService from "../../server/newsletter/service.js";
 import * as blogService from "../../server/blog/service.js";
 import * as security from "../../server/auth/security.js";
 
+beforeEach(() => { vi.spyOn(blogService, "imageArticleVisible").mockResolvedValue(true); });
+afterEach(() => vi.restoreAllMocks());
+
 describe("Express HTTP boundaries", () => {
   it("serves a private blog image publicly, while HEAD only reads metadata", async () => {
     const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
@@ -19,11 +22,11 @@ describe("Express HTTP boundaries", () => {
       const app = createApp((_req, res) => { res.send("next"); }, () => true);
       const head = await request(app).head(image).expect(200);
       expect(head.headers["content-length"]).toBe("3");
-      expect(head.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
+      expect(head.headers["cache-control"]).toBe("private, max-age=86400");
       expect(file.createReadStream).not.toHaveBeenCalled();
       const get = await request(app).get(image).expect(200);
       expect(get.headers["content-type"]).toMatch(/^image\/webp/);
-      expect(get.headers["cache-control"]).toBe("private, max-age=31536000, immutable");
+      expect(get.headers["cache-control"]).toBe("private, max-age=86400");
       expect(get.headers["content-length"]).toBe("3");
       expect(file.createReadStream).toHaveBeenCalledTimes(1);
       expect(lookup).toHaveBeenCalledWith(image);
@@ -43,6 +46,17 @@ describe("Express HTTP boundaries", () => {
       expect(missing.headers["cache-control"]).toBe("no-store");
       expect(missing.headers["content-length"]).toBe("0");
     } finally { lookup.mockRestore(); warning.mockRestore(); }
+  });
+  it("does not fetch an image for a deleted article and reports a database outage", async () => {
+    const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
+    const visible = vi.spyOn(blogService, "imageArticleVisible");
+    const file = { getMetadata: vi.fn() };
+    vi.spyOn(blogService, "blogImageFile").mockReturnValue(file as never);
+    const app = createApp((_req, res) => { res.send("next"); }, () => true);
+    visible.mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("database unavailable"));
+    await request(app).get(image).expect(404);
+    await request(app).head(image).expect(503);
+    expect(file.getMetadata).not.toHaveBeenCalled();
   });
   it("does not send a cacheable image when the storage stream fails", async () => {
     const image = `${appConfig.paths.blogApi}${appConfig.blog.imageRoute}/507f1f77bcf86cd799439011/hero/${"a".repeat(64)}-${"b".repeat(16)}.webp`;
@@ -78,17 +92,30 @@ describe("Express HTTP boundaries", () => {
     await request(app).get(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`).expect(401);
     await request(app).post(`${appConfig.paths.blogApi}/admin`).set("Content-Type", "multipart/form-data").expect(401);
     await request(app).put(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`).set("Content-Type", "multipart/form-data").expect(401);
+    await request(app).post(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011/cleanup`).expect(401);
     await request(app).delete(`${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`).send({ version: 1 }).expect(401);
   });
+  it("distinguishes pending image deletion from a completed delete", async () => {
+    vi.spyOn(security, "verifySession").mockResolvedValue({ session: {}, user: {} } as never);
+    vi.spyOn(security, "validOrigin").mockReturnValue(true);
+    vi.spyOn(security, "validCsrf").mockReturnValue(true);
+    const remove = vi.spyOn(blogService, "deleteArticle")
+      .mockResolvedValueOnce({ complete: false, remaining: 2 })
+      .mockResolvedValueOnce({ complete: true, remaining: 0 });
+    const path = `${appConfig.paths.blogApi}/admin/507f1f77bcf86cd799439011`;
+    await request(createApp((_req, res) => { res.send("next"); }, () => true)).delete(path).send({ version: 1 }).expect(202, { state: "deleting", remainingCount: 2 });
+    await request(createApp((_req, res) => { res.send("next"); }, () => true)).delete(path).send({ version: 1 }).expect(204);
+    expect(remove).toHaveBeenCalledTimes(2);
+  });
   it.each([
-    [undefined, "/bg", "/faq/bg", "/contacts/bg"],
-    ["wct_locale=en", "/en", "/faq/en", "/contacts/en"],
-    ["other=value; wct_locale=bg", "/bg", "/faq/bg", "/contacts/bg"],
-    ["xwct_locale=en; wct_locale=bg", "/bg", "/faq/bg", "/contacts/bg"],
-    ["wct_locale=fr", "/bg", "/faq/bg", "/contacts/bg"],
-  ])("redirects bare pages using the validated locale cookie %s", async (cookie, home, faq, contacts) => {
+    [undefined, "/bg", "/faq/bg", "/contacts/bg", "/blog/bg"],
+    ["wct_locale=en", "/en", "/faq/en", "/contacts/en", "/blog/en"],
+    ["other=value; wct_locale=bg", "/bg", "/faq/bg", "/contacts/bg", "/blog/bg"],
+    ["xwct_locale=en; wct_locale=bg", "/bg", "/faq/bg", "/contacts/bg", "/blog/bg"],
+    ["wct_locale=fr", "/bg", "/faq/bg", "/contacts/bg", "/blog/bg"],
+  ])("redirects bare pages using the validated locale cookie %s", async (cookie, home, faq, contacts, blog) => {
     const app = createApp((_req, res) => { res.send("next"); }, () => true);
-    for (const [path, destination] of [["/", home], ["/faq?from=email", `${faq}?from=email`], ["/contacts?from=cta", `${contacts}?from=cta`]]) {
+    for (const [path, destination] of [["/", home], ["/faq?from=email", `${faq}?from=email`], ["/contacts?from=cta", `${contacts}?from=cta`], ["/blog?page=2", `${blog}?page=2`]]) {
       const response = await request(app).get(path).set(cookie ? { Cookie: `${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all; ${cookie}` } : {}).expect(307);
       expect(response.headers.location).toBe(destination);
       expect(response.headers["cache-control"]).toBe("private, no-store");
@@ -100,19 +127,23 @@ describe("Express HTTP boundaries", () => {
     const accepted = `${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.all; wct_locale=en`;
     await request(app).head("/faq").set("Cookie", accepted).expect(307).expect("Location", "/faq/en");
     await request(app).head("/contacts").set("Cookie", accepted).expect(307).expect("Location", "/contacts/en");
-    for (const path of ["/FAQ", "/faq/", "/contacts/", "/CONTACTS", "/about", "/services/bad/en", "/_next/asset.js"]) {
+    await request(app).head("/blog").set("Cookie", accepted).expect(307).expect("Location", "/blog/en");
+    for (const path of ["/FAQ", "/faq/", "/contacts/", "/CONTACTS", "/blog/", "/BLOG", "/blogs", "/blog/bg", "/blog/some-slug/bg", "/about", "/services/bad/en", "/_next/asset.js"]) {
       await request(app).get(path).expect(404, `next:GET:${path}`);
     }
     await request(app).post("/faq").expect(404, "next:POST:/faq");
+    await request(app).post("/blog").expect(404, "next:POST:/blog");
   });
   it("ignores and clears a prior language cookie without valid acceptance on public HTML", async () => {
     const app = createApp((_req, res) => { res.send("next"); }, () => true);
     for (const choice of [undefined, "v1.rejected", "v1.necessary", "v0.all", "v1.invalid"]) {
       const header = [`${appConfig.localeCookie.name}=en`, choice && `${appConfig.cookieChoice.name}=${choice}`].filter(Boolean).join("; ");
-      const redirect = await request(app).get("/").set("Cookie", header).expect(307);
-      expect(redirect.headers.location).toBe("/bg");
-      expect(redirect.headers["set-cookie"]?.[0]).toContain(`${appConfig.localeCookie.name}=`);
-      expect(redirect.headers["cache-control"]).toBe("private, no-store");
+      for (const [path, destination] of [["/", "/bg"], ["/blog", "/blog/bg"]]) {
+        const redirect = await request(app).get(path).set("Cookie", header).expect(307);
+        expect(redirect.headers.location).toBe(destination);
+        expect(redirect.headers["set-cookie"]?.[0]).toContain(`${appConfig.localeCookie.name}=`);
+        expect(redirect.headers["cache-control"]).toBe("private, no-store");
+      }
       const page = await request(app).get("/contacts/en").set("Accept", "text/html").set("Cookie", header).expect(200);
       expect(page.headers["set-cookie"]?.[0]).toContain(`${appConfig.localeCookie.name}=`);
       expect(page.headers["cache-control"]).toBe("private, no-store");

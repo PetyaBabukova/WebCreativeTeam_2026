@@ -17,21 +17,40 @@ function sampleArticle(n: number): Article {
 }
 
 describe("public blog layout", () => {
-  it("uses one featured article on page one and one link per card", () => {
-    const html = renderToStaticMarkup(<BlogIndex locale="bg" rows={[sampleArticle(1), sampleArticle(2), sampleArticle(3)]} page={1} pages={2} />);
+  it("keeps the detail subtitle before the image in reading order", () => {
+    const article = sampleArticle(5);
+    const root = document.createElement("div");
+    root.innerHTML = renderToStaticMarkup(<BlogDetail locale="bg" article={article} />);
+    const header = root.querySelector(".blog-article__header");
+    const hero = header?.querySelector(".blog-article__hero-row");
+    expect(header?.querySelector("h1")?.compareDocumentPosition(hero!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(Array.from(hero?.children ?? [], (child) => child.className)).toEqual(["blog-article__subtitle", "blog-article__visual"]);
+
+    article.locales.bg.seoDescription = "";
+    root.innerHTML = renderToStaticMarkup(<BlogDetail locale="bg" article={article} />);
+    expect(root.querySelectorAll(".blog-article__hero-row > *")).toHaveLength(1);
+    expect(root.querySelector(".blog-article__hero-row > .blog-article__visual")).not.toBeNull();
+  });
+  it("shows equal cards in supplied newest-first order with one link each", () => {
+    const first = sampleArticle(1);
+    first.locales.bg.category = "Брандинг";
+    const html = renderToStaticMarkup(<BlogIndex locale="bg" rows={[first, sampleArticle(2), sampleArticle(3)]} page={1} pages={2} />);
     const root = document.createElement("div"); root.innerHTML = html;
-    expect(root.querySelectorAll(".blog-card--featured")).toHaveLength(1);
-    expect(root.querySelectorAll(".blog-page__grid .blog-card")).toHaveLength(2);
+    expect(root.querySelectorAll(".blog-card--featured")).toHaveLength(0);
+    expect(root.querySelectorAll(".blog-page__grid .blog-card")).toHaveLength(3);
     expect(root.querySelectorAll(".blog-card > a.blog-card__link")).toHaveLength(3);
-    expect(root.querySelector(".blog-card--featured .blog-card__link")?.getAttribute("href")).toContain("example-1");
-    expect(root.querySelectorAll(".blog-card__visual time")).toHaveLength(3);
+    expect(root.querySelector(".blog-card:first-child .blog-card__link")?.getAttribute("href")).toContain("example-1");
+    expect(root.querySelectorAll(".blog-card__copy time")).toHaveLength(3);
     expect(root.querySelectorAll(".blog-card__action")).toHaveLength(0);
-    expect(root.querySelector(".blog-card--featured .blog-card__visual h2")?.textContent).toBe("Статия 1");
-    expect(root.querySelectorAll(".blog-page__grid .blog-card__visual h3")).toHaveLength(2);
-    expect(root.querySelector(".blog-card--featured img")?.getAttribute("src")).toBe("/api/blog/images/hero.webp");
+    expect(root.querySelector(".blog-card:first-child .blog-card__title")?.textContent).toBe("Статия 1");
+    expect(root.querySelectorAll(".blog-page__grid .blog-card__copy h3")).toHaveLength(3);
+    expect(root.querySelector(".blog-card:first-child .blog-card__category")?.textContent).toBe("Брандинг");
+    expect(root.querySelectorAll(".blog-card__category")).toHaveLength(1);
     expect(root.querySelector(".blog-page__grid img")?.getAttribute("src")).toBe("/api/blog/images/thumb.webp");
     expect(root.querySelectorAll(".blog-card img[alt='']")).toHaveLength(3);
-    expect(root.querySelectorAll(".blog-card__hover-label")).toHaveLength(0);
+    expect(root.querySelectorAll(".blog-card img[loading='eager']")).toHaveLength(3);
+    expect(root.querySelectorAll(".blog-card img[fetchpriority='high']")).toHaveLength(1);
+    expect(root.querySelector(".blog-page__archive > h2")?.classList.contains("sr-only")).toBe(true);
   });
   it("shows all page-two cards equally and uses legacy subtitle fallback on detail", () => {
     const nextPage = renderToStaticMarkup(<BlogIndex locale="bg" rows={[sampleArticle(3)]} page={2} pages={2} />);
@@ -41,6 +60,15 @@ describe("public blog layout", () => {
     expect(detail).toContain("Описание 3");
     expect(detail).toContain('src="/api/blog/images/hero.webp"');
     expect(detail).toContain('alt="Основно изображение"');
+  });
+  it("shows a category on its own language detail without falling back to Bulgarian on English", () => {
+    const article = sampleArticle(3);
+    article.locales.bg.category = "Брандинг";
+    article.locales.en = { ...article.locales.bg, title: "Example", category: undefined };
+    const bg = document.createElement("div"); bg.innerHTML = renderToStaticMarkup(<BlogDetail locale="bg" article={article} />);
+    const en = document.createElement("div"); en.innerHTML = renderToStaticMarkup(<BlogDetail locale="en" article={article} />);
+    expect(bg.querySelector(".blog-article__category")?.textContent).toBe("Брандинг");
+    expect(en.querySelector(".blog-article__category")).toBeNull();
   });
   it("shows article actions only when the server has verified an administrator", () => {
     const article = sampleArticle(4);
@@ -294,9 +322,111 @@ describe("Quill article formats", () => {
     vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
     try {
       const { unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
-      fireEvent.click(await screen.findByRole("button", { name: "Превод" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Превод на Статия 5" }));
       expect(await screen.findByRole("heading", { name: "Английски превод" })).not.toBeNull();
       expect((screen.getByLabelText("Заглавие") as HTMLInputElement).value).toBe("");
+      unmount();
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("sends the edited category and keeps the logo linked to the localized home page", async () => {
+    const article = sampleArticle(5);
+    const row = { ...article, _id: article._id.toHexString() };
+    const request = vi.fn(async (url: string, init?: RequestInit) => init?.method === "PUT"
+      ? new Response(null, { status: 409 })
+      : Response.json(url.endsWith("/admin") ? { articles: [row] } : { article: row }));
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      const { container, unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      expect(container.querySelector(".auth-header a")?.getAttribute("href")).toBe("/bg");
+      expect(container.querySelector(".auth-header a")?.getAttribute("aria-label")).toContain("начало");
+      fireEvent.click(await screen.findByRole("button", { name: "Редактирай Статия 5" }));
+      const category = await screen.findByLabelText("Категория");
+      fireEvent.change(category, { target: { value: "Брандинг" } });
+      fireEvent.submit(container.querySelector("form")!);
+      await waitFor(() => expect(request.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(true));
+      const submitted = request.mock.calls.find(([, init]) => init?.method === "PUT")?.[1]?.body as FormData;
+      expect(submitted.get("category")).toBe("Брандинг");
+      unmount();
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it("uses one confirmation while refreshing CSRF for a pending admin deletion", async () => {
+    const article = sampleArticle(6);
+    const row = { ...article, _id: article._id.toHexString() };
+    let deletes = 0;
+    const request = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") return ++deletes === 1 ? new Response(null, { status: 403 }) : Response.json({ state: "deleting", remainingCount: 0 }, { status: 202 });
+      if (url.endsWith("/csrf")) return Response.json({ csrf: "fresh" });
+      return url.endsWith("/admin") ? Response.json({ articles: [row] }) : Response.json({ article: row });
+    });
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      const { unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Редактирай Статия 6" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Изтрий статията" }));
+      await waitFor(() => expect(deletes).toBe(2));
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(request.mock.calls.filter(([, init]) => init?.method === "DELETE").map(([, init]) => (init?.headers as Record<string, string>)["x-csrf-token"])).toEqual(["test", "fresh"]);
+      expect(screen.queryByRole("button", { name: "Повтори изтриването" })).toBeNull();
+      unmount();
+    } finally { confirm.mockRestore(); vi.unstubAllGlobals(); }
+  });
+  it("deletes the selected admin-list row without opening it and refreshes after a conflict", async () => {
+    const first = sampleArticle(8);
+    const second = { ...sampleArticle(9), version: 3 };
+    const rows = [first, second].map((item) => ({ ...item, _id: item._id.toHexString() }));
+    const request = vi.fn(async (url: string, init?: RequestInit) => init?.method === "DELETE"
+      ? new Response(null, { status: 409 })
+      : Response.json({ articles: rows }));
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      const { unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Изтрий Статия 9" }));
+      expect((await screen.findByRole("alert")).textContent).toContain("Списъкът е обновен");
+      const deletion = request.mock.calls.find(([, init]) => init?.method === "DELETE");
+      expect(deletion?.[0]).toContain(second._id.toHexString());
+      expect(JSON.parse(String(deletion?.[1]?.body))).toEqual({ version: 3 });
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(confirm.mock.calls[0][0]).toContain("Статия 9");
+      expect(request.mock.calls.filter(([url, init]) => url.endsWith("/admin") && init?.method !== "DELETE")).toHaveLength(2);
+      unmount();
+    } finally { confirm.mockRestore(); vi.unstubAllGlobals(); }
+  });
+  it("reports an expired session when CSRF refresh returns 401 during list deletion", async () => {
+    const article = sampleArticle(8);
+    const row = { ...article, _id: article._id.toHexString() };
+    const request = vi.fn(async (url: string, init?: RequestInit) => init?.method === "DELETE"
+      ? new Response(null, { status: 403 })
+      : url.endsWith("/csrf") ? new Response(null, { status: 401 }) : Response.json({ articles: [row] }));
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    try {
+      const { unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Изтрий Статия 8" }));
+      expect((await screen.findByRole("alert")).textContent).toContain("Сесията е изтекла");
+      expect(request.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
+      expect(confirm).toHaveBeenCalledTimes(1);
+      unmount();
+    } finally { confirm.mockRestore(); vi.unstubAllGlobals(); }
+  });
+  it("retries image cleanup without deleting an active article", async () => {
+    const article = sampleArticle(7);
+    const row = { ...article, _id: article._id.toHexString(), pendingImageCleanup: ["unused.webp"] };
+    const request = vi.fn(async (_url: string, init?: RequestInit) => init?.method === "POST"
+      ? Response.json({ complete: true, remainingCount: 0 })
+      : Response.json({ articles: [row] }));
+    vi.stubGlobal("fetch", request);
+    vi.stubGlobal("IntersectionObserver", class { observe() {} unobserve() {} disconnect() {} });
+    try {
+      const { unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
+      fireEvent.click(await screen.findByRole("button", { name: "Повтори почистването" }));
+      expect((await screen.findByRole("status")).textContent).toContain("Старите снимки са изтрити");
+      expect(request.mock.calls.some(([url, init]) => url.endsWith("/cleanup") && init?.method === "POST")).toBe(true);
       unmount();
     } finally { vi.unstubAllGlobals(); }
   });

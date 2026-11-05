@@ -6,7 +6,7 @@ import { createApp } from "./app.js";
 import { appConfig } from "../lib/config.js";
 import { startOutboxWorker } from "./auth/outbox.js";
 import { startNewsletterWorker } from "./newsletter/service.js";
-import { startBlogStorageMonitor } from "./blog/service.js";
+import { startBlogImageCleanupWorker, startBlogStorageMonitor } from "./blog/service.js";
 
 const { loadEnvConfig } = nextEnv;
 
@@ -37,6 +37,7 @@ export async function startServer(options: {
   let stopOutbox = () => {};
   let stopNewsletter = () => {};
   let stopBlogStorage = () => {};
+  let stopBlogCleanup = () => {};
   const handler = app.getRequestHandler();
   const server = createServer(createApp(async (req, res) => { await handler(req, res); }, () => ready));
   try {
@@ -44,6 +45,7 @@ export async function startServer(options: {
     stopOutbox = startOutboxWorker();
     stopNewsletter = startNewsletterWorker();
     stopBlogStorage = startBlogStorageMonitor();
+    stopBlogCleanup = startBlogImageCleanupWorker();
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(options.port, appConfig.listenHost, () => { server.off("error", reject); ready = true; resolve(); });
@@ -52,6 +54,7 @@ export async function startServer(options: {
     stopOutbox();
     stopNewsletter();
     stopBlogStorage();
+    stopBlogCleanup();
     await app.close();
     throw error;
   }
@@ -62,6 +65,7 @@ export async function startServer(options: {
     stopOutbox();
     stopNewsletter();
     stopBlogStorage();
+    stopBlogCleanup();
     stopping = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => { server.closeAllConnections(); reject(new Error("Shutdown deadline exceeded")); }, options.shutdownMs ?? 5000);
       server.close((error) => {

@@ -8,7 +8,7 @@ import { newsletterRouter } from "./newsletter/routes.js";
 import { blogRouter } from "./blog/routes.js";
 import { getLegacyArticle } from "./blog/service.js";
 
-const localeRedirectPaths: ReadonlyArray<string> = [appConfig.paths.root, appConfig.paths.faq, appConfig.paths.contacts];
+const localeRedirectPaths: ReadonlyArray<string> = [appConfig.paths.root, appConfig.paths.faq, appConfig.paths.contacts, appConfig.paths.blog];
 
 function preferredLocale(cookieHeader: string | undefined): Locale {
   if (parseCookieChoice(cookieHeader) !== "all") return "bg";

@@ -1,15 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type Quill from "quill";
 import { appConfig, blogHexColor, blogHighlightColor, blogLinkUrl, blogTextColor, type Locale } from "@/lib/config";
-import { blogArticleUrl, blogEditorReturnUrl } from "@/lib/routing";
+import { blogArticleUrl, blogEditorReturnUrl, pageUrl } from "@/lib/routing";
 import "quill/dist/quill.snow.css";
 
-type TextFields = { title: string; subtitle?: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt?: string };
-type Article = { _id: string; slug: string; version: number; heroUrl: string; thumbnailUrl: string; locales: { bg: TextFields; en?: TextFields } };
-type ArticleRow = Pick<Article, "_id" | "slug" | "version" | "locales">;
+type TextFields = { title: string; subtitle?: string; category?: string; html: string; seoTitle: string; seoDescription: string; heroAlt: string; thumbnailAlt: string; updatedAt?: string };
+type Article = { _id: string; slug: string; version: number; heroUrl: string; thumbnailUrl: string; state?: "active" | "deleting" | "deleted"; pendingImageCleanup?: string[]; cleanupStuck?: boolean; locales: { bg: TextFields; en?: TextFields } };
+type ArticleRow = Pick<Article, "_id" | "slug" | "version" | "locales" | "state" | "pendingImageCleanup" | "cleanupStuck">;
 type PendingImage = { name: string; file: File; preview: string };
 let localImageRegistered = false;
 
@@ -164,7 +165,7 @@ function RichEditor({ initial, onChange, onImage, allowImage, locale }: { initia
   </div>;
 }
 
-const blank: TextFields = { title: "", subtitle: "", html: "", seoTitle: "", seoDescription: "", heroAlt: "", thumbnailAlt: "" };
+const blank: TextFields = { title: "", subtitle: "", category: "", html: "", seoTitle: "", seoDescription: "", heroAlt: "", thumbnailAlt: "" };
 export default function BlogAdminScreen({ locale, base, csrf, editId, invalidEdit = false }: { locale: Locale; base: string; csrf: string; editId?: string; invalidEdit?: boolean }) {
   const bg = locale === "bg";
   const [rows, setRows] = useState<ArticleRow[]>([]);
@@ -194,7 +195,7 @@ export default function BlogAdminScreen({ locale, base, csrf, editId, invalidEdi
   function start(articleValue: Article | null, selected: Locale = "bg") {
     for (const item of pending) URL.revokeObjectURL(item.preview);
     setArticle(articleValue); setLanguage(selected); setPending([]); setHero(null); setThumbnail(null); setNotice("");
-    setForm(articleValue ? { ...blank, ...(articleValue.locales[selected] ?? { ...articleValue.locales.bg, title: "", subtitle: "", seoTitle: "", seoDescription: "" }) } : { ...blank });
+    setForm(articleValue ? { ...blank, ...(articleValue.locales[selected] ?? { ...articleValue.locales.bg, title: "", subtitle: "", category: "", seoTitle: "", seoDescription: "" }) } : { ...blank });
     setEditorKey((key) => key + 1);
     setTargetBlocked(false);
     if (!articleValue) createKey.current = crypto.randomUUID();
@@ -221,7 +222,7 @@ export default function BlogAdminScreen({ locale, base, csrf, editId, invalidEdi
     let destination: string | undefined;
     try {
       const body = new FormData();
-      for (const key of ["title", "subtitle", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt"] as const) body.set(key, form[key] ?? "");
+      for (const key of ["title", "subtitle", "category", "seoTitle", "seoDescription", "heroAlt", "thumbnailAlt"] as const) body.set(key, form[key] ?? "");
       let html = form.html;
       for (const item of pending) if (html.includes(`src="${item.preview}"`)) { html = html.replaceAll(`src="${item.preview}"`, `src="pending:${item.name}"`); body.append(item.name, item.file); }
       body.set("html", html); body.set("locale", language);
@@ -234,42 +235,76 @@ export default function BlogAdminScreen({ locale, base, csrf, editId, invalidEdi
         if (refreshed.ok) { csrfRef.current = (await refreshed.json()).csrf; response = await fetch(path, { method: article ? "PUT" : "POST", credentials: "same-origin", headers: { "x-csrf-token": csrfRef.current }, body }); }
       }
       if (!response.ok) throw new Error(String(response.status));
-      const saved = (await response.json()).article as Article;
+      const saved = (await response.json()).article as Article | null;
+      if (!saved?.slug) throw new Error("409");
       destination = blogArticleUrl(saved.slug, language);
     } catch (cause) { setError(true); setNotice(String(cause) === "Error: 409" ? (bg ? "Статията е променена другаде. Заредете я отново." : "Article changed elsewhere. Reload it.") : (bg ? "Записът не успя. Проверете полетата и опитайте отново." : "Save failed. Check the fields and try again.")); }
     finally { if (!destination) setBusy(false); }
     if (destination) window.location.assign(destination);
   }
-  async function remove() {
-    if (!article || busy || !window.confirm(bg ? "Да изтрия ли статията окончателно?" : "Delete this article permanently?")) return;
+  async function remove(target: ArticleRow) {
+    if (busy) return;
+    const warning = article ? (bg ? " Незапазените промени в отворения редактор ще се загубят." : " Unsaved changes in the open editor will be lost.") : "";
+    if (!window.confirm(bg ? `Изтриване на „${target.locales.bg.title}“? Статията ще се скрие веднага, а снимките ще се изтрият.${warning}` : `Delete “${target.locales.bg.title}”? The article will be hidden now and its images deleted.${warning}`)) return;
+    setBusy(true); setNotice("");
+    let navigated = false;
+    try {
+      const send = () => fetch(`${appConfig.paths.blogApi}/admin/${target._id}`, { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json", "x-csrf-token": csrfRef.current }, body: JSON.stringify({ version: target.version }) });
+      let response = await send();
+      if (response.status === 403) {
+        const refreshed = await fetch(`${appConfig.paths.authApi}/csrf`, { credentials: "same-origin", cache: "no-store" });
+        if (refreshed.status === 401) throw new Error("401");
+        if (refreshed.ok) { csrfRef.current = (await refreshed.json()).csrf; response = await send(); }
+      }
+      if (!response.ok) throw new Error(String(response.status));
+      window.location.assign(pageUrl("blog", locale));
+      navigated = true;
+    } catch (cause) {
+      const status = cause instanceof Error ? cause.message : "";
+      const refreshed = status === "409" ? await list().then(() => true, () => false) : false;
+      setError(true);
+      setNotice(status === "401" ? (bg ? "Сесията е изтекла. Влезте отново." : "Your session expired. Sign in again.")
+        : status === "403" ? (bg ? "Достъпът е отказан. Презаредете страницата и опитайте отново." : "Access denied. Reload the page and try again.")
+        : status === "409" ? refreshed ? (bg ? "Статията е променена или изтрита. Списъкът е обновен; ако е отворена за редакция, отворете я наново от списъка." : "The article changed or was deleted. The list has been refreshed; if it is open in the editor, reopen it from the list.") : (bg ? "Статията е променена или изтрита. Презаредете страницата." : "The article changed or was deleted. Reload the page.")
+        : (bg ? "Изтриването не успя." : "Delete failed."));
+    } finally { if (!navigated) setBusy(false); }
+  }
+  async function retryCleanup(row: ArticleRow) {
+    if (busy) return;
     setBusy(true);
     try {
-      const response = await fetch(`${appConfig.paths.blogApi}/admin/${article._id}`, { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json", "x-csrf-token": csrfRef.current }, body: JSON.stringify({ version: article.version }) });
-      if (!response.ok) throw new Error("Delete failed");
-      start(null); await list(); setError(false); setNotice(bg ? "Статията е изтрита." : "Article deleted.");
-    } catch { setError(true); setNotice(bg ? "Изтриването не успя." : "Delete failed."); }
+      const send = () => fetch(`${appConfig.paths.blogApi}/admin/${row._id}/cleanup`, { method: "POST", credentials: "same-origin", headers: { "x-csrf-token": csrfRef.current } });
+      let response = await send();
+      if (response.status === 403) {
+        const refreshed = await fetch(`${appConfig.paths.authApi}/csrf`, { credentials: "same-origin", cache: "no-store" });
+        if (refreshed.ok) { csrfRef.current = (await refreshed.json()).csrf; response = await send(); }
+      }
+      if (!response.ok) throw new Error("Cleanup failed");
+      await list(); setError(false); setNotice(response.status === 202 ? (bg ? "Почистването още продължава." : "Cleanup is still running.") : (bg ? "Старите снимки са изтрити." : "Unused images deleted."));
+    } catch { setError(true); setNotice(bg ? "Повторният опит не успя." : "Retry failed."); }
     finally { setBusy(false); }
   }
   const returnUrl = blogEditorReturnUrl(article?.slug ?? null, Boolean(article?.locales.en), language, locale);
-  return <div className="auth-page"><header className="auth-header"><div className="container auth-header__inner"><Link href={base}>WebCreativeTeam</Link><Link href={base}>{bg ? "Администрация" : "Administration"}</Link></div></header>
+  return <div className="auth-page"><header className="auth-header"><div className="container auth-header__inner"><Link href={pageUrl("home", locale)} aria-label={bg ? "WebCreativeTeam — начало" : "WebCreativeTeam — home"}><Image src={appConfig.brandLogoPath} alt="" width={280} height={77} unoptimized /></Link><Link href={base}>{bg ? "Администрация" : "Administration"}</Link></div></header>
     <main className="container auth-main" id="main"><div className="auth-panel"><h1>{bg ? "Статии" : "Articles"}</h1>
       {notice && <p className={error ? "form-message" : "form-message form-message--success"} role={error ? "alert" : "status"}>{notice}</p>}
       <button type="button" className="button button--outline" onClick={() => start(null)} disabled={busy}>{bg ? "Нова статия" : "New article"}</button>
-      <ul className="auth-list">{rows.map((row) => <li key={row._id}><span>{row.locales.bg.title} {row.locales.en ? "· EN" : "· BG"}</span><span><button type="button" onClick={() => void open(row._id)} disabled={busy}>{bg ? "Редактирай" : "Edit"}</button> <button type="button" onClick={() => void open(row._id, "en")} disabled={busy}>{bg ? "Превод" : "Translation"}</button></span></li>)}</ul>
+      <ul className="auth-list">{rows.map((row) => <li key={row._id}><span>{row.locales.bg.title} {row.locales.en ? "· EN" : "· BG"}{row.pendingImageCleanup?.length ? (bg ? " · Изчаква почистване" : " · Cleanup pending") : ""}{row.cleanupStuck ? (bg ? " · Нужна е проверка" : " · Needs attention") : ""}</span><span><button type="button" aria-label={`${bg ? "Редактирай" : "Edit"} ${row.locales.bg.title}`} onClick={() => void open(row._id)} disabled={busy}>{bg ? "Редактирай" : "Edit"}</button> <button type="button" aria-label={`${bg ? "Превод на" : "Translate"} ${row.locales.bg.title}`} onClick={() => void open(row._id, "en")} disabled={busy}>{bg ? "Превод" : "Translation"}</button> <button type="button" aria-label={`${bg ? "Изтрий" : "Delete"} ${row.locales.bg.title}`} onClick={() => void remove(row)} disabled={busy}>{bg ? "Изтрий" : "Delete"}</button>{row.pendingImageCleanup?.length ? <button type="button" onClick={() => void retryCleanup(row)} disabled={busy}>{bg ? "Повтори почистването" : "Retry cleanup"}</button> : null}</span></li>)}</ul>
       {!targetBlocked && <section><h2>{article ? language === "en" ? (bg ? "Английски превод" : "English translation") : (bg ? "Редакция" : "Edit") : (bg ? "Нова статия на български" : "New article in Bulgarian")}</h2>
         {article && <p><Link href={returnUrl} target="_blank">{bg ? "Виж статията" : "View article"}</Link></p>}
         <form className="form-stack" onSubmit={(event) => void save(event)}>
           <label>{bg ? "Заглавие" : "Title"}<input value={form.title} onChange={(event) => field("title", event.target.value)} maxLength={80} required /></label>
           <label>{bg ? "Подзаглавие" : "Subtitle"}<input value={form.subtitle ?? ""} onChange={(event) => field("subtitle", event.target.value)} maxLength={240} required={!article || (language === "en" && !article.locales.en) || Boolean(article.locales[language]?.subtitle)} /></label>
+          <label>{bg ? "Категория" : "Category"}<input value={form.category ?? ""} onChange={(event) => field("category", event.target.value)} maxLength={60} required={!article || (language === "en" && !article.locales.en) || Boolean(article.locales[language]?.category)} /></label>
           <label>SEO title<input value={form.seoTitle} onChange={(event) => field("seoTitle", event.target.value)} maxLength={70} required /></label>
           <label>SEO description<textarea value={form.seoDescription} onChange={(event) => field("seoDescription", event.target.value)} maxLength={160} required /></label>
           <label>{bg ? "Alt за основното изображение" : "Main image alt"}<input value={form.heroAlt} onChange={(event) => field("heroAlt", event.target.value)} maxLength={180} required /></label>
           <label>{bg ? "Alt за миниатюрата" : "Thumbnail alt"}<input value={form.thumbnailAlt} onChange={(event) => field("thumbnailAlt", event.target.value)} maxLength={180} required /></label>
-          {language === "bg" && <><label>{bg ? "Основно изображение" : "Main image"}<input type="file" accept="image/jpeg,image/png,image/webp" required={!article} onChange={(event) => setHero(event.target.files?.[0] ?? null)} /></label><label>{bg ? "Миниатюра" : "Thumbnail"}<input type="file" accept="image/jpeg,image/png,image/webp" required={!article} onChange={(event) => setThumbnail(event.target.files?.[0] ?? null)} /></label></>}
+          {language === "bg" && <><label>{bg ? "Основно изображение" : "Main image"}<input type="file" accept="image/jpeg,image/png,image/webp" required={!article} onChange={(event) => setHero(event.target.files?.[0] ?? null)} /></label><label>{bg ? "Миниатюра" : "Thumbnail"}<input type="file" accept="image/jpeg,image/png,image/webp" required={!article} onChange={(event) => setThumbnail(event.target.files?.[0] ?? null)} /><small className="form-hint">{bg ? "Препоръчително съотношение 2:1 за картата в блога." : "Recommended 2:1 ratio for the blog card."}</small></label></>}
           <div><label>{bg ? "Съдържание" : "Content"}</label><RichEditor key={editorKey} initial={form.html} onChange={(html) => field("html", html)} onImage={addImage} allowImage={language === "bg"} locale={locale} /></div>
           <button className="button button--orange" disabled={busy}>{busy ? (bg ? "Записване…" : "Saving…") : (bg ? "Запази" : "Save")}</button>
           <button type="button" className="button button--outline" disabled={busy} aria-label={bg ? "Отказ от редакцията" : "Cancel article editing"} onClick={() => window.location.assign(returnUrl)}>{bg ? "Отказ" : "Cancel"}</button>
-          {article && <button type="button" className="button button--outline" disabled={busy} onClick={() => void remove()}>{bg ? "Изтрий статията" : "Delete article"}</button>}
+          {article && <button type="button" className="button button--outline" disabled={busy} onClick={() => void remove(article)}>{bg ? "Изтрий статията" : "Delete article"}</button>}
         </form>
       </section>}</div></main>
   </div>;

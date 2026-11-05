@@ -49,17 +49,20 @@ function imageList(raw: LegacyArticle): { html: string; sources: { name: string;
   });
   return { html, sources };
 }
-export async function runMigration(databaseName: string, execute = false) {
+export async function runMigration(databaseName: string, execute = false, allowedLegacyIds?: ReadonlySet<string>) {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(databaseName) || databaseName.startsWith("wct_2026") || ["admin", "local", "config"].includes(databaseName.toLowerCase())) throw new Error("Invalid legacy database name");
   if (!bucketName()) throw new Error("Blog bucket name is not configured");
   const connection = await authConnection();
   if (databaseName === connection.db.databaseName) throw new Error("Source and destination databases must differ");
   const owner = await authCollections(connection.db).control.findOne({ _id: "singleton" });
   if (!owner?.ownerUserId) throw new Error("Blog migration requires an active owner");
+  if (execute && owner.blogMigrationClosed && !allowedLegacyIds?.size) throw new Error("Legacy migration requires an explicit allowed ID list");
   const source = connection.client.db(databaseName).collection<LegacyArticle>(appConfig.blog.collection);
   let checked = 0, imported = 0, skipped = 0, failed = 0;
   const ids = await source.find({}, { projection: { _id: 1 } }).map((record) => record._id).toArray();
   for (const id of ids) {
+    if (allowedLegacyIds && !(id instanceof ObjectId)) { failed++; continue; }
+    if (allowedLegacyIds && !allowedLegacyIds.has(id.toHexString())) { skipped++; continue; }
     const raw = await source.findOne({ _id: id });
     if (!raw) { failed++; continue; }
     if (!(raw._id instanceof ObjectId)) { failed++; continue; }
@@ -70,7 +73,7 @@ export async function runMigration(databaseName: string, execute = false) {
       const files: Upload[] = [];
       for (const sourceImage of sources) files.push({ name: sourceImage.name, bytes: await fetchImage(sourceImage.url) });
       checked++;
-      if (execute) { if (await importLegacyArticle(raw, owner.ownerUserId, files, html)) imported++; else skipped++; }
+      if (execute) { if (await importLegacyArticle(raw, owner.ownerUserId, files, html, allowedLegacyIds)) imported++; else skipped++; }
     } catch (error) {
       failed++;
       console.warn("Legacy article skipped", { id: raw._id.toHexString(), reason: error instanceof BlogError ? error.message : "Validation or network failure" });
@@ -82,7 +85,11 @@ export async function runMigration(databaseName: string, execute = false) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   loadEnvConfig(process.cwd(), process.env.NODE_ENV === "development");
-  const [mode, databaseName] = process.argv.slice(2);
-  if (!databaseName || mode !== "dry-run" && mode !== "execute") { console.error("Usage: npm run blog:migrate:dev -- dry-run|execute LEGACY_DB_NAME"); process.exitCode = 2; }
-  else void runMigration(databaseName, mode === "execute").catch((error: unknown) => { console.error("Blog migration failed", { name: error instanceof Error ? error.name : "Unknown" }); process.exitCode = 1; }).finally(() => void closeAuthConnection());
+  const [mode, databaseName, allowArgument, ...extra] = process.argv.slice(2);
+  const rawAllowed = allowArgument?.startsWith("--allow-ids=") ? allowArgument.slice("--allow-ids=".length) : undefined;
+  const allowed = rawAllowed?.split(",");
+  if (!databaseName || mode !== "dry-run" && mode !== "execute" || extra.length || allowArgument && !rawAllowed || allowed && (!allowed.length || allowed.some((id) => !/^[a-f0-9]{24}$/.test(id)) || new Set(allowed).size !== allowed.length)) {
+    console.error("Usage: npm run blog:migrate:dev -- dry-run|execute LEGACY_DB_NAME [--allow-ids=OBJECT_ID,OBJECT_ID]"); process.exitCode = 2;
+  }
+  else void runMigration(databaseName, mode === "execute", allowed ? new Set(allowed) : undefined).catch((error: unknown) => { console.error("Blog migration failed", { name: error instanceof Error ? error.name : "Unknown" }); process.exitCode = 1; }).finally(() => void closeAuthConnection());
 }
