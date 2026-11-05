@@ -229,7 +229,18 @@ export function blogHighlightColor(value: string): string | null {
 
 export function blogLinkUrl(value: string): string | null {
   const url = value.trim();
-  if (!url || /[\p{Cc}\p{Cf}]/u.test(url) || !/^(?:https?:\/\/|mailto:)/i.test(url)) return null;
+  if (!url || /[\p{Cc}\p{Cf}]/u.test(url)) return null;
+  if (url.startsWith("/")) {
+    if (url.startsWith("//") || /[\s\\]/u.test(url) || /%(?![0-9a-f]{2})/iu.test(url)) return null;
+    const path = url.split(/[?#]/u, 1)[0];
+    try {
+      const decoded = decodeURIComponent(url);
+      const decodedPath = decodeURIComponent(path);
+      if (/[\p{Cc}\p{Cf}\\]/u.test(decoded) || /%2f/iu.test(path) || decodedPath.split("/").some((segment) => segment === "." || segment === "..")) return null;
+    } catch { return null; }
+    return url;
+  }
+  if (!/^(?:https?:\/\/|mailto:)/i.test(url)) return null;
   try {
     const parsed = new URL(url);
     if ((parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.hostname && !parsed.username && !parsed.password) return parsed.href;

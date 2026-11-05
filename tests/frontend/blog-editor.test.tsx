@@ -105,7 +105,7 @@ describe("Quill article formats", () => {
     expect(blogEditorReturnUrl("example", false, "en", "en")).toBe("/blog/example/bg");
     expect(blogEditorReturnUrl(null, false, "bg", "en")).toBe("/blog/en");
   });
-  it("validates the shared color palette and link schemes", () => {
+  it("validates the shared color palette and safe link destinations", () => {
     expect(blogTextColor("rgb(23, 76, 56)")).toBe("#174c38");
     expect(blogTextColor("rgb(255, 0, 0)")).toBeNull();
     expect(blogTextColor("var(--color-green)")).toBe("var(--color-green)");
@@ -123,7 +123,8 @@ describe("Quill article formats", () => {
     expect(blogLinkUrl("https://example.com/path")).toBe("https://example.com/path");
     expect(blogLinkUrl("https://example.com/a b")).toBe("https://example.com/a%20b");
     expect(blogLinkUrl("mailto:team@example.com")).toBe("mailto:team@example.com");
-    for (const url of ["www.example.com", "tel:+359123", "javascript:alert(1)", "https://user:pass@example.com", "https://example.com/\u200bpath"]) expect(blogLinkUrl(url)).toBeNull();
+    for (const url of ["/contacts", "/contacts/bg", "/blog/article/en?page=2#details", "/контакти"]) expect(blogLinkUrl(url)).toBe(url);
+    for (const url of ["www.example.com", "tel:+359123", "javascript:alert(1)", "https://user:pass@example.com", "https://example.com/\u200bpath", "//evil.com", "/.//evil.com", "/%2e//evil.com", "/..//evil.com", "/blog/../..//evil.com", "/%2E%2E/x", "/a/%2F/b", "/.", "/%2f%2fevil.com", "/%5cevil.com", "/\\evil.com", "/foo bar", "/foo%0abar", "/bad%zz"]) expect(blogLinkUrl(url)).toBeNull();
   });
   it("keeps every editor token backed by a global six-digit color", () => {
     const css = readFileSync("styles/globals.css", "utf8");
@@ -240,6 +241,7 @@ describe("Quill article formats", () => {
     host.remove();
   });
   it("applies a link without submitting the outer article form", async () => {
+    const { default: Quill } = await import("quill");
     const request = vi.fn(async (url: string, init?: RequestInit) => {
       if (!url.endsWith("/admin") || init?.method) throw new Error(`Unexpected request ${url}`);
       return new Response(JSON.stringify({ articles: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -249,16 +251,38 @@ describe("Quill article formats", () => {
     try {
       const { container, unmount } = render(<BlogAdminScreen locale="bg" base="/admin" csrf="test" />);
       await waitFor(() => expect(container.querySelector(".ql-link")).not.toBeNull());
+      const linkButton = container.querySelector(".ql-link");
+      expect(linkButton).toHaveAttribute("aria-label", "Добави или редактирай линк");
+      const hintId = linkButton?.getAttribute("aria-describedby");
+      expect(hintId).toBeTruthy();
+      expect(document.getElementById(hintId!)).toHaveTextContent(/За линк маркирайте текст или поставете курсора/);
       expect(screen.getByRole("button", { name: "Отказ от редакцията" })).toHaveAttribute("type", "button");
       expect(container.querySelector('.ql-color .ql-picker-item[data-value="var(--brand-orange)"]')).toHaveAttribute("aria-label", "Бранд оранжево");
       expect(container.querySelector('.ql-background .ql-picker-item[data-value="var(--brand-orange)"]')).toHaveAttribute("aria-label", "Маркиране: Бранд оранжево");
       expect(screen.getByText(/Ярките цветове може да са трудно четими/)).not.toBeNull();
-      fireEvent.click(container.querySelector(".ql-link")!);
+      fireEvent.click(linkButton!);
       expect(container.querySelectorAll("form")).toHaveLength(1);
       fireEvent.change(screen.getByLabelText("Текст на линка"), { target: { value: "Example" } });
-      fireEvent.change(screen.getByLabelText("Адрес на линка"), { target: { value: "https://example.com" } });
+      const address = screen.getByLabelText("Адрес на линка");
+      expect(address).toHaveAttribute("aria-describedby", hintId);
+      fireEvent.change(address, { target: { value: "//evil.com" } });
       fireEvent.click(screen.getByRole("button", { name: "Добави линк" }));
-      expect(container.querySelector('.ql-editor a[href="https://example.com/"]')?.textContent).toBe("Example");
+      const error = screen.getByRole("alert");
+      expect(error).toHaveTextContent("/contacts");
+      expect(address.getAttribute("aria-describedby")?.split(" ")).toEqual([hintId, error.id]);
+      fireEvent.change(address, { target: { value: "/contacts" } });
+      fireEvent.click(screen.getByRole("button", { name: "Добави линк" }));
+      expect(container.querySelector('.ql-editor a[href="/contacts"]')?.textContent).toBe("Example");
+      const editor = Quill.find(container.querySelector(".ql-container")!);
+      if (!(editor instanceof Quill)) throw new Error("Editor did not initialize");
+      expect(editor.getContents().ops.some((op) => op.attributes?.link === "/contacts")).toBe(true);
+      const saved = cleanHtml(editor.getSemanticHTML(), new ObjectId("507f1f77bcf86cd799439011"));
+      expect(saved).toContain('href="/contacts"');
+      expect(saved).not.toContain('target="_blank"');
+      editor.setText("", "silent");
+      editor.clipboard.dangerouslyPasteHTML(saved, "silent");
+      expect(editor.getContents().ops.some((op) => op.attributes?.link === "/contacts")).toBe(true);
+      expect(cleanHtml(editor.getSemanticHTML(), new ObjectId("507f1f77bcf86cd799439011"))).toBe(saved);
       expect(request.mock.calls.every(([, init]) => !init?.method)).toBe(true);
       unmount();
     } finally { vi.unstubAllGlobals(); }
@@ -276,6 +300,9 @@ describe("Quill article formats", () => {
           await waitFor(() => expect(container.querySelector(".ql-container")).not.toBeNull());
           const quill = Quill.find(container.querySelector(".ql-container")!);
           if (!(quill instanceof Quill)) throw new Error("Editor did not initialize");
+          const linkButton = container.querySelector(".ql-link");
+          expect(linkButton).toHaveAttribute("aria-label", locale === "bg" ? "Добави или редактирай линк" : "Add or edit link");
+          expect(document.getElementById(linkButton?.getAttribute("aria-describedby") ?? "")).toHaveTextContent(locale === "bg" ? "Не пишете HTML тагове." : "Do not type HTML tags.");
           const swatch = container.querySelector<HTMLElement>('.ql-color .ql-picker-item[data-value="var(--brand-orange)"]');
           expect(swatch).toHaveAttribute("aria-label", locale === "bg" ? "Бранд оранжево" : "Brand orange");
           quill.insertText(0, "Orange", "user");

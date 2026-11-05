@@ -167,6 +167,7 @@ export function cleanHtml(value: unknown, articleId: ObjectId): string {
       a: (_tag, attrs) => {
         const href = blogLinkUrl(attrs.href ?? "");
         if (!href) return { tagName: "span", attribs: safeInlineStyle(attrs) };
+        if (href.startsWith("/")) return { tagName: "a", attribs: { href, ...safeInlineStyle(attrs) } };
         return { tagName: "a", attribs: { href, rel: "noopener noreferrer", target: "_blank", ...safeInlineStyle(attrs) } };
       },
     },

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type Quill from "quill";
 import { appConfig, blogHexColor, blogHighlightColor, blogLinkUrl, blogTextColor, type Locale } from "@/lib/config";
 import { blogArticleUrl, blogEditorReturnUrl, pageUrl } from "@/lib/routing";
@@ -16,6 +16,9 @@ let localImageRegistered = false;
 
 function RichEditor({ initial, onChange, onImage, allowImage, locale }: { initial: string; onChange: (html: string) => void; onImage: (file: File, preview: string) => void; allowImage: boolean; locale: Locale }) {
   const host = useRef<HTMLDivElement>(null);
+  const linkId = useId();
+  const linkHintId = `${linkId}-hint`;
+  const linkErrorId = `${linkId}-error`;
   const editor = useRef<Quill | null>(null);
   const linkRange = useRef<{ index: number; length: number } | null>(null);
   const [linkForm, setLinkForm] = useState<{ href: string; text: string; error: string } | null>(null);
@@ -91,6 +94,11 @@ function RichEditor({ initial, onChange, onImage, allowImage, locale }: { initia
       }
       labelPicker("color", [...appConfig.blog.textColors, ...appConfig.blog.globalTextColors], locale === "bg" ? "Цвят на текста" : "Text color", locale === "bg" ? "Стандартен цвят" : "Default color");
       labelPicker("background", appConfig.blog.highlightColors, locale === "bg" ? "Маркиране на текста" : "Text highlight", locale === "bg" ? "Без маркировка" : "No highlight");
+      const linkButton = toolbarElement?.querySelector<HTMLButtonElement>(".ql-link");
+      const linkLabel = locale === "bg" ? "Добави или редактирай линк" : "Add or edit link";
+      linkButton?.setAttribute("aria-label", linkLabel);
+      linkButton?.setAttribute("title", linkLabel);
+      linkButton?.setAttribute("aria-describedby", linkHintId);
       toolbar.addHandler("link", () => {
         const selection = quill.getSelection(true);
         if (!selection) return;
@@ -144,7 +152,7 @@ function RichEditor({ initial, onChange, onImage, allowImage, locale }: { initia
     const range = linkRange.current;
     if (!quill || !range || !linkForm) return;
     const href = blogLinkUrl(linkForm.href);
-    if (!href) { setLinkForm({ ...linkForm, error: locale === "bg" ? "Въведете пълен http://, https:// или mailto: адрес. За www адрес добавете https://." : "Enter a full http://, https:// or mailto: address. Add https:// before www addresses." }); return; }
+    if (!href) { setLinkForm({ ...linkForm, error: locale === "bg" ? "Въведете вътрешен адрес като /contacts или пълен http://, https:// или mailto: адрес. За www добавете https://." : "Enter an internal path like /contacts or a full http://, https:// or mailto: address. Add https:// before www addresses." }); return; }
     if (!range.length && !linkForm.text.trim()) { setLinkForm({ ...linkForm, error: locale === "bg" ? "Въведете текст за линка." : "Enter link text." }); return; }
     if (range.length) quill.formatText(range.index, range.length, "link", href, "user");
     else quill.insertText(range.index, linkForm.text.trim(), { link: href }, "user");
@@ -154,10 +162,11 @@ function RichEditor({ initial, onChange, onImage, allowImage, locale }: { initia
   const onLinkEnter = (event: React.KeyboardEvent<HTMLInputElement>) => { if (event.key === "Enter") { event.preventDefault(); event.stopPropagation(); applyLink(); } };
   return <div className="blog-rich-editor"><div ref={host} role="group" aria-label={locale === "bg" ? "Съдържание на статията" : "Article content"} />
     <p className="blog-rich-editor__color-hint">{locale === "bg" ? "Ярките цветове може да са трудно четими върху светъл фон. При маркиране текстът става тъмен; за четим оранжев текст изберете „Тъмнооранжево“." : "Bright colors can be hard to read on a light background. Highlighted text appears dark; choose Deep orange for readable orange text."}</p>
+    <p id={linkHintId} className="blog-rich-editor__color-hint">{locale === "bg" ? "За линк маркирайте текст или поставете курсора, натиснете бутона за линк и въведете адрес, например /contacts. Не пишете HTML тагове." : "To add a link, select text or place the cursor, press the link button and enter an address such as /contacts. Do not type HTML tags."}</p>
     {linkForm && <div className="blog-rich-editor__link" role="group" aria-label={locale === "bg" ? "Вмъкване на линк" : "Insert link"}>
       {!linkRange.current?.length && <label>{locale === "bg" ? "Текст на линка" : "Link text"}<input value={linkForm.text} onKeyDown={onLinkEnter} onChange={(event) => setLinkForm({ ...linkForm, text: event.target.value, error: "" })} /></label>}
-      <label>{locale === "bg" ? "Адрес на линка" : "Link address"}<input type="text" value={linkForm.href} onKeyDown={onLinkEnter} onChange={(event) => setLinkForm({ ...linkForm, href: event.target.value, error: "" })} aria-invalid={Boolean(linkForm.error)} aria-describedby={linkForm.error ? "blog-link-error" : undefined} autoFocus /></label>
-      {linkForm.error && <p id="blog-link-error" role="alert">{linkForm.error}</p>}
+      <label>{locale === "bg" ? "Адрес на линка" : "Link address"}<input type="text" value={linkForm.href} onKeyDown={onLinkEnter} onChange={(event) => setLinkForm({ ...linkForm, href: event.target.value, error: "" })} aria-invalid={Boolean(linkForm.error)} aria-describedby={linkForm.error ? `${linkHintId} ${linkErrorId}` : linkHintId} autoFocus /></label>
+      {linkForm.error && <p id={linkErrorId} role="alert">{linkForm.error}</p>}
       <div><button type="button" className="button button--orange" onClick={applyLink}>{locale === "bg" ? "Добави линк" : "Apply link"}</button>
         {linkRange.current?.length ? <button type="button" className="button button--outline" onClick={() => { const range = linkRange.current; if (range) editor.current?.formatText(range.index, range.length, "link", false, "user"); setLinkForm(null); editor.current?.focus({ preventScroll: true }); }}>{locale === "bg" ? "Премахни линка" : "Remove link"}</button> : null}
         <button type="button" className="button button--outline" onClick={() => { setLinkForm(null); editor.current?.focus({ preventScroll: true }); }}>{locale === "bg" ? "Отказ" : "Cancel"}</button></div>

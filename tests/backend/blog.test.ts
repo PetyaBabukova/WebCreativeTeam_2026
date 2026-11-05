@@ -35,6 +35,17 @@ describe("blog HTML boundary", () => {
     expect(html).not.toMatch(/script|onclick|javascript|alert/);
     expect(html).toContain("link");
   });
+  it("keeps safe internal links in the same tab and rejects disguised external paths", () => {
+    const internal = cleanHtml('<p><a href="/contacts" target="_blank" rel="noopener">Contact</a> <a href="https://example.com/">External</a></p>', id);
+    expect(internal).toContain('<a href="/contacts">Contact</a>');
+    expect(internal).toContain('href="https://example.com/" rel="noopener noreferrer" target="_blank"');
+    expect(cleanHtml(internal, id)).toBe(internal);
+    for (const href of ["//evil.com", "/.//evil.com", "/%2e//evil.com", "/..//evil.com", "/blog/../..//evil.com", "/%2E%2E/x", "/a/%2F/b", "/.", "/%2f%2fevil.com", "/%5cevil.com", "/&#47;/evil.com", "&#x2F;&#x2F;evil.com", "javascript:alert(1)"]) {
+      const cleaned = cleanHtml(`<p><a href="${href}">Unsafe destination</a></p>`, id);
+      expect(cleaned).not.toContain("<a ");
+      expect(cleaned).toContain("Unsafe destination");
+    }
+  });
   it("accepts only images from the same article with alt text", () => {
     vi.stubEnv("BLOG_GCS_BUCKET", "blog-test");
     expect(cleanHtml(`<p>Text</p><img src="${ownImage}" alt="Example">`, id)).toContain(ownImage);
