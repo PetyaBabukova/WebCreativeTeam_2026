@@ -1,0 +1,56 @@
+.site-page.site-page--about { background: #000; }
+.site-page.site-page--about .site-header { background: #000; }
+.about-intro { position: relative; height: 160svh; background: #000; color: #fff; }
+.about-intro__stage { position: sticky; top: 0; display: grid; place-items: center; height: 100svh; overflow: clip; }
+.about-intro__canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+.about-intro__logo-anchor { position: relative; width: min(88vw, 92rem, 211.22svh); aspect-ratio: 2112.2 / 578.7; }
+.about-intro__static-logo { display: block; width: 100%; height: 100%; object-fit: contain; }
+.about-intro__logo-fallback { display: none; place-items: center; width: 100%; height: 100%; color: #fff; font-size: clamp(2.2rem, 8vw, 8rem); font-weight: 750; letter-spacing: -.04em; }
+.about-intro[data-logo-failed] .about-intro__static-logo { display: none; }
+.about-intro[data-logo-failed] .about-intro__logo-fallback { display: grid; }
+.about-intro__counter { position: absolute; left: 50%; top: 50%; display: none; color: #fff; font-size: clamp(5rem, 18vw, 17rem); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.08em; white-space: nowrap; transform: translate(-50%, -50%); pointer-events: none; }
+.about-scroll { position: absolute; right: var(--gutter); bottom: max(2rem, env(safe-area-inset-bottom)); z-index: 2; display: flex; align-items: center; gap: clamp(.8rem, 2vw, 1.5rem); min-height: 5.5rem; padding: .5rem; color: #fff; text-decoration: none; }
+.about-scroll__caption { max-width: 8rem; font-size: clamp(.9rem, 1.3vw, 1.1rem); font-weight: 650; line-height: 1.2; text-align: right; }
+.about-scroll__arrow { display: block; width: clamp(3.5rem, 8vw, 7rem); height: clamp(3.5rem, 8vw, 7rem); fill: #ff6600; animation: about-arrow-colors 5s ease-in-out infinite alternate; }
+.about-scroll:hover .about-scroll__caption, .about-scroll:focus-visible .about-scroll__caption { text-decoration: underline; text-decoration-color: #ff6600; text-underline-offset: .3em; }
+.about-scroll:focus-visible { outline: 2px solid #ff6600; outline-offset: 3px; }
+.site-page--about[data-about-active] .about-intro[data-about-phase="counter"] .about-scroll__arrow { animation: about-arrow-entry .6s ease-out both, about-arrow-colors 5s ease-in-out infinite alternate; }
+@keyframes about-arrow-entry { from { translate: 30vw 0; } to { translate: 0 0; } }
+@keyframes about-arrow-colors { 0% { fill: #ff6600; } 50% { fill: #a3db64; } 100% { fill: #42b899; } }
+.about-intro__flight-logo { position: fixed; z-index: 21; top: 0; left: 0; display: block; width: 1px; height: 1px; opacity: 0; transform-origin: 0 0; pointer-events: none; will-change: transform; }
+.about-intro__flight-logo img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; }
+.about-intro__flight-word { clip-path: inset(0 0 0 27%); opacity: 0; }
+.about-intro__flight-propeller { clip-path: inset(0 73% 0 0); opacity: 0; }
+html[data-about-boot] .site-page--about .site-header__brand img,
+.site-page--about[data-about-active] .site-header__brand img { opacity: var(--about-header-opacity, 0); }
+html[data-about-boot] .about-intro__static-logo,
+.site-page--about[data-about-active] .about-intro__static-logo { opacity: 0; }
+html[data-about-boot] .about-intro__counter,
+.site-page--about[data-about-active] .about-intro__counter { display: block; }
+.site-page--about[data-about-active] .about-intro[data-about-phase="swirl"] .about-intro__counter,
+.site-page--about[data-about-active] .about-intro[data-about-phase="word"] .about-intro__counter,
+.site-page--about[data-about-active] .about-intro[data-about-phase="propeller"] .about-intro__counter,
+.site-page--about[data-about-active] .about-intro[data-about-phase="logo"] .about-intro__counter { display: none; }
+.site-page--about[data-about-ready] .about-intro__flight-logo { opacity: 1; }
+.about-content { position: relative; background: #000; color: #fff; outline: none; isolation: isolate; }
+.about-content__scene { position: sticky; top: 0; z-index: -1; height: 100svh; margin-bottom: -100svh; overflow: hidden; background: radial-gradient(ellipse at var(--about-glow-left, 22%) 35%, #15331b70, transparent 42%), radial-gradient(ellipse at var(--about-glow-right, 76%) 65%, #5f2a0d57, transparent 42%); }
+.about-content__scene canvas { display: block; width: 100%; height: 100%; }
+.about-content__inner { position: relative; padding-block: clamp(6rem, 12vw, 11rem) clamp(8rem, 14vw, 14rem); }
+.about-content__inner::after { content: ""; position: absolute; z-index: -1; inset: auto 0 0; height: 35svh; background: linear-gradient(transparent, var(--color-deep)); pointer-events: none; }
+.about-content h1 { margin: 0 0 clamp(4rem, 9vw, 9rem); color: #fff; font-size: clamp(3.25rem, 8vw, 9rem); line-height: .95; letter-spacing: -.055em; overflow-wrap: anywhere; scroll-margin-top: calc(var(--site-header-compact-height) + 2rem); }
+.about-content h1:focus { outline: none; }
+.about-message { display: grid; grid-template-columns: minmax(3rem, 12%) minmax(0, 1fr); align-items: center; min-height: 90svh; gap: clamp(1rem, 4vw, 5rem); padding-block: clamp(2rem, 5vw, 5rem); }
+.about-message__index { color: #ff9a42; font-size: clamp(1.1rem, 2vw, 1.5rem); font-weight: 700; }
+.about-message p { max-width: 21ch; margin: 0; color: #fff; font-size: clamp(2.5rem, 6.6vw, 7rem); font-weight: 650; line-height: 1.06; letter-spacing: -.035em; }
+.about-message:nth-of-type(even) p { color: #a3db64; }
+.about-content[data-about-motion] .about-message p,
+.about-content[data-about-motion] .about-message__index { transform: translate3d(var(--about-message-x, 0px), 0, 0); opacity: var(--about-message-opacity, 1); }
+@media (width <= 47.5rem) {
+  .about-intro__logo-anchor { width: min(90vw, 131.4svh); }
+  .about-intro__counter { font-size: clamp(4.2rem, 20vw, 7rem); }
+  .about-scroll { right: var(--gutter); bottom: max(1.5rem, env(safe-area-inset-bottom)); min-height: 4rem; }
+  .about-scroll__caption { max-width: 6rem; }
+  .about-content h1 { font-size: clamp(2.25rem, 10vw, 3.6rem); }
+  .about-message { grid-template-columns: 1fr; align-content: center; min-height: 75svh; gap: 1.25rem; }
+  .about-message p { font-size: clamp(2.35rem, 10vw, 4.5rem); }
+}

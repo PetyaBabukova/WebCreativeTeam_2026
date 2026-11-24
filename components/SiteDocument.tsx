@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { headers } from "next/headers";
 import { Sofia_Sans } from "next/font/google";
 import { messages } from "@/lib/messages";
-import type { Locale } from "@/lib/routing";
+import { appConfig } from "@/lib/config";
+import { pageUrl, type Locale } from "@/lib/routing";
 import "@/styles/globals.css";
 
 const sofiaSans = Sofia_Sans({ subsets: ["latin", "cyrillic"], display: "swap", variable: "--font-sofia-sans" });
@@ -20,8 +21,13 @@ const noScriptHeroVisibility = ".hero__headline-line,.hero__lede,.hero-orb__entr
 
 export default async function SiteDocument({ locale, children }: { locale: Locale; children: ReactNode }) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
-  return <html lang={locale}><body className={sofiaSans.variable}>
-    <script nonce={nonce} dangerouslySetInnerHTML={{ __html: reloadStartsAtTop }} />
+  // The first About frame is established before its server-rendered header can paint.
+  // A single deadline reveals the static logo if hydration or Canvas preparation stalls.
+  const aboutPath = JSON.stringify(pageUrl("about", locale));
+  const consentPrefix = JSON.stringify(`${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.`);
+  const aboutBoot = `(()=>{try{if(location.pathname!==${aboutPath}||location.hash||scrollY>1)return;const prefix=${consentPrefix};if(!document.cookie.split(";").some(c=>{const v=c.trim();return v===prefix+"all"||v===prefix+"necessary"}))return;const h=document.documentElement;h.setAttribute("data-about-boot","");const deadline=performance.now()+3000;window.__aboutBootDeadline=deadline;window.__aboutBootTimer=setTimeout(()=>{h.removeAttribute("data-about-boot");window.__aboutBootTimer=undefined},3000)}catch(e){}})()`;
+  return <html lang={locale} suppressHydrationWarning><body className={sofiaSans.variable}>
+    <script nonce={nonce} dangerouslySetInnerHTML={{ __html: `${reloadStartsAtTop};${aboutBoot}` }} />
     <noscript><style>{noScriptHeroVisibility}</style></noscript>
     <a className="skip-link" href="#main">{messages[locale].skip}</a>
     {children}

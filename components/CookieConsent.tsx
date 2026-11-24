@@ -37,8 +37,8 @@ function writeChoice(choice: CookieChoice) {
   window.dispatchEvent(new Event(appConfig.cookieChoice.eventName));
 }
 
-export function CookieConsentProvider({ locale, autoOpen, inline, children }: {
-  locale: Locale; autoOpen: boolean; inline: boolean; children: ReactNode;
+export function CookieConsentProvider({ locale, autoOpen, inline, fallbackFocusId = "main", children }: {
+  locale: Locale; autoOpen: boolean; inline: boolean; children: ReactNode; fallbackFocusId?: string;
 }) {
   const copy = messages[locale].cookies;
   const dialog = useRef<HTMLDialogElement>(null);
@@ -106,7 +106,7 @@ export function CookieConsentProvider({ locale, autoOpen, inline, children }: {
     }
     setChoice(parseCookieChoice(document.cookie) ?? pageChoice.current);
     if (opener.current?.isConnected) opener.current.focus();
-    else document.getElementById("main")?.focus();
+    else document.getElementById(fallbackFocusId)?.focus();
     opener.current = null;
     manuallyOpened.current = false;
   };

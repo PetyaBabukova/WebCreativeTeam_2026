@@ -33,6 +33,7 @@ import { CookieConsentLink, CookieConsentProvider, CookiePolicyPage } from "./Co
 import PrivacyContent from "./PrivacyContent";
 import { PrivacyModalLink, PrivacyModalProvider } from "./PrivacyModal";
 import FaqPage from "./FaqPage";
+import AboutPage from "./AboutPage";
 import ContactPage from "./ContactPage";
 import { StatusNoticeProvider } from "./StatusNotice";
 import HeroMotion from "./HeroOrb";
@@ -175,9 +176,9 @@ function SiteFooter({ locale, route, languageUrls }: { locale: Locale; route: Si
 
 export default function SitePage({ locale, page, content, languageUrls }: { locale: Locale; page: Page; content?: ReactNode; languageUrls?: Partial<Record<Locale, string>> }) {
   const copy = messages[locale];
-  return <PrivacyModalProvider locale={locale} enabled={page !== "privacy"} title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen={page !== "privacy" && page !== "cookies"} inline={page === "cookies"}><StatusNoticeProvider><div className={`site-page site-page--${page}`}>
+  return <PrivacyModalProvider locale={locale} enabled={page !== "privacy"} title={copy.privacy.title} closeLabel={copy.privacy.closeLabel} loadingLabel={copy.privacy.loadingLabel}><CookieConsentProvider locale={locale} autoOpen={page !== "privacy" && page !== "cookies"} inline={page === "cookies"} fallbackFocusId={page === "about" ? "about-scroll-link" : "main"}><StatusNoticeProvider><div className={`site-page site-page--${page}`}>
     <SiteHeader locale={locale} page={page} languageUrls={languageUrls} />
-    {content ?? (page === "home" ? <HomePage locale={locale} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : page === "privacy" ? <PrivacyPage locale={locale} /> : page === "cookies" ? <CookiePolicyPage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
+    {content ?? (page === "home" ? <HomePage locale={locale} /> : page === "about" ? <AboutPage key={locale} copy={copy.about} /> : page === "faq" ? <FaqPage locale={locale} copy={copy.faq} /> : page === "contacts" ? <ContactPage locale={locale} copy={copy.contacts} serviceNames={copy.serviceLinks} /> : page === "privacy" ? <PrivacyPage locale={locale} /> : page === "cookies" ? <CookiePolicyPage locale={locale} /> : <main id="main" className="container standard-page" tabIndex={-1}>
       <h1>{copy[page].title}</h1>
       {copy[page].description && <p>{copy[page].description}</p>}
     </main>)}
