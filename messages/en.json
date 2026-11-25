@@ -180,7 +180,7 @@
     }
   },
   "home": { "title": "Digital Agency for Business Success", "description": "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth." },
-  "about": { "title": "About WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences.", "introLabel": "Intro", "scrollCue": "Scroll to explore", "messages": ["Lorem ipsum dolor sit amet.", "Consectetur adipiscing elit.", "Sed do eiusmod tempor incididunt.", "Ut labore et dolore magna aliqua."] },
+  "about": { "title": "About WebCreativeTeam", "titlePrefix": "About", "titleBrand": "WebCreativeTeam", "description": "We connect creative thinking with carefully built digital experiences.", "introLabel": "Intro", "scrollCue": "Next section", "backgroundPause": "Pause background", "backgroundPlay": "Play background", "messages": ["We are a small team with different personalities, a shared passion and big ideas.", "We love challenges, unconventional solutions and making the impossible possible.", "We believe in technology, the freedom to experiment and the power of small details.", "Three people and one four-legged soul who completes our team."] },
   "blog": { "title": "Blog", "description": "", "headline": "Beyond the", "titleAccent": "obvious", "intro": "Ideas, trends, technologies, expert insights, and fresh perspectives on the digital world", "allArticles": "All articles", "readArticle": "Read more", "backToArticles": "All articles", "pages": "Pages", "previous": "Previous", "next": "Next", "empty": "There are no articles in this language yet." },
   "faq": {
     "title": "FAQs",

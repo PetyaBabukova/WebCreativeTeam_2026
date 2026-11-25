@@ -939,6 +939,8 @@ describe("public pages", () => {
     [BgCookies, bgCookiesMetadata, "bg", "cookies", "/cookies"],
     [EnCookies, enCookiesMetadata, "en", "cookies", "/cookies/en"],
   ] as const)("renders localized content and public metadata %#", async (Page, metadata, locale, page, url) => {
+    // jsdom has no matchMedia; the About motion layer queries viewport size on mount.
+    if (page === "about") Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
     render(<Page />);
     const homeSeo = locale === "bg" ? {
       heading: "Стратегия, технологии и креативност се срещат в решения, които отличават брандовете и превръщат идеите в резултати",

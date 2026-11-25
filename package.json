@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "8.4.0",
-    "@next/env": "16.4.3",
+    "@next/env": "16.4.6",
     "argon2": "0.45.1",
     "busboy": "1.6.0",
     "cross-env": "10.1.0",
@@ -34,7 +34,7 @@
     "ipaddr.js": "2.2.0",
     "mongodb": "7.7.0",
     "motion": "13.4.6",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "nodemailer": "10.1.7",
     "quill": "2.0.2",
     "react": "19.3.0",
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@next/eslint-plugin-next": "16.4.3",
+    "@next/eslint-plugin-next": "16.4.6",
     "@playwright/test": "1.63.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",

@@ -6,7 +6,7 @@ For any visual, animation, interaction, layout, asset, or styling change, follow
 
 1. Receive the user brief.
 2. Produce a design document before changing implementation code.
-3. Obtain a Claude Opus review of that design document.
+3. Obtain a Codex (GPT) review of that design document.
 4. Report the reviewed plan and its findings to the user.
 5. Wait for the user's explicit approval.
 6. If the scope needs staged delivery, produce an implementation-phase document and obtain approval for it.
@@ -14,7 +14,7 @@ For any visual, animation, interaction, layout, asset, or styling change, follow
 
 Do not install dependencies, edit application source, delete code, change tests, or make a visual "preview" between steps 1–5. A user request to create or discuss a design document is never authorization to implement the design.
 
-Claude Opus is an independent reviewer, not the final design authority. Evaluate its recommendations against the user brief, implementation evidence, accessibility, performance, and project context. Record the resulting reasoned consensus in the design document before implementation; do not adopt an Opus recommendation automatically.
+Codex is the independent reviewer for both design documents and code changes, not the final design authority. Evaluate its recommendations against the user brief, implementation evidence, accessibility, performance, and project context. Record the resulting reasoned consensus in the design document before implementation; do not adopt a Codex recommendation automatically.
 
 This repository is used on Windows. Prefer commands that work in Windows shells.
 
@@ -53,68 +53,41 @@ This repository is used on Windows. Prefer commands that work in Windows shells.
 - Always prefer using global style definitions before creating new component styles. Override global styles in component files only when necessary.
 - This ensures consistency across the UI and makes global design changes maintainable in a single location.
 
-## Claude review
+## Codex review
 
-Use the Claude CLI directly when you want an external review from Claude.
+Codex (GPT) reviews every design document and every code change. Run it non-interactively in a read-only sandbox and pass the review target explicitly through stdin; the prompt argument is appended after the piped content.
 
-Always pass `--model claude-opus-5-5` explicitly. It requires Claude Code CLI 2.1.280 or newer; if the CLI reports `claude_code_version_too_old`, run `claude update`. The default CLI model uses a 1M-context variant that requires extra usage credits which are not part of this account's plan. Without the flag, calls fail with `429 · Usage credits are required for long context requests`.
+Do not pass `-m`: the ChatGPT account rejects older pinned models such as `gpt-5.4`, and Codex uses the account default (currently `gpt-6-sol`). Always pass `-c model_reasoning_effort="xhigh"`. Reviews of real diffs can take several minutes, so use a shell timeout of at least 600 seconds, or split large inputs.
 
-Opus also responds slowly (typically 60-180 seconds for a real diff review). The default Codex shell timeout (120s) can cut it off. When invoking Claude review, use a shell timeout of at least 300 seconds, or break large diffs into smaller chunks.
+Review a design document:
 
-When Codex invokes Claude from this repository, run the Claude command outside the Codex sandbox by requesting escalated execution (`sandbox_permissions: require_escalated`). The default Codex sandbox runs as `l82sg\codexsandboxoffline` with `CODEX_SANDBOX_NETWORK_DISABLED=1`; in that context `claude --version` works but `claude auth status` and `claude --model claude-opus-5-5 -p "..."` can hang until timeout. Escalated execution runs as `l82sg\user` and is the expected context for Opus reviews.
+```powershell
+Get-Content docsdesign-file.md -Raw | codex exec -s read-only -c model_reasoning_effort="xhigh" "Review this design document for gaps, contradictions, feasibility, accessibility, performance, and missing checks. Give concise, prioritized findings."
+```
 
 Review the current working diff:
 
 ```bash
-git diff | claude --model claude-opus-5-5 -p "Review this git diff for bugs, regressions, security issues, and missing tests. Give concise, actionable findings with file paths and line references where possible."
+git diff | codex exec -s read-only -c model_reasoning_effort="xhigh" "Review this git diff for bugs, regressions, security issues, and missing tests. Give concise, actionable findings with file paths and line references where possible."
 ```
 
-Review staged changes only:
-
-```bash
-git diff --cached | claude --model claude-opus-5-5 -p "Review this staged git diff for bugs, regressions, security issues, and missing tests. Give concise, actionable findings with file paths and line references where possible."
-```
-
-Rules:
-
-- Prefer diff-based review over asking Claude to inspect the whole repository.
-- Prioritize bugs, regressions, security issues, and missing tests over style suggestions.
-- Treat style-only suggestions as low priority unless style review was explicitly requested.
-
-## Codex review
-
-Use Codex non-interactively when you want a second review pass.
-
-```bash
-codex exec --full-auto -m gpt-5.4 "Review the current implementation for bugs, regressions, security issues, and missing tests. Give concise, actionable findings with file paths and line references where possible."
-```
-
-Rules:
-
-- Keep the prompt short and explicit.
-- Weigh findings on their merits rather than accepting them blindly.
-
-## Reviewing a file directly
-
-If you need to review a specific file instead of a git diff, use the shell-appropriate command below.
-
-PowerShell:
+Review a specific file (PowerShell):
 
 ```powershell
-Get-Content path\to\file.ts -Raw | claude --model claude-opus-5-5 -p "Review this file for bugs, regressions, security issues, and missing tests."
+Get-Content path	oile.ts -Raw | codex exec -s read-only -c model_reasoning_effort="xhigh" "Review this file for bugs, regressions, security issues, and missing tests."
 ```
 
-cmd.exe:
+Rules:
 
-```cmd
-type path\to\file.ts | claude --model claude-opus-5-5 -p "Review this file for bugs, regressions, security issues, and missing tests."
-```
+- Prefer diff-based review over asking Codex to inspect the whole repository; when the working tree also holds unrelated uncommitted work, pass only the relevant changes.
+- Keep the prompt short and explicit, and ask for prioritized findings.
+- Prioritize bugs, regressions, security issues, and missing tests over style suggestions; treat style-only suggestions as low priority unless style review was explicitly requested.
+- Weigh findings on their merits rather than accepting them blindly.
 
 ## Suggested workflow
 
 1. Make the code changes.
 2. Inspect the relevant diff locally.
-3. Run the Claude diff review command.
-4. Apply fixes for valid findings.
-5. Optionally run a Codex review pass for a second opinion.
-6. Run relevant tests before finishing.
+3. Run the Codex diff review command.
+4. Apply fixes for valid findings and record the decisions in the design document.
+5. Run relevant tests before finishing.

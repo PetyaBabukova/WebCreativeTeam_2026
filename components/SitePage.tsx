@@ -126,7 +126,7 @@ function SiteFooter({ locale, route, languageUrls }: { locale: Locale; route: Si
   const copy = messages[locale];
   const footer = copy.landing.footer;
   const legal = { unavailable: footer.legalUnavailable, close: footer.close };
-  return <footer className="site-footer">
+  return <footer className="site-footer" id={route.page === "about" ? "about-footer" : undefined} tabIndex={route.page === "about" ? -1 : undefined}>
     <div className="container site-footer__callout">
       <div className="site-footer__callout-copy"><p><span>{footer.idea} {footer.promise}</span></p></div>
     </div>
