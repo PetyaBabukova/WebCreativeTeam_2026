@@ -3,6 +3,10 @@
   --brand-green: #59b300;
   --brand-orange: #ff6600;
   --brand-dark-green: #002e00;
+  /* Word colors of the WebCreativeTeam wordmark in the brand logo. */
+  --brand-logo-web: #ef7f1a;
+  --brand-logo-creative: #fefefe;
+  --brand-logo-team: #749728;
   --color-ink: #101717;
   --color-background: #fbfaf7;
   --color-background-warm: #f5e4be;

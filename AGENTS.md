@@ -6,7 +6,7 @@ For any visual, animation, interaction, layout, asset, or styling change, follow
 
 1. Receive the user brief.
 2. Produce a design document before changing implementation code.
-3. Obtain a Codex (GPT) review of that design document.
+3. Obtain a review of that design document from the reviewing agent (see Agent roles).
 4. Report the reviewed plan and its findings to the user.
 5. Wait for the user's explicit approval.
 6. If the scope needs staged delivery, produce an implementation-phase document and obtain approval for it.
@@ -14,7 +14,14 @@ For any visual, animation, interaction, layout, asset, or styling change, follow
 
 Do not install dependencies, edit application source, delete code, change tests, or make a visual "preview" between steps 1–5. A user request to create or discuss a design document is never authorization to implement the design.
 
-Codex is the independent reviewer for both design documents and code changes, not the final design authority. Evaluate its recommendations against the user brief, implementation evidence, accessibility, performance, and project context. Record the resulting reasoned consensus in the design document before implementation; do not adopt a Codex recommendation automatically.
+The reviewer is independent, not the final design authority. Evaluate its recommendations against the user brief, implementation evidence, accessibility, performance, and project context. Record the resulting reasoned consensus in the design document before implementation; do not adopt a reviewer recommendation automatically.
+
+## Agent roles
+
+- Claude (Claude Code) is the default implementer.
+- Codex (GPT) may also design and implement whenever the user asks it to directly. It then follows the same approval flow and rules in this file.
+- The reviewer is always the other agent: when Claude implements, Codex reviews (see Codex review); when Codex implements at the user request, Claude reviews (see Claude review).
+- An agent invoked by the other agent for a review is read-only: it reads, evaluates, and advises, and never edits files, installs packages, or runs commands that change the repository. Use the read-only commands below.
 
 This repository is used on Windows. Prefer commands that work in Windows shells.
 
@@ -55,7 +62,7 @@ This repository is used on Windows. Prefer commands that work in Windows shells.
 
 ## Codex review
 
-Codex (GPT) reviews every design document and every code change. Run it non-interactively in a read-only sandbox and pass the review target explicitly through stdin; the prompt argument is appended after the piped content.
+When Claude is the implementer, Codex (GPT) reviews every design document and every code change. Run it non-interactively in a read-only sandbox and pass the review target explicitly through stdin; the prompt argument is appended after the piped content.
 
 Do not pass `-m`: the ChatGPT account rejects older pinned models such as `gpt-5.4`, and Codex uses the account default (currently `gpt-6-sol`). Always pass `-c model_reasoning_effort="xhigh"`. Reviews of real diffs can take several minutes, so use a shell timeout of at least 600 seconds, or split large inputs.
 
@@ -84,10 +91,18 @@ Rules:
 - Prioritize bugs, regressions, security issues, and missing tests over style suggestions; treat style-only suggestions as low priority unless style review was explicitly requested.
 - Weigh findings on their merits rather than accepting them blindly.
 
+## Claude review
+
+Use this only when Codex is the implementer. Run Claude in read-only plan mode and pass the review target through stdin. Always pass `--model claude-opus-5-5`; the default CLI model uses a long-context variant that this account cannot use (`429 · Usage credits are required for long context requests`). Reviews take 60–180 seconds, so use a shell timeout of at least 300 seconds. When Codex runs this command, request escalated execution (`sandbox_permissions: require_escalated`); inside the default Codex sandbox the Claude CLI can hang without network access.
+
+```bash
+git diff | claude --model claude-opus-5-5 --permission-mode plan -p "Review this git diff for bugs, regressions, security issues, and missing tests. Give concise, actionable findings with file paths and line references where possible."
+```
+
 ## Suggested workflow
 
 1. Make the code changes.
 2. Inspect the relevant diff locally.
-3. Run the Codex diff review command.
+3. Run the review command of the reviewing agent.
 4. Apply fixes for valid findings and record the decisions in the design document.
 5. Run relevant tests before finishing.

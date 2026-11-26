@@ -44,6 +44,8 @@ export const appConfig = {
     captchaCspConnectSources: ["https://www.google.com/recaptcha/"],
   },
   brandLogoPath: "/logo_2026_DARK_HORIZONTAL.svg",
+  // One deadline for the early boot script and the About client: past it the hero is shown statically.
+  aboutIntro: { deadlineMilliseconds: 6000, counterMinimumMilliseconds: 2000 },
   socialProfiles: {
     linkedin: "https://www.linkedin.com/company/webcreativeteam",
     facebook: "https://www.facebook.com/webcreativeteam",

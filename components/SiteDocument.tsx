@@ -6,7 +6,7 @@ import { appConfig } from "@/lib/config";
 import { pageUrl, type Locale } from "@/lib/routing";
 import "@/styles/globals.css";
 
-const sofiaSans = Sofia_Sans({ subsets: ["latin", "cyrillic"], display: "swap", variable: "--font-sofia-sans" });
+const sofiaSans = Sofia_Sans({ subsets: ["latin", "cyrillic"], style: ["normal", "italic"], display: "swap", variable: "--font-sofia-sans" });
 /*
   User decision, 9 October 2026: a reload always starts at the top of the page.
   Restoring the old scroll position painted the scroll-driven sections (services stack, header state) in their
@@ -22,10 +22,10 @@ const noScriptHeroVisibility = ".hero__headline-line,.hero__lede,.hero-orb__entr
 export default async function SiteDocument({ locale, children }: { locale: Locale; children: ReactNode }) {
   const nonce = (await headers()).get("x-nonce") ?? undefined;
   // The first About frame is established before its server-rendered header can paint.
-  // A single deadline reveals the static logo if hydration or Canvas preparation stalls.
+  // The shared About deadline reveals the static hero if hydration or WebGL preparation stalls.
   const aboutPath = JSON.stringify(pageUrl("about", locale));
   const consentPrefix = JSON.stringify(`${appConfig.cookieChoice.name}=${appConfig.cookieChoice.version}.`);
-  const aboutBoot = `(()=>{try{if(location.pathname!==${aboutPath}||location.hash||scrollY>1)return;const prefix=${consentPrefix};if(!document.cookie.split(";").some(c=>{const v=c.trim();return v===prefix+"all"||v===prefix+"necessary"}))return;const h=document.documentElement;h.setAttribute("data-about-boot","");const deadline=performance.now()+3000;window.__aboutBootDeadline=deadline;window.__aboutBootTimer=setTimeout(()=>{h.removeAttribute("data-about-boot");window.__aboutBootTimer=undefined},3000)}catch(e){}})()`;
+  const aboutBoot = `(()=>{try{if(location.pathname!==${aboutPath}||location.hash||scrollY>1)return;const prefix=${consentPrefix};if(!document.cookie.split(";").some(c=>{const v=c.trim();return v===prefix+"all"||v===prefix+"necessary"}))return;const h=document.documentElement;h.setAttribute("data-about-boot","");const deadline=performance.now()+${appConfig.aboutIntro.deadlineMilliseconds};window.__aboutBootDeadline=deadline;window.__aboutBootTimer=setTimeout(()=>{h.removeAttribute("data-about-boot");window.__aboutBootTimer=undefined},${appConfig.aboutIntro.deadlineMilliseconds})}catch(e){}})()`;
   return <html lang={locale} suppressHydrationWarning><body className={sofiaSans.variable}>
     <script nonce={nonce} dangerouslySetInnerHTML={{ __html: `${reloadStartsAtTop};${aboutBoot}` }} />
     <noscript><style>{noScriptHeroVisibility}</style></noscript>

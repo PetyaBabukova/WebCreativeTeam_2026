@@ -939,8 +939,11 @@ describe("public pages", () => {
     [BgCookies, bgCookiesMetadata, "bg", "cookies", "/cookies"],
     [EnCookies, enCookiesMetadata, "en", "cookies", "/cookies/en"],
   ] as const)("renders localized content and public metadata %#", async (Page, metadata, locale, page, url) => {
-    // jsdom has no matchMedia; the About motion layer queries viewport size on mount.
-    if (page === "about") Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+    // jsdom has no matchMedia or font loading API; the About page queries both on mount.
+    if (page === "about") {
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+      if (!document.fonts) Object.defineProperty(document, "fonts", { configurable: true, value: { ready: Promise.resolve(), load: () => Promise.resolve([]) } });
+    }
     render(<Page />);
     const homeSeo = locale === "bg" ? {
       heading: "Стратегия, технологии и креативност се срещат в решения, които отличават брандовете и превръщат идеите в резултати",
@@ -951,7 +954,7 @@ describe("public pages", () => {
       title: "Digital Agency for Business Success | WebCreativeTeam",
       description: "We combine AI, SEO, marketing, branding and web solutions into comprehensive digital services designed to support your company’s growth.",
     };
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : page === "faq" ? messages[locale].faq.eyebrow : messages[locale][page].title);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(page === "home" ? homeSeo.heading : page === "faq" ? messages[locale].faq.eyebrow : page === "about" ? messages[locale].about.introLead.join(" ") : messages[locale][page].title);
     const language = within(document.querySelector(".site-header") as HTMLElement).getByRole("navigation", { name: messages[locale].language, hidden: true });
     expect(within(language).getByRole("link", { name: locale.toUpperCase(), hidden: true })).toHaveAttribute("href", url);
     const alternate = locale === "bg" ? "en" : "bg";

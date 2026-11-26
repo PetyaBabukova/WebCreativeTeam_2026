@@ -1,586 +1,763 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import sharp from "sharp";
+import { appConfig } from "@/lib/config";
+import { readFileSync } from "node:fs";
 import { pageUrl } from "@/lib/routing";
 
 const about = pageUrl("about", "bg");
+// The copy is read from the locale files directly: Playwright cannot import JSON through lib/messages.
+const aboutCopy = (locale: "bg" | "en") => JSON.parse(readFileSync(`messages/${locale}.json`, "utf8")).about as { messages: string[]; introLead: string[]; introTail: string[]; accents: { text?: string; tone: string }[][] };
+const root = (page: Page) => page.locator(".site-page--about");
+const liveTimeout = appConfig.aboutIntro.deadlineMilliseconds + 4000;
+// The pause control is hidden until keyboard focus: a 1px clipped box.
+const hiddenUntilFocus = async (page: Page) => (await page.locator(".about-scene__toggle").boundingBox())!.width <= 1;
 
-test("About animation runs with either motion preference and hands the logo to the header", async ({ browser }) => {
-  test.setTimeout(60_000);
-  for (const reducedMotion of ["no-preference", "reduce"] as const) {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion });
-    const page = await context.newPage();
-    await page.addInitScript(() => {
-      const phases: string[] = [];
-      const times: Record<string, number> = {};
-      Object.assign(window, { __aboutPhases: phases, __aboutPhaseTimes: times });
-      new MutationObserver((records) => records.forEach((record) => {
-        if (record.type === "attributes" && record.target instanceof HTMLElement) {
-          const phase = record.target.getAttribute("data-about-phase");
-          if (phase && phases.at(-1) !== phase) { phases.push(phase); times[phase] ??= performance.now(); }
-        }
-      })).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-about-phase"] });
-    });
-    await page.goto(about);
-    await expect(page.locator(".about-intro")).toHaveAttribute("data-about-phase", "logo", { timeout: 9000 });
-    const phases = await page.evaluate(() => (window as Window & { __aboutPhases?: string[] }).__aboutPhases ?? []);
-    const order = ["counter", "swirl", "word", "propeller", "logo"];
-    expect(order.map((phase) => phases.indexOf(phase))).toEqual([...order.map((phase) => phases.indexOf(phase))].sort((a, b) => a - b));
-    expect(order.every((phase) => phases.includes(phase))).toBe(true);
-    const times = await page.evaluate(() => (window as Window & { __aboutPhaseTimes?: Record<string, number> }).__aboutPhaseTimes ?? {});
-    expect(times.logo - times.counter).toBeGreaterThanOrEqual(4000);
-    expect(times.logo - times.counter).toBeLessThanOrEqual(5300);
+// Records every value of data-about-intro with its time, from the first script on the page.
+async function recordPhases(page: Page) {
+  await page.addInitScript(() => {
+    const phases: [string, number][] = [];
+    Object.assign(window, { __aboutPhases: phases });
+    new MutationObserver(() => {
+      const phase = document.querySelector(".site-page--about")?.getAttribute("data-about-intro");
+      if (phase && phases.at(-1)?.[0] !== phase) phases.push([phase, performance.now()]);
+    }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-about-intro"] });
+  });
+  return () => page.evaluate(() => (window as Window & { __aboutPhases?: [string, number][] }).__aboutPhases ?? []);
+}
 
-    await page.evaluate(() => scrollTo(0, innerHeight * .6));
-    await expect.poll(() => page.locator(".site-header__brand img").evaluate((image) => getComputedStyle(image).opacity)).toBe("1");
-    const distances = await page.evaluate(() => {
-      const real = document.querySelector(".site-header__brand img")!.getBoundingClientRect();
-      const flying = document.querySelector(".about-intro__flight-logo")!.getBoundingClientRect();
-      return [Math.abs(real.x - flying.x), Math.abs(real.y - flying.y), Math.abs(real.width - flying.width), Math.abs(real.height - flying.height)];
-    });
-    expect(Math.max(...distances)).toBeLessThanOrEqual(2);
-    await context.close();
-  }
-});
-
-test("the scroll cue keeps the flight and focuses the heading; the global skip dismisses it", async ({ page }) => {
+test("the preloader counts in the lower left, wipes with a W and reveals the particle hero", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const phases = await recordPhases(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(about);
-  await page.locator(".about-scroll").click();
-  await expect(page.locator("#about-title")).toBeFocused();
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-active", "");
-  await expect(page.locator(".site-header__brand img")).toHaveCSS("opacity", "1");
-
-  await page.reload();
-  await page.locator(".skip-link").focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#about-title")).toBeFocused();
-  await expect(page.locator(".site-page--about")).not.toHaveAttribute("data-about-active");
+  await expect(root(page)).toHaveAttribute("data-about-intro", "preloading");
+  const counter = await page.locator(".about-counter").evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return { left: box.left, bottom: box.bottom, font: getComputedStyle(node).fontFamily };
+  });
+  expect(counter.left).toBeLessThanOrEqual(1);
+  expect(counter.bottom).toBeGreaterThan(900);
+  expect(counter.font).toMatch(/IBM Plex Mono/i);
+  const bar = await page.locator(".about-preloader__bar").boundingBox();
+  expect(Math.abs(bar!.x + bar!.width / 2 - 720)).toBeLessThanOrEqual(2);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  const recorded = await phases();
+  expect(recorded.map(([phase]) => phase)).toEqual(["preloading", "wipe", "live"]);
+  expect(recorded[1][1] - recorded[0][1]).toBeGreaterThanOrEqual(appConfig.aboutIntro.counterMinimumMilliseconds - 100);
+  await expect(page.locator(".about-preloader")).toBeHidden();
+  await expect(page.locator(".about-particles")).toHaveCSS("opacity", "1");
+  await expect(page.locator(".about-hero__cue")).toHaveText("Плъзнете и разгледайте");
+  await expect(page.locator(".about-hero__cue")).toHaveAttribute("href", "#about-title");
+  expect(errors).toEqual([]);
 });
 
-test("a missing Canvas keeps the static logo and content usable", async ({ page }) => {
-  await page.addInitScript(() => { HTMLCanvasElement.prototype.getContext = () => null; });
-  await page.goto(about);
-  await expect(page.locator(".site-page--about")).not.toHaveAttribute("data-about-active");
-  await expect(page.locator(".about-intro__static-logo")).toHaveCSS("opacity", "1");
-  await expect(page.locator(".site-header__brand img")).toHaveCSS("opacity", "1");
-  await expect(page.locator("#about-title")).toBeAttached();
-  // Without Canvas there is no background or particle logo, but the messages still slide.
-  await expect(page.locator(".about-content")).toHaveAttribute("data-about-motion", "");
-  const body = page.locator("#about-message-1 .about-message__body");
-  await expect(body).toHaveCSS("position", "fixed");
-  const frames: { x: number; opacity: number }[] = [];
-  for (const at of [.12, .2, .4]) {
-    await page.locator("#about-message-1").evaluate((section, phase) => {
-      scrollTo(0, section.getBoundingClientRect().top + scrollY + (section as HTMLElement).offsetHeight * phase - innerHeight * .35);
-    }, at);
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    frames.push(await body.evaluate((node) => ({ x: new DOMMatrix(getComputedStyle(node).transform).m41, opacity: Number(getComputedStyle(node).opacity) })));
-  }
-  expect(new Set(frames.map((frame) => Math.round(frame.x))).size).toBeGreaterThan(1);
-  expect(Math.max(...frames.map((frame) => frame.opacity))).toBe(1);
-});
-
-test("a failed logo request leaves a readable brand fallback", async ({ page }) => {
-  await page.route("**/logo_2026_DARK_HORIZONTAL.svg", (route) => route.abort());
-  await page.goto(about);
-  await expect(page.locator(".site-page--about")).not.toHaveAttribute("data-about-active");
-  await expect(page.locator(".about-intro__logo-fallback")).toBeVisible();
-  await expect(page.locator("#about-title")).toBeAttached();
-});
-
-test("a first visitor still sees the brand fallback if the logo fails before consent", async ({ page, context }) => {
-  await context.clearCookies();
-  await page.route("**/logo_2026_DARK_HORIZONTAL.svg", (route) => route.abort());
-  await page.goto(about);
-  await expect(page.locator(".cookie-modal")).toHaveAttribute("open", "");
-  await expect(page.locator(".about-intro__logo-fallback")).toBeVisible();
-});
-
-test("a deep link opens the content without starting the intro", async ({ page }) => {
+test("the wordmark is one tall bold uppercase line in the logo colors that fills the container", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${about}#about-title`);
-  await expect(page.locator(".site-page--about")).not.toHaveAttribute("data-about-active");
-  await expect(page.locator(".site-header__brand img")).toHaveCSS("opacity", "1");
-  await expect(page.locator("#about-title")).toBeInViewport();
+  await page.evaluate(() => scrollTo(0, 0));
+  const logo = page.locator(".about-hero__logo");
+  await expect(logo).toHaveAttribute("aria-hidden", "true");
+  await expect(logo).toHaveCSS("font-family", /Sofia Sans Extra Condensed/);
+  const words = await logo.locator(".about-hero__word").evaluateAll((nodes) => nodes.map((node) => {
+    const style = getComputedStyle(node);
+    return { text: node.textContent, transform: style.textTransform, weight: style.fontWeight, color: style.color, top: node.getBoundingClientRect().top };
+  }));
+  expect(words.map((word) => word.text)).toEqual(["Web", "Creative", "Team"]);
+  expect(words.every((word) => word.transform === "uppercase" && word.weight === "1000")).toBe(true);
+  expect(words.map((word) => word.color)).toEqual(["rgb(239, 127, 26)", "rgb(254, 254, 254)", "rgb(116, 151, 40)"]);
+  expect(new Set(words.map((word) => Math.round(word.top))).size).toBe(1);
+  await expect.poll(() => logo.evaluate((node) => {
+    const used = Array.from(node.children).reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+    return used / node.clientWidth;
+  })).toBeGreaterThan(.97);
+  // Stretched to 1.2x upwards, below the header and above the cue.
+  const painted = await logo.evaluate((node) => ({
+    stretch: new DOMMatrix(getComputedStyle(node).transform).d,
+    box: node.getBoundingClientRect(),
+    headerBottom: document.querySelector(".site-header")!.getBoundingClientRect().bottom,
+    cueTop: document.querySelector(".about-hero__cue")!.getBoundingClientRect().top,
+  }));
+  expect(painted.stretch).toBeCloseTo(1.2, 2);
+  expect(painted.box.top).toBeGreaterThan(painted.headerBottom);
+  expect(painted.box.bottom).toBeLessThanOrEqual(painted.cueTop);
+  expect(painted.box.height).toBeLessThanOrEqual(900 * .304 + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
 });
 
-test("the static About page and anchors work without JavaScript", async ({ browser }) => {
+test("narrow phones stack the wordmark in three lines of one size", async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto(`${about}#about-title`);
+    await page.evaluate(() => scrollTo(0, 0));
+    const lines = await page.locator(".about-hero__word").evaluateAll((nodes) => nodes.map((node) => {
+      const box = node.getBoundingClientRect();
+      return { top: box.top, right: box.right, size: getComputedStyle(node).fontSize };
+    }));
+    expect(new Set(lines.map((line) => Math.round(line.top))).size, `${width}px lines`).toBe(3);
+    expect(new Set(lines.map((line) => line.size)).size, `${width}px sizes`).toBe(1);
+    const painted = await page.locator(".about-hero__logo").evaluate((node) => ({ top: node.getBoundingClientRect().top, headerBottom: document.querySelector(".site-header")!.getBoundingClientRect().bottom }));
+    expect(painted.top, `${width}px below the header`).toBeGreaterThan(painted.headerBottom);
+    expect(Math.max(...lines.map((line) => line.right))).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  }
+});
+
+test("without JavaScript the preloader stays hidden and the static hero links to the content", async ({ browser }) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
   await page.goto(about);
-  await expect(page.locator(".about-intro__static-logo")).toHaveCSS("opacity", "1");
-  await expect(page.locator(".site-header__brand img")).toHaveCSS("opacity", "1");
-  await page.locator(".about-scroll").click();
+  await expect(page.locator(".about-preloader")).toBeHidden();
+  await expect(page.locator(".about-hero__logo")).toBeVisible();
+  await page.locator(".about-hero__cue").click();
   await expect(page).toHaveURL(/#about-title$/);
-  await expect(page.locator("#about-title")).toBeFocused();
   await expect(page.locator("#about-title")).toBeInViewport();
   await context.close();
 });
 
-test("early scroll and header focus leave a usable logo at mobile and tablet widths", async ({ page }) => {
-  for (const width of [390, 768]) {
-    await page.setViewportSize({ width, height: 844 });
-    await page.goto(about);
-    await expect(page.locator(".about-intro")).toHaveAttribute("data-about-phase", "counter", { timeout: 5000 });
-    await page.evaluate(() => scrollTo(0, innerHeight * .3));
-    await expect(page.locator(".about-intro")).toHaveAttribute("data-about-phase", "logo");
-    await page.evaluate(() => scrollTo(0, innerHeight * .6));
-    await expect.poll(() => page.locator(".site-header__brand img").evaluate((image) => getComputedStyle(image).opacity)).toBe("1");
-    const maxDistance = await page.evaluate(() => {
-      const real = document.querySelector(".site-header__brand img")!.getBoundingClientRect();
-      const flying = document.querySelector(".about-intro__flight-logo")!.getBoundingClientRect();
-      return Math.max(Math.abs(real.x - flying.x), Math.abs(real.y - flying.y), Math.abs(real.width - flying.width), Math.abs(real.height - flying.height));
-    });
-    expect(maxDistance).toBeLessThanOrEqual(2);
-    await page.evaluate(() => scrollTo(0, 0));
-    await page.locator(".site-menu > summary").focus();
-    await expect(page.locator(".site-page--about")).not.toHaveAttribute("data-about-active");
-    await expect(page.locator(".about-intro__flight-logo")).toHaveCSS("opacity", "0");
-  }
+test("a browser without WebGL keeps the static hero and the moving messages", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type.startsWith("webgl") ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest);
+    } as typeof original;
+  });
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static", { timeout: liveTimeout });
+  await expect(page.locator(".about-preloader")).toBeHidden();
+  await expect(page.locator(".about-hero__logo")).toBeVisible();
+  await expect(page.locator(".about-particles")).toHaveCSS("opacity", "0");
+  await expect(page.locator(".about-content")).toHaveAttribute("data-about-strip", "");
+  await expect(page.locator(".about-hero [aria-live]")).not.toHaveText("Зареждане");
 });
 
-test("client navigation starts About and leaving it restores the next page header", async ({ page }) => {
-  await page.goto(pageUrl("home", "bg"));
-  await page.locator(".site-menu > summary").click();
-  await page.locator(`.site-menu a[href="${about}"]`).click();
-  await expect(page).toHaveURL(new RegExp(`${about}$`));
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-active");
-  await page.locator(".site-header__brand").click();
-  await expect(page).toHaveURL(new RegExp(`${pageUrl("home", "bg")}$`));
-  await expect(page.locator(".site-header__brand img")).toHaveCSS("opacity", "1");
+test("a scene that is not ready by the shared deadline falls back to the static hero", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.route("**/_next/static/**/*.js", async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    if (body.includes("WebGLRenderer")) await new Promise((resolve) => setTimeout(resolve, appConfig.aboutIntro.deadlineMilliseconds + 2000));
+    await route.fulfill({ response, body });
+  });
+  const phases = await recordPhases(page);
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static", { timeout: liveTimeout });
+  const recorded = await phases();
+  expect(recorded.map(([phase]) => phase)).toEqual(["preloading", "static"]);
+  expect(recorded[1][1] - recorded[0][1]).toBeLessThan(appConfig.aboutIntro.deadlineMilliseconds + 1000);
+  await expect(page.locator(".about-hero__logo")).toBeVisible();
+  await expect(page.locator(".about-particles")).toHaveCSS("opacity", "0");
 });
 
-test("the first-visit consent dialog lets the intro begin after the choice", async ({ page, context }) => {
+test("a shader that fails to link keeps the static hero instead of a blank scene", async ({ page }) => {
+  await page.addInitScript(() => {
+    for (const context of [WebGLRenderingContext, WebGL2RenderingContext]) {
+      const original = context.prototype.getProgramParameter;
+      context.prototype.getProgramParameter = function (this: WebGLRenderingContext, program: WebGLProgram, name: number) {
+        return name === this.LINK_STATUS ? false : original.call(this, program, name);
+      } as typeof original;
+    }
+  });
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static", { timeout: liveTimeout });
+  await expect(page.locator(".about-particles")).toHaveCSS("opacity", "0");
+  await expect(page.locator(".about-hero [aria-live]")).not.toHaveText("Зареждане");
+});
+
+test("late hydration still finishes the preloader at the shared deadline", async ({ page }) => {
+  test.setTimeout(60_000);
+  // Delay only the About client code so the component mounts close to the boot deadline.
+  await page.route("**/_next/static/**/*.js", async (route) => {
+    const response = await route.fetch();
+    const body = await response.text();
+    if (body.includes("about-hero__cue")) await new Promise((resolve) => setTimeout(resolve, appConfig.aboutIntro.deadlineMilliseconds - 1000));
+    await route.fulfill({ response, body });
+  });
+  const phases = await recordPhases(page);
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", /live|static/, { timeout: liveTimeout + 4000 });
+  const finished = (await phases()).find(([phase]) => phase !== "preloading");
+  expect(finished![1]).toBeLessThan(appConfig.aboutIntro.deadlineMilliseconds + 1000);
+});
+
+test("losing the WebGL context returns to the static hero", async ({ page }) => {
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  await page.locator(".about-particles").evaluate((canvas) => {
+    const gl = (canvas as HTMLCanvasElement).getContext("webgl2") ?? (canvas as HTMLCanvasElement).getContext("webgl");
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  });
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static");
+  await expect(page.locator(".about-particles")).toHaveCSS("opacity", "0");
+  await expect(page.locator(".about-hero__logo")).toBeVisible();
+});
+
+test("scrolling or the skip link during the counter shows the static hero", async ({ page }) => {
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "preloading");
+  await page.evaluate(() => scrollTo(0, 40));
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static");
+  await expect(page.locator(".about-preloader")).toBeHidden();
+
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.reload();
+  await expect(root(page)).toHaveAttribute("data-about-intro", "preloading");
+  await page.locator(".skip-link").focus();
+  await page.keyboard.press("Enter");
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static");
+  await expect(page.locator("#about-title")).toBeFocused();
+});
+
+test("the header stays usable above the preloader", async ({ page }) => {
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "preloading");
+  const hit = await page.locator(".site-menu > summary").evaluate((summary) => {
+    const box = summary.getBoundingClientRect();
+    return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest("summary") === summary;
+  });
+  expect(hit).toBe(true);
+});
+
+test("the first-visit consent dialog lets the preloader begin after the choice", async ({ page, context }) => {
   await context.clearCookies();
   await page.goto(about, { waitUntil: "domcontentloaded" });
   expect(await page.evaluate(() => document.documentElement.hasAttribute("data-about-boot"))).toBe(false);
   await expect(page.locator(".cookie-modal")).toHaveAttribute("open", "");
-  await page.waitForTimeout(4000);
-  await expect(page.locator(".site-page--about")).not.toHaveAttribute("data-about-active");
-  await expect(page.locator(".about-intro__counter")).toHaveCSS("display", "none");
+  await expect(page.locator(".about-preloader")).toBeHidden();
+  await expect(page.locator(".about-hero__logo")).toBeVisible();
   await page.locator("#cookie-modal-controls button").last().click();
-  await expect(page.locator(".about-intro")).toHaveAttribute("data-about-phase", "counter", { timeout: 4000 });
-  await expect(page.locator(".about-intro")).toHaveAttribute("data-about-phase", "logo", { timeout: 8000 });
-  await expect(page.locator(".about-scroll")).toBeFocused();
+  await expect(root(page)).toHaveAttribute("data-about-intro", "preloading");
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
 });
 
-test("the arrow stays fixed through About content and remains accessible without a caption", async ({ page }) => {
-  await page.goto(about, { waitUntil: "domcontentloaded" });
-  const cue = page.locator(".about-scroll");
-  await expect(cue).toBeVisible();
-  await expect(cue).toHaveAccessibleName("Към следващия раздел");
-  await expect(page.locator(".about-scroll__caption")).toHaveCount(0);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  const firstBox = await cue.boundingBox();
-  const first = await page.locator(".about-scroll__arrow").evaluate((node) => getComputedStyle(node).transform);
-  await page.evaluate(() => scrollTo(0, innerHeight * .6));
-  await expect.poll(() => page.locator(".about-scroll__arrow").evaluate((node) => getComputedStyle(node).transform)).not.toBe(first);
-  const middleBox = await cue.boundingBox();
-  expect(Math.abs(middleBox!.x - firstBox!.x)).toBeLessThan(2);
-  expect(Math.abs(middleBox!.y - firstBox!.y)).toBeLessThan(2);
-  await page.locator(".about-message").first().scrollIntoViewIfNeeded();
-  const contentBox = await cue.boundingBox();
-  expect(Math.abs(contentBox!.y - firstBox!.y)).toBeLessThan(2);
-  await page.evaluate(() => scrollTo(0, 0));
-  await expect.poll(() => page.locator(".about-scroll__arrow").evaluate((node) => getComputedStyle(node).transform)).toBe(first);
-  await page.locator(".site-footer").scrollIntoViewIfNeeded();
-  await expect(cue).toBeHidden();
+test("client navigation runs the preloader and leaving About releases it", async ({ page }) => {
+  await page.goto(pageUrl("home", "bg"));
+  await page.locator(".site-menu > summary").click();
+  await page.locator(`.site-menu a[href="${about}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`${about}$`));
+  await expect(root(page)).toHaveAttribute("data-about-intro", "preloading");
+  await page.locator(".site-header__brand").click();
+  await expect(page).toHaveURL(new RegExp(`${pageUrl("home", "bg")}$`));
+  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-about-boot"))).toBe(false);
+  await expect(page.locator(".about-preloader")).toHaveCount(0);
+  await expect(page.locator(".site-header__brand img")).toBeVisible();
 });
 
-test("text scenes move horizontally and the background can be paused", async ({ page }) => {
+test("three.js is downloaded only on the About page", async ({ page }) => {
+  const scripts: Promise<string>[] = [];
+  page.on("response", (response) => {
+    if (response.request().resourceType() === "script") scripts.push(response.text().catch(() => ""));
+  });
+  const hasThree = async () => (await Promise.all(scripts)).some((body) => body.includes("WebGLRenderer"));
+  await page.goto(pageUrl("home", "bg"));
+  await page.waitForLoadState("networkidle");
+  expect(await hasThree()).toBe(false);
   await page.goto(about);
-  await page.evaluate(() => document.querySelector(".about-message")?.scrollIntoView({ block: "center" }));
-  const message = page.locator(".about-message").first();
-  await expect(message).toBeInViewport();
-  const initial = await message.evaluate((node) => getComputedStyle(node.querySelector(".about-message__body")!).transform);
-  await page.evaluate(() => scrollBy(0, innerHeight * .7));
-  await expect.poll(() => message.evaluate((node) => getComputedStyle(node.querySelector(".about-message__body")!).transform)).not.toBe(initial);
-  const before = await page.locator(".about-scene canvas").evaluate((node) => (node as HTMLCanvasElement).toDataURL());
-  await page.waitForTimeout(250);
-  const after = await page.locator(".about-scene canvas").evaluate((node) => (node as HTMLCanvasElement).toDataURL());
-  expect(after).not.toBe(before);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  expect(await hasThree()).toBe(true);
+});
+
+test("the pause control is hidden until keyboard focus and stops the hero particles", async ({ page }) => {
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  const hero = page.locator(".about-particles");
   const toggle = page.locator(".about-scene__toggle");
-  await toggle.click();
+  expect(await hiddenUntilFocus(page)).toBe(true);
+  const moving = await hero.screenshot();
+  await expect.poll(async () => (await hero.screenshot()).equals(moving)).toBe(false);
+  // Keyboard path: from the scroll cue, Tab reaches the pause control.
+  await page.locator(".about-hero__cue").focus();
+  await page.keyboard.press("Tab");
+  await expect(toggle).toBeFocused();
+  expect((await toggle.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+  await expect(toggle).toHaveAccessibleName("Пауза на фона");
+  await page.keyboard.press("Enter");
   await expect(toggle).toHaveAccessibleName("Пусни фона");
-  const paused = await page.locator(".about-scene canvas").evaluate((node) => (node as HTMLCanvasElement).toDataURL());
-  await page.waitForTimeout(250);
-  expect(await page.locator(".about-scene canvas").evaluate((node) => (node as HTMLCanvasElement).toDataURL())).toBe(paused);
+  await page.waitForTimeout(150);
+  const heroPaused = await hero.screenshot();
+  await page.waitForTimeout(300);
+  expect((await hero.screenshot()).equals(heroPaused)).toBe(true);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await hero.screenshot()).equals(heroPaused)).toBe(false);
+  await page.locator("#about-title").focus();
+  expect(await hiddenUntilFocus(page)).toBe(true);
 });
 
-test("message blocks cross the screen horizontally with a narrow text column and orange rule", async ({ page }) => {
-  for (const { width, height } of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 700 }]) {
-    await page.setViewportSize({ width, height });
-    await page.goto(about);
-    await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-    const section = page.locator("#about-message-1");
-    const sample = async (phase: number) => {
-      await section.evaluate((node, passed) => {
-        const anchor = parseFloat(getComputedStyle(document.querySelector(".about-content")!).getPropertyValue("--about-message-top"));
-        scrollTo(0, node.getBoundingClientRect().top + scrollY + passed * innerHeight - anchor);
-      }, phase);
-      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      return section.locator(".about-message__body").evaluate((body) => {
-        const box = body.getBoundingClientRect();
-        const style = getComputedStyle(body);
-        const paragraph = body.querySelector("p")!.getBoundingClientRect();
-        return { left: box.left, right: box.right, paragraphRight: paragraph.right, top: box.top, position: style.position, opacity: Number(style.opacity), ruleWidth: style.borderInlineStartWidth, ruleColor: style.borderInlineStartColor, scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth };
-      });
-    };
-    const beginning = await sample(0);
-    const entering = await sample(.275);
-    const resting = await sample(.55 + (width <= 760 ? .375 : .3));
-    const leaving = await sample(.55 + (width <= 760 ? .75 : .6) + .275);
-    const end = await sample(.55 + (width <= 760 ? .75 : .6) + .55);
-    expect(beginning.left, `${width}px entry`).toBeGreaterThanOrEqual(width);
-    expect(end.right, `${width}px exit`).toBeLessThanOrEqual(0);
-    expect(resting.opacity).toBe(1);
-    expect(entering.opacity).toBeGreaterThan(.95);
-    expect(leaving.opacity).toBeGreaterThan(.95);
-    expect(resting.ruleWidth).toBe("2px");
-    expect(resting.ruleColor).toBe("rgb(255, 102, 0)");
-    expect(resting.right).toBeLessThanOrEqual(width);
-    expect(resting.paragraphRight).toBeLessThanOrEqual(width);
-    for (const frame of [beginning, entering, resting, leaving, end]) {
-      expect(frame.position).toBe("fixed");
-      expect(Math.abs(frame.top - resting.top), `${width}px vertical drift`).toBeLessThanOrEqual(1);
-      expect(frame.scrollWidth).toBe(frame.clientWidth);
-    }
-    await expect(page.locator(".about-message__index")).toHaveCount(0);
-    const textWidth = await section.locator("p").evaluate((node) => node.getBoundingClientRect().width);
-    expect(textWidth).toBeLessThan(width * .75);
-  }
-});
-
-test("text stays at one screen height while the mouse wheel moves it right to left", async ({ page }) => {
-  for (const [{ width, height }, reducedMotion] of [
-    [{ width: 1440, height: 900 }, "no-preference"],
-    [{ width: 390, height: 844 }, "no-preference"],
-    [{ width: 1536, height: 730 }, "reduce"],
-  ] as const) {
-    await page.setViewportSize({ width, height });
-    await page.emulateMedia({ reducedMotion });
-    await page.goto(about);
-    await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-    await page.locator("#about-message-1").evaluate((section) => {
-      const anchor = parseFloat(getComputedStyle(document.querySelector(".about-content")!).getPropertyValue("--about-message-top"));
-      scrollTo(0, section.getBoundingClientRect().top + scrollY - anchor - 80);
-    });
-    const frames: { top: number; left: number; opacity: number }[] = [];
-    for (let step = 0; step < 18; step++) {
-      await page.mouse.wheel(0, 85);
-      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      // Stacked sticky texts were the reduced-motion defect: never show two messages at once.
-      expect(await page.locator(".about-message__body").evaluateAll((bodies) => bodies.filter((body) => {
-        const box = body.getBoundingClientRect();
-        return Number(getComputedStyle(body).opacity) > .05 && box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight;
-      }).length), `${reducedMotion} step ${step}`).toBeLessThanOrEqual(1);
-      frames.push(await page.locator("#about-message-1 .about-message__body").evaluate((body) => {
-        const box = body.getBoundingClientRect();
-        return { top: box.top, left: box.left, opacity: Number(getComputedStyle(body).opacity) };
-      }));
-    }
-    const visible = frames.filter((frame) => frame.opacity > .05);
-    expect(visible.length).toBeGreaterThan(5);
-    expect(Math.max(...visible.map((frame) => frame.top)) - Math.min(...visible.map((frame) => frame.top))).toBeLessThanOrEqual(1);
-    expect(visible.every((frame) => frame.top >= 0 && frame.top < height)).toBe(true);
-    for (let index = 1; index < visible.length; index++) {
-      expect(visible[index].left).toBeLessThanOrEqual(visible[index - 1].left + .5);
-    }
-    expect(visible.at(-1)!.left).toBeLessThan(visible[0].left - width * .25);
-  }
-});
-
-test("a direct message fragment lands on readable text", async ({ page }) => {
-  for (const reducedMotion of ["no-preference", "reduce"] as const) {
-    await page.emulateMedia({ reducedMotion });
-    await page.goto("about:blank");
-    await page.goto(`${about}#about-message-2`);
-    const section = page.locator("#about-message-2");
-    await expect(section.locator(".about-message__body")).toHaveCSS("opacity", "1");
-    await expect(section.locator("p")).toBeInViewport();
-    await expect(page.locator(".about-scroll")).toHaveCSS("position", "fixed");
-    await expect(page).toHaveURL(/#about-message-2$/);
-    await page.locator(".about-scroll").click();
-    await expect(page.locator("#about-message-3")).toBeFocused();
-  }
-});
-
-test("changing the message fragment positions readable text", async ({ page }) => {
+test("the background dots move only while the visitor scrolls", async ({ page }) => {
   await page.goto(`${about}#about-title`);
-  await page.evaluate(() => { location.hash = "#about-message-2"; });
-  await expect(page.locator("#about-message-2 .about-message__body")).toHaveCSS("opacity", "1");
-  await expect(page.locator("#about-message-2 p")).toBeInViewport();
+  const background = page.locator(".about-scene canvas");
+  const snapshot = () => background.evaluate((node) => (node as HTMLCanvasElement).toDataURL());
+  await page.waitForTimeout(400);
+  const idle = await snapshot();
+  await page.waitForTimeout(400);
+  expect(await snapshot()).toBe(idle);
+  for (let step = 0; step < 6; step++) { await page.mouse.wheel(0, 120); await page.waitForTimeout(60); }
+  expect(await snapshot()).not.toBe(idle);
+  await page.waitForTimeout(500);
+  const settled = await snapshot();
+  await page.waitForTimeout(400);
+  expect(await snapshot()).toBe(settled);
 });
 
-test("a dismissed intro keeps the arrow fixed and the heading revealed", async ({ page }) => {
+test("slow fonts do not hold the particles back past the shared deadline", async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.route("**/*.woff2", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, appConfig.aboutIntro.deadlineMilliseconds + 3000));
+    await route.continue().catch(() => {});
+  });
   await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  await page.evaluate(() => scrollTo(0, 3));
-  await page.locator(".site-menu > summary").focus();
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-dismissed", "");
-  await expect(page.locator(".about-scroll")).toHaveCSS("position", "fixed");
-  await expect(page.locator(".about-title__reveal")).toHaveCSS("opacity", "1");
-  await page.locator(".about-scroll").click();
-  await expect(page.locator("#about-title")).toBeFocused();
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
 });
 
-test("print shows every message without scroll transforms", async ({ page }) => {
+test("unavailable glyph fonts leave a dots-only cloud instead of the static hero", async ({ page }) => {
+  await page.route("**/*.woff2", (route) => route.abort());
   await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  await expect(page.locator(".about-hero__logo")).toBeVisible();
+});
+
+test("print hides the hero and the preloader", async ({ page }) => {
+  await page.goto(`${about}#about-title`);
   await page.emulateMedia({ media: "print" });
-  for (const body of await page.locator(".about-message__body").all()) {
-    await expect(body).toHaveCSS("opacity", "1");
-    await expect(body).toHaveCSS("transform", "none");
-    await expect(body).toHaveCSS("position", "static");
-  }
-  await expect(page.locator(".about-title__reveal")).toHaveCSS("opacity", "1");
+  await expect(page.locator(".about-hero")).toBeHidden();
+  await expect(page.locator(".about-preloader")).toBeHidden();
 });
 
-test("the pause control does not cover long text on narrow phones", async ({ page }) => {
-  for (const { width, height, url } of [
-    { width: 320, height: 500, url: about },
-    { width: 320, height: 700, url: pageUrl("about", "en") },
-    { width: 390, height: 844, url: pageUrl("about", "en") },
-  ]) {
-    await page.setViewportSize({ width, height });
-    await page.goto(`${url}#about-message-4`);
-    await expect(page.locator("#about-message-4 .about-message__body")).toHaveCSS("opacity", "1");
-    const text = await page.locator("#about-message-4 p").boundingBox();
-    const toggle = await page.locator(".about-scene__toggle").boundingBox();
-    const overlap = text!.x < toggle!.x + toggle!.width && text!.x + text!.width > toggle!.x
-      && text!.y < toggle!.y + toggle!.height && text!.y + text!.height > toggle!.y;
-    expect(overlap, `${width}x${height} text and pause control`).toBe(false);
-  }
-});
-
-test("the title stays in the upper right without covering messages", async ({ page }) => {
-  for (const { width, height } of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
-    await page.setViewportSize({ width, height });
-    await page.goto(about);
-    await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-    for (const index of [1, 4]) {
-      await page.locator(`#about-message-${index}`).evaluate((section) => {
-        scrollTo(0, section.getBoundingClientRect().top + scrollY + innerHeight * .5);
-      });
-      const geometry = await page.evaluate((messageIndex) => {
-        const heading = document.querySelector("#about-title")!.getBoundingClientRect();
-        const header = document.querySelector(".site-header")!.getBoundingClientRect();
-        const message = document.querySelector(`#about-message-${messageIndex} p`)!.getBoundingClientRect();
-        return { titleTop: heading.top, titleRight: heading.right, titleBottom: heading.bottom, headerBottom: header.bottom, messageTop: message.top };
-      }, index);
-      expect(geometry.titleTop).toBeGreaterThanOrEqual(geometry.headerBottom - 1);
-      expect(geometry.titleRight).toBeGreaterThan(width * .65);
-      expect(geometry.titleBottom + 16).toBeLessThan(geometry.messageTop);
-    }
-  }
-});
-
-test("reduced motion keeps the moving background, its pause control and the arrow colors", async ({ page }) => {
+test("reduced motion keeps the moving hero particles and the keyboard pause control", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto(about);
-  const toggle = page.locator(".about-scene__toggle");
-  // The toggle is unhidden only after the canvas is sized, so this snapshot is not the default 300x150 buffer.
-  await expect(toggle).toBeVisible();
-  await expect(toggle).toHaveAccessibleName("Пауза на фона");
-  const canvas = page.locator(".about-scene canvas");
-  const initial = await canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL());
-  await expect.poll(() => canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL())).not.toBe(initial);
-  await toggle.click();
-  await expect(toggle).toHaveAccessibleName("Пусни фона");
-  const paused = await canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL());
-  await page.waitForTimeout(250);
-  expect(await canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL())).toBe(paused);
-  await expect(page.locator(".about-scroll__arrow")).toHaveCSS("animation-name", /about-arrow-colors/);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  const hero = page.locator(".about-particles");
+  const first = await hero.screenshot();
+  await expect.poll(async () => (await hero.screenshot()).equals(first)).toBe(false);
+  await page.locator(".about-scene__toggle").focus();
+  await expect(page.locator(".about-scene__toggle")).toHaveAccessibleName("Пауза на фона");
 });
 
-test("message motion is identical with and without reduced motion", async ({ browser }) => {
-  const samples: string[][] = [];
-  for (const reducedMotion of ["no-preference", "reduce"] as const) {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion });
-    const page = await context.newPage();
-    await page.goto(`${about}#about-title`);
-    await expect(page.locator(".about-content")).toHaveAttribute("data-about-motion", "");
-    const sample: string[] = [];
-    for (const [index, phase] of [[1, .1], [2, .55], [3, .9]] as const) {
-      await page.locator(`#about-message-${index}`).evaluate((section, at) => {
-        scrollTo(0, section.getBoundingClientRect().top + scrollY + (section as HTMLElement).offsetHeight * at - innerHeight);
-      }, phase);
-      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-      sample.push(...await page.locator(".about-message__body").evaluateAll((bodies) => bodies.map((body) => {
-        const style = getComputedStyle(body);
-        return `${style.position} ${style.transform} ${Number(style.opacity).toFixed(2)}`;
-      })));
-    }
-    samples.push(sample);
-    await context.close();
-  }
-  expect(samples[1]).toEqual(samples[0]);
-  expect(samples[0].some((value) => value.startsWith("fixed matrix"))).toBe(true);
-});
-
-test("very short screens keep every message in document flow with either motion preference", async ({ page }) => {
-  await page.setViewportSize({ width: 844, height: 340 });
-  for (const reducedMotion of ["no-preference", "reduce"] as const) {
-    await page.emulateMedia({ reducedMotion });
-    await page.goto("about:blank");
-    await page.goto(`${about}#about-message-2`);
-    const body = page.locator("#about-message-2 .about-message__body");
-    await expect(body).toHaveCSS("position", "static");
-    await expect(body).toHaveCSS("opacity", "1");
-    await expect(body).toHaveCSS("transform", "none");
-    await expect(body.locator("p")).toBeInViewport();
-  }
-});
-
-test("the menu pauses the background and footer removes its control", async ({ page }) => {
+test("the menu pauses the hero particles and the footer removes the pause control", async ({ page }) => {
   await page.goto(about);
-  const canvas = page.locator(".about-scene canvas");
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  const hero = page.locator(".about-particles");
   const toggle = page.locator(".about-scene__toggle");
   await page.locator(".site-menu > summary").click();
-  await expect(toggle).toBeHidden();
-  const paused = await canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL());
-  await page.waitForTimeout(250);
-  expect(await canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL())).toBe(paused);
+  // Let the menu finish opening so only the particles could change the frame.
+  await page.waitForTimeout(1000);
+  const paused = await hero.screenshot();
+  await page.waitForTimeout(300);
+  expect((await hero.screenshot()).equals(paused)).toBe(true);
   await page.locator(".site-menu > summary").click();
-  await expect(toggle).toBeVisible();
-  await expect.poll(() => canvas.evaluate((node) => (node as HTMLCanvasElement).toDataURL())).not.toBe(paused);
+  await expect.poll(async () => (await hero.screenshot()).equals(paused)).toBe(false);
   await toggle.focus();
   await page.locator(".site-footer").scrollIntoViewIfNeeded();
   await expect(toggle).toBeHidden();
   await expect(page.locator("#about-footer")).toBeFocused();
 });
 
-test("the first arrow click finishes the logo flight and keeps the title visible", async ({ page }) => {
-  await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  await page.locator(".about-scroll").click();
-  await expect(page.locator("#about-title")).toBeFocused();
-  await expect(page.locator(".site-header__brand img")).toHaveCSS("opacity", "1");
-  await expect(page.locator("#about-title")).toBeInViewport();
-  await expect(page.locator("#about-title .about-title__reveal")).toHaveCSS("opacity", "1");
+// Scrolls to a share of the hero's sticky travel (0 = top, 1 = end of the exit).
+async function scrollHero(page: Page, progress: number) {
+  // A fragment load realigns once fonts are ready; let that happen before taking over the scroll.
+  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate((share) => {
+    const hero = document.querySelector<HTMLElement>(".about-hero")!;
+    const stage = hero.querySelector<HTMLElement>(".about-hero__stage")!;
+    scrollTo(0, hero.offsetTop + (hero.offsetHeight - stage.clientHeight) * share);
+  }, progress);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
+// Bright pixels of the hero stage below the header, as rendered: how many, and the width that holds
+// the middle 90% of them. Decoded in Node, because the page's CSP rightly refuses data: URLs.
+async function cloudShape(page: Page) {
+  const clip = await page.evaluate(() => {
+    const top = Math.ceil(document.querySelector(".site-header")!.getBoundingClientRect().bottom);
+    return { x: 0, y: top, width: innerWidth, height: Math.round(innerHeight * .6) - top };
+  });
+  const { data, info } = await sharp(await page.screenshot({ clip })).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const columns: number[] = [];
+  for (let index = 0; index < data.length; index += 3) {
+    if (data[index] + data[index + 1] + data[index + 2] >= 180) columns.push((index / 3) % info.width);
+  }
+  columns.sort((left, right) => left - right);
+  const at = (share: number) => columns[Math.floor((columns.length - 1) * share)];
+  return { count: columns.length, spread: columns.length ? (at(.95) - at(.05)) / info.width : 0 };
+}
+
+test("the wordmark letters fall left to right with the hero scroll and stand up again", async ({ page }) => {
+  for (const { width, height, url } of [{ width: 1440, height: 900, url: about }, { width: 390, height: 844, url: pageUrl("about", "en") }, { width: 320, height: 700, url: about }]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(`${url}#about-title`);
+    const letters = page.locator(".about-hero__letter");
+    const sample = () => letters.evaluateAll((nodes) => nodes.map((node) => ({ value: Number((node as HTMLElement).style.getPropertyValue("--about-letter") || 0), opacity: Number(getComputedStyle(node).opacity) })));
+    await scrollHero(page, 0);
+    expect((await sample()).every((letter) => letter.value === 0 && letter.opacity === 1), `${width}px upright`).toBe(true);
+    await scrollHero(page, .2);
+    const middle = await sample();
+    expect(middle[0].value, `${width}px first ahead`).toBeGreaterThan(middle.at(-1)!.value);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    await scrollHero(page, 1);
+    expect((await sample()).every((letter) => letter.value === 1 && letter.opacity === 0), `${width}px fallen`).toBe(true);
+    await scrollHero(page, 0);
+    expect((await sample()).every((letter) => letter.value === 0 && letter.opacity === 1), `${width}px restored`).toBe(true);
+  }
 });
 
-test("the logo and heading overlap without an empty transition frame", async ({ page }) => {
+test("the cue leaves early in the exit but stays visible while it has keyboard focus", async ({ page }) => {
+  await page.goto(`${about}#about-title`);
+  await scrollHero(page, 0);
+  const cue = page.locator(".about-hero__cue");
+  await scrollHero(page, .3);
+  await expect(page.locator(".about-hero")).toHaveAttribute("data-about-exited", "");
+  await expect(cue).toHaveCSS("visibility", "hidden");
+  await scrollHero(page, 0);
+  await cue.focus();
+  await scrollHero(page, .3);
+  await expect(cue).toBeFocused();
+  await expect(cue).toHaveCSS("visibility", "visible");
+  await expect(cue).toBeInViewport();
+  // Moving focus elsewhere (without scrolling the page) hides the cue again.
+  await cue.evaluate((node) => (node as HTMLElement).blur());
+  await expect(cue).toHaveCSS("visibility", "hidden");
+});
+
+test("without particles the letters fall over the whole exit instead of leaving an empty stage", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type.startsWith("webgl") ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest);
+    } as typeof original;
+  });
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "static", { timeout: liveTimeout });
+  await scrollHero(page, .7);
+  const last = await page.locator(".about-hero__letter").last().evaluate((node) => Number(getComputedStyle(node).opacity));
+  expect(last).toBeGreaterThan(0);
+});
+
+test("resizing in the middle of the exit keeps the wordmark fitted and the letters in order", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${pageUrl("about", "en")}#about-title`);
+  await scrollHero(page, .25);
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.evaluate(() => document.fonts.ready);
+  await scrollHero(page, .25);
+  const state = await page.locator(".about-hero__logo").evaluate((node) => {
+    const used = Array.from(node.children).reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+    const values = Array.from(node.querySelectorAll<HTMLElement>(".about-hero__letter")).map((letter) => Number(letter.style.getPropertyValue("--about-letter") || 0));
+    return { fill: used / node.clientWidth, first: values[0], last: values.at(-1)! };
+  });
+  expect(state.fill).toBeGreaterThan(.95);
+  expect(state.first).toBeGreaterThan(state.last);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1100);
+});
+
+test("the particle cloud narrows into a column, keeps it while the intro arrives and unfolds on the way back", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  await expect(page.locator(".about-intro")).toHaveAttribute("data-about-phase", "logo", { timeout: 9000 });
-  for (let step = 0; step <= 12; step++) {
-    await page.evaluate((y) => scrollTo(0, y), step * 45);
-    await page.waitForTimeout(30);
-    const visible = await page.evaluate(() => {
-      const logo = document.querySelector<HTMLElement>(".about-intro__flight-logo")!;
-      const heading = document.querySelector<HTMLElement>("#about-title span")!;
-      const inViewport = (box: DOMRect) => box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
-      return (inViewport(logo.getBoundingClientRect()) && Number(getComputedStyle(logo).opacity) > .05)
-        || (inViewport(heading.getBoundingClientRect()) && Number(getComputedStyle(heading).opacity) > .1);
-    });
-    expect(visible, `scroll step ${step}`).toBe(true);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  const open = await cloudShape(page);
+  await scrollHero(page, 1);
+  await expect(root(page), "the WebGL scene is still live").toHaveAttribute("data-about-intro", "live");
+  // The scene draws the new shape on its next frame, so the narrowing is polled.
+  await expect.poll(async () => (await cloudShape(page)).spread).toBeLessThan(open.spread * .4);
+  await expect.poll(async () => (await cloudShape(page)).count).toBeGreaterThan(50);
+  // From the end of the exit until the heading is on screen, the column or the heading is always visible.
+  for (let step = 0; step <= 8; step++) {
+    await page.evaluate(() => scrollBy(0, innerHeight * .1));
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const heading = await page.locator(".about-strip__item .about-word").evaluateAll((nodes) => nodes.some((node) => {
+      const box = node.getBoundingClientRect();
+      return box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth && Number(getComputedStyle(node).opacity) > .1;
+    }));
+    if (!heading) expect((await cloudShape(page)).count, `step ${step}`).toBeGreaterThan(50);
   }
+  await scrollHero(page, 0);
+  await expect.poll(async () => (await cloudShape(page)).spread).toBeGreaterThan(open.spread * .7);
 });
 
-test("the arrow advances through readable scenes and yields to the footer", async ({ page }) => {
+test("a paused cloud still follows the scroll with a single frame", async ({ page }) => {
   await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  const arrow = page.locator(".about-scroll");
-  await arrow.click();
-  await expect(page.locator("#about-title")).toBeFocused();
-  await arrow.click();
-  await expect(page.locator("#about-message-1")).toBeFocused();
-  await expect(page.locator("#about-message-1 .about-message__body")).toHaveCSS("opacity", "1");
-  await arrow.click();
-  await arrow.click();
-  await expect(page.locator("#about-message-3")).toBeFocused();
-  await arrow.click();
-  await expect(page.locator("#about-message-4")).toBeFocused();
-  await arrow.click();
-  await expect(page.locator("#about-footer")).toBeFocused();
-  await expect(arrow).toBeHidden();
-});
-
-test("mobile About text stays within the viewport and the arrow remains clickable", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  await page.evaluate(() => scrollTo(0, innerHeight * .35));
-  const arrowHit = await page.locator(".about-scroll").evaluate((link) => {
-    const box = link.getBoundingClientRect();
-    return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest(".about-scroll") === link;
-  });
-  expect(arrowHit).toBe(true);
-  await page.locator(".about-scroll").click();
-  await expect(page.locator("#about-title")).toBeFocused();
-  for (const id of ["about-title", "about-message-1", "about-message-2", "about-message-3", "about-message-4"]) {
-    if (id !== "about-title") {
-      await page.locator(".about-scroll").click();
-      await expect(page.locator(`#${id}`)).toBeFocused();
-      await expect(page.locator(`#${id} .about-message__body`)).toHaveCSS("opacity", "1");
-    }
-    const box = await page.locator(id === "about-title" ? "#about-title .about-title__reveal" : `#${id} p`).boundingBox();
-    expect(box!.x, id).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width, id).toBeLessThanOrEqual(390);
-  }
-});
-
-test("dismissing the intro after scrolling keeps the heading unobstructed", async ({ page }) => {
-  await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  await page.evaluate(() => scrollTo(0, innerHeight * .3));
-  await page.locator(".site-menu > summary").focus();
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-dismissed", "");
-  await page.evaluate(() => scrollTo(0, innerHeight * .55));
-  const visible = await page.locator("#about-title").evaluate((heading) => {
-    const box = heading.getBoundingClientRect();
-    const headerBottom = document.querySelector(".site-header")!.getBoundingClientRect().bottom;
-    return box.top >= headerBottom && box.bottom <= innerHeight
-      && getComputedStyle(heading.querySelector(".about-title__reveal")!).opacity === "1";
-  });
-  expect(visible).toBe(true);
-  await expect(page.locator(".about-intro__static-logo")).toHaveCSS("opacity", "0");
-});
-
-test("keyboard and repeated touch input can advance the arrow", async ({ page }) => {
-  await page.goto(about);
-  await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-  const arrow = page.locator(".about-scroll");
-  await arrow.focus();
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  await page.locator(".about-hero__cue").focus();
+  await page.keyboard.press("Tab");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#about-title")).toBeFocused();
-  await page.keyboard.press("Shift+Tab");
-  await expect(arrow).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#about-message-1")).toBeFocused();
-  await arrow.click();
-  await arrow.dispatchEvent("touchstart");
-  await arrow.click();
-  await expect(page.locator("#about-message-3")).toBeFocused();
+  await expect(page.locator(".about-scene__toggle")).toHaveAccessibleName("Пусни фона");
+  const before = await cloudShape(page);
+  await scrollHero(page, 1);
+  await expect.poll(async () => (await cloudShape(page)).spread).toBeLessThan(before.spread * .4);
+  // Let the scroll-only background dots come to rest as well.
+  await page.waitForTimeout(400);
+  const still = await page.locator(".about-particles").screenshot();
+  await page.waitForTimeout(300);
+  expect((await page.locator(".about-particles").screenshot()).equals(still)).toBe(true);
 });
 
-test("long copy fits narrow, landscape and English layouts", async ({ page }) => {
+test("very short screens and pages without JavaScript keep a one-screen hero without the fall", async ({ browser, page }) => {
+  await page.setViewportSize({ width: 844, height: 340 });
+  await page.goto(`${about}#about-title`);
+  expect(await page.locator(".about-hero").evaluate((node) => Math.round(node.getBoundingClientRect().height))).toBe(340);
+  await expect(page.locator(".about-hero__letter").first()).toHaveCSS("transform", "none");
+  // No travel means no exit: a little scroll must not hide the cue at once.
+  await page.evaluate(() => scrollTo(0, 20));
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.locator(".about-hero")).not.toHaveAttribute("data-about-exited");
+
+  const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1440, height: 900 } });
+  const noScript = await context.newPage();
+  await noScript.goto(about);
+  expect(await noScript.locator(".about-hero").evaluate((node) => Math.round(node.getBoundingClientRect().height))).toBe(900);
+  await context.close();
+});
+
+// Visible words: opacity and whether the word box is on screen.
+const wordStates = (page: Page, selector: string) => page.locator(`${selector} .about-word`).evaluateAll((nodes) => nodes.map((node) => {
+  const box = node.getBoundingClientRect();
+  return { opacity: Number(getComputedStyle(node).opacity), inView: box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight };
+}));
+const settle = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+test("the intro heading surfaces in the lower corners at the end of the hero exit", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${about}#about-title`);
+  await settle(page);
+  const heading = page.locator("h1");
+  await expect(heading).toHaveCount(1);
+  expect((await heading.textContent())!.replace(/\s+/g, " ").trim()).toBe("Агенция за дигитален растеж и силно онлайн присъствие");
+  await expect.poll(async () => (await wordStates(page, ".about-intro")).every((word) => word.opacity === 1 && word.inView)).toBe(true);
+  const layout = await page.evaluate(() => {
+    const lead = document.querySelector(".about-intro--lead")!.getBoundingClientRect();
+    const tail = document.querySelector(".about-intro--tail")!.getBoundingClientRect();
+    return { leadLeft: lead.left, leadBottom: lead.bottom, tailRight: tail.right, tailBottom: tail.bottom, tailStyle: getComputedStyle(document.querySelector(".about-intro--tail .about-word")!).fontStyle };
+  });
+  expect(layout.leadLeft).toBeLessThan(200);
+  expect(layout.leadBottom).toBeGreaterThan(700);
+  expect(layout.tailRight).toBeGreaterThan(1240);
+  expect(layout.tailBottom).toBeGreaterThan(700);
+  expect(layout.tailStyle).toBe("italic");
+  await scrollHero(page, .3);
+  expect((await wordStates(page, ".about-intro")).every((word) => word.opacity === 0)).toBe(true);
+});
+
+test("the strip carries the paired messages right to left without an empty frame and comes back", async ({ page }) => {
   test.setTimeout(90_000);
-  for (const { width, height, url } of [
-    { width: 320, height: 700, url: about },
-    { width: 844, height: 390, url: about },
-    { width: 740, height: 380, url: about },
-    { width: 844, height: 390, url: pageUrl("about", "en") },
-    { width: 740, height: 380, url: pageUrl("about", "en") },
-    { width: 390, height: 844, url: pageUrl("about", "en") },
-  ]) {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${about}#about-title`);
+  await settle(page);
+  const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  const positions: number[] = [];
+  let sawPair = false;
+  for (let top = await page.evaluate(() => scrollY); top < end; top += 45) {
+    await page.evaluate((y) => scrollTo(0, y), top);
+    await settle(page);
+    const visible = await page.locator(".about-strip__item .about-word").evaluateAll((nodes) => nodes.some((node) => {
+      const box = node.getBoundingClientRect();
+      return Number(getComputedStyle(node).opacity) > .5 && box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight;
+    }));
+    const footerTop = await page.locator(".site-footer").evaluate((node) => node.getBoundingClientRect().top);
+    if (footerTop > 900) expect(visible, `scroll ${top}`).toBe(true);
+    positions.push(await page.locator("#about-message-1").evaluate((node) => node.getBoundingClientRect().left));
+    const pair = await page.evaluate(() => [1, 2].every((index) => Array.from(document.querySelectorAll(`#about-message-${index} .about-word`)).every((node) => Number(getComputedStyle(node).opacity) === 1)));
+    sawPair ||= pair;
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
+  }
+  expect(sawPair).toBe(true);
+  for (let index = 1; index < positions.length; index++) expect(positions[index]).toBeLessThanOrEqual(positions[index - 1] + .5);
+  // Back to the intro through a fresh fragment (the page was opened at #about-title).
+  await page.evaluate(() => { location.hash = "#about-message-1"; });
+  await page.evaluate(() => { location.hash = "#about-title"; });
+  await expect.poll(async () => (await wordStates(page, ".about-intro")).every((word) => word.opacity === 1)).toBe(true);
+});
+
+test("message words surface in reading order", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${about}#about-title`);
+  await settle(page);
+  let checked = false;
+  for (let step = 0; step < 40 && !checked; step++) {
+    await page.evaluate(() => scrollBy(0, 30));
+    await settle(page);
+    const words = await wordStates(page, "#about-message-1");
+    const first = words[0].opacity;
+    const last = words.at(-1)!.opacity;
+    if (first > .2 && first < 1) { expect(first).toBeGreaterThan(last); checked = true; }
+  }
+  expect(checked).toBe(true);
+});
+
+test("every message fragment lands on a fully visible, focused message", async ({ page }) => {
+  for (const [width, height] of [[1440, 900], [390, 844]] as const) {
     await page.setViewportSize({ width, height });
-    await page.goto(url);
-    await expect(page.locator(".site-page--about")).toHaveAttribute("data-about-enhanced", "", { timeout: 5000 });
-    await page.locator(".about-scroll").click();
     for (let index = 1; index <= 4; index++) {
-      const section = page.locator(`#about-message-${index}`);
-      await page.locator(".about-scroll").click();
-      await expect(section).toBeFocused();
-      await expect(section.locator(".about-message__body")).toHaveCSS("opacity", "1");
-      const box = await section.locator("p").boundingBox();
-      expect(box!.x, `${width}x${height}, message ${index}`).toBeGreaterThanOrEqual(0);
-      expect(box!.x + box!.width, `${width}x${height}, message ${index}`).toBeLessThanOrEqual(width);
-      // Only the bottom controls that share columns with the text can cover it.
-      const controlsTop = await page.evaluate(({ left, right }) => Math.min(Infinity, ...[".about-scene__toggle", ".about-scroll"]
-        .map((selector) => document.querySelector(selector)!.getBoundingClientRect())
-        .filter((rect, i) => rect.height > 0 && rect.left < right && rect.right > left
-          && getComputedStyle(document.querySelector([".about-scene__toggle", ".about-scroll"][i])!).visibility !== "hidden")
-        .map((rect) => rect.top)), { left: box!.x, right: box!.x + box!.width });
-      expect(box!.y + box!.height, `${width}x${height}, message ${index} above the controls`).toBeLessThanOrEqual(controlsTop);
+      await page.goto("about:blank");
+      await page.goto(`${about}#about-message-${index}`);
+      await expect(page.locator(`#about-message-${index}`)).toBeFocused();
+      await expect.poll(async () => (await wordStates(page, `#about-message-${index}`)).every((word) => word.opacity === 1 && word.inView), `${width}px message ${index}`).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     }
+  }
+});
+
+test("the cue and the skip link land on the intro heading", async ({ page }) => {
+  await page.goto(`${about}#about-title`);
+  await page.evaluate(() => { history.replaceState(null, "", location.pathname); scrollTo(0, 0); });
+  await settle(page);
+  await page.locator(".about-hero__cue").click();
+  await expect(page.locator("#about-title")).toBeFocused();
+  await expect(page).toHaveURL(/#about-title$/);
+  await expect.poll(async () => (await wordStates(page, ".about-intro")).every((word) => word.opacity === 1 && word.inView)).toBe(true);
+  await page.evaluate(() => scrollTo(0, 0));
+  await settle(page);
+  await page.locator(".skip-link").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#about-title")).toBeFocused();
+  await expect.poll(async () => (await wordStates(page, ".about-intro")).every((word) => word.opacity === 1 && word.inView)).toBe(true);
+});
+
+test("phones stack the intro low on the screen and show one message per screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${about}#about-message-2`);
+  await expect(page.locator(".about-content")).toHaveAttribute("data-about-single", "");
+  await expect.poll(async () => (await wordStates(page, "#about-message-2")).every((word) => word.opacity === 1 && word.inView)).toBe(true);
+  expect((await page.locator("#about-message-2").boundingBox())!.y).toBeGreaterThan(844 / 2);
+  for (const other of [1, 3]) {
+    expect((await wordStates(page, `#about-message-${other}`)).some((word) => word.opacity > .5 && word.inView), `message ${other}`).toBe(false);
+  }
+  await page.evaluate(() => { location.hash = "#about-title"; });
+  await expect.poll(async () => (await wordStates(page, ".about-intro")).every((word) => word.opacity === 1 && word.inView)).toBe(true);
+  const [lead, tail] = await page.evaluate(() => [".about-intro--lead", ".about-intro--tail"].map((selector) => document.querySelector(selector)!.getBoundingClientRect()));
+  expect(tail.top).toBeGreaterThanOrEqual(lead.bottom);
+  expect(lead.top).toBeGreaterThan(844 / 2);
+  expect(tail.bottom).toBeLessThanOrEqual(844);
+  expect(tail.right).toBeLessThanOrEqual(390);
+});
+
+test("wheel scrolling is smoothed while direct scrolling lands at once", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${about}#about-title`);
+  await settle(page);
+  const x = () => page.locator("#about-message-1").evaluate((node) => (node as HTMLElement).style.getPropertyValue("--about-x"));
+  await page.mouse.move(720, 450);
+  await page.mouse.wheel(0, 400);
+  const samples: string[] = [];
+  for (let frame = 0; frame < 8; frame++) { await page.waitForTimeout(25); samples.push(await x()); }
+  expect(new Set(samples).size, "the wheel glides over several frames").toBeGreaterThan(2);
+  await page.waitForTimeout(800);
+  await page.evaluate(() => scrollBy(0, 400));
+  await settle(page);
+  const direct = await x();
+  await page.waitForTimeout(150);
+  expect(await x()).toBe(direct);
+});
+
+test("behind the strip the particles turn only while scrolling and fade after it", async ({ page }) => {
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  await page.evaluate(() => { location.hash = "#about-message-2"; });
+  await page.waitForTimeout(500);
+  const particles = page.locator(".about-particles");
+  const idle = await particles.screenshot();
+  await page.waitForTimeout(400);
+  expect((await particles.screenshot()).equals(idle)).toBe(true);
+  await page.locator(".site-footer").scrollIntoViewIfNeeded();
+  await expect(root(page)).toHaveAttribute("data-about-scene-gone", "");
+  await expect(particles).toHaveCSS("opacity", "0");
+});
+
+test("without JavaScript, on very short screens and in print the content is a readable vertical flow", async ({ browser, page }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const noScript = await context.newPage();
+  await noScript.goto(about);
+  await expect(noScript.locator(".about-content")).not.toHaveAttribute("data-about-strip");
+  expect((await wordStates(noScript, ".about-content")).every((word) => word.opacity === 1)).toBe(true);
+  await context.close();
+
+  await page.setViewportSize({ width: 844, height: 340 });
+  await page.goto(`${about}#about-message-2`);
+  await expect(page.locator(".about-content")).not.toHaveAttribute("data-about-strip");
+  expect((await wordStates(page, ".about-content")).every((word) => word.opacity === 1)).toBe(true);
+  await expect(page.locator("#about-message-2 p")).toBeInViewport();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${about}#about-title`);
+  await page.emulateMedia({ media: "print" });
+  expect((await wordStates(page, ".about-content")).every((word) => word.opacity === 1)).toBe(true);
+  await expect(page.locator("#about-message-1")).toHaveCSS("position", "static");
+});
+
+test("every message keeps its exact text, with spaces, in both languages", async ({ page }) => {
+  for (const locale of ["bg", "en"] as const) {
+    await page.goto(`${pageUrl("about", locale)}#about-title`);
+    const rendered = await page.locator(".about-message p").evaluateAll((nodes) => nodes.map((node) => node.textContent!.replace(/\s+/g, " ").trim()));
+    expect(rendered).toEqual(aboutCopy(locale).messages);
+    expect((await page.locator("h1").textContent())!.replace(/\s+/g, " ").trim()).toBe(aboutCopy(locale).introLead.join(" "));
+  }
+});
+
+test("the particles rest behind the readable intro until the visitor scrolls", async ({ page }) => {
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  await page.locator(".about-hero__cue").click();
+  await expect(page.locator("#about-title")).toBeFocused();
+  await page.waitForTimeout(400);
+  const particles = page.locator(".about-particles");
+  const idle = await particles.screenshot();
+  await page.waitForTimeout(400);
+  expect((await particles.screenshot()).equals(idle)).toBe(true);
+});
+
+test("on very short screens the particle layer ends with the hero", async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 340 });
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", /live|static/, { timeout: liveTimeout });
+  await page.locator("#about-message-2").scrollIntoViewIfNeeded();
+  await expect(root(page)).toHaveAttribute("data-about-scene-gone", "");
+  await expect(page.locator(".about-particles")).toHaveCSS("opacity", "0");
+});
+
+test("a runtime failure in the strip restores the readable vertical flow", async ({ page }) => {
+  await page.goto(`${about}#about-title`);
+  await expect(page.locator(".about-content")).toHaveAttribute("data-about-strip", "");
+  await page.evaluate(() => {
+    const original = CSSStyleDeclaration.prototype.setProperty;
+    CSSStyleDeclaration.prototype.setProperty = function (this: CSSStyleDeclaration, name: string, ...rest: [string | null, string?]) {
+      if (name === "--about-x") throw new Error("injected strip failure");
+      return original.call(this, name, ...rest);
+    };
+    scrollBy(0, innerHeight * .5);
+  });
+  await expect(page.locator(".about-content")).not.toHaveAttribute("data-about-strip");
+  expect((await wordStates(page, ".about-content")).every((word) => word.opacity === 1)).toBe(true);
+});
+
+test("a zoomed English page keeps every message reachable without horizontal scroll", async ({ page }) => {
+  // About 200% zoom on a 1440×900 screen.
+  await page.setViewportSize({ width: 720, height: 450 });
+  for (let index = 1; index <= 4; index++) {
+    await page.goto("about:blank");
+    await page.goto(`${pageUrl("about", "en")}#about-message-${index}`);
+    await expect.poll(async () => (await wordStates(page, `#about-message-${index}`)).every((word) => word.opacity === 1 && word.inView), `message ${index}`).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(720);
+  }
+});
+
+test("accented phrases are coloured exactly as written in both languages, in sentence case", async ({ page }) => {
+  for (const locale of ["bg", "en"] as const) {
+    const copy = aboutCopy(locale);
+    await page.goto(`${pageUrl("about", locale)}#about-title`);
+    const blocks = await page.locator(".about-strip__item").evaluateAll((nodes) => nodes.map((node) => ({
+      transform: getComputedStyle(node).textTransform,
+      tones: Object.fromEntries(["orange", "green"].map((tone) => [tone, [...node.querySelectorAll(`.about-word--${tone}`)].map((word) => word.textContent!.trim()).join(" ")])),
+      colours: [...new Set([...node.querySelectorAll("[class*='about-word--']")].map((word) => getComputedStyle(word).color))],
+      text: node.textContent!.replace(/\s+/g, " ").trim(),
+    })));
+    const texts = [copy.introLead.join(" "), copy.introTail.join(" "), ...copy.messages];
+    blocks.forEach((block, index) => {
+      expect(block.text, `${locale} block ${index}`).toBe(texts[index]);
+      expect(block.transform).toBe("none");
+      for (const tone of ["orange", "green"]) {
+        const expected = copy.accents[index].filter((accent) => accent.tone === tone).map((accent) => accent.text ?? texts[index]).join(" ");
+        expect(block.tones[tone], `${locale} block ${index} ${tone}`).toBe(expected);
+      }
+      for (const colour of block.colours) expect(["rgb(239, 127, 26)", "rgb(116, 151, 40)"]).toContain(colour);
+    });
   }
 });
