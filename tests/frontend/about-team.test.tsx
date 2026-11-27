@@ -139,37 +139,36 @@ describe("team scroll mapping", () => {
 });
 
 describe("portrait mix along the scroll", () => {
-  const round = (mix: ReturnType<typeof mixAt>) => ({ index: mix.index, scatter: Number(mix.scatter.toFixed(2)), nextScatter: Number(mix.nextScatter.toFixed(2)) });
+  const round = (mix: ReturnType<typeof mixAt>) => Object.fromEntries(Object.entries(mix).map(([key, value]) => [key, Number(value.toFixed(2))]));
 
-  it("holds a member whole, then scatters it while the next one assembles, and holds the next one whole", () => {
-    expect(round(mixAt(0, 3))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
-    expect(round(mixAt(.3, 3))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
-    // The hand-over: both portraits partly scattered, like sand pouring from one into the other.
-    const middle = mixAt(.5, 3);
-    expect(middle.scatter).toBeGreaterThan(.5);
-    expect(middle.scatter).toBeLessThan(1);
-    expect(middle.nextScatter).toBeGreaterThan(.5);
-    expect(middle.nextScatter).toBeLessThan(1);
-    expect(round(mixAt(.6, 3)).scatter).toBe(1);
-    expect(round(mixAt(.7, 3))).toEqual({ index: 0, scatter: 1, nextScatter: 0 });
-    expect(round(mixAt(1, 3))).toEqual({ index: 1, scatter: 0, nextScatter: 1 });
+  it("slides the outgoing portrait up and brings the next one up from below, as the design table says", () => {
+    expect(round(mixAt(0, 3))).toEqual({ index: 0, scatter: 0, slide: 0, nextScatter: 1, nextSlide: 1 });
+    expect(round(mixAt(.3, 3))).toEqual({ index: 0, scatter: 0, slide: .16, nextScatter: .96, nextSlide: .98 });
+    // Midway both portraits are seen: little dust, each part of the way along its slide.
+    expect(round(mixAt(.5, 3))).toEqual({ index: 0, scatter: .32, slide: .62, nextScatter: .32, nextSlide: .62 });
+    expect(round(mixAt(.7, 3))).toEqual({ index: 0, scatter: .96, slide: .98, nextScatter: 0, nextSlide: .16 });
+    expect(round(mixAt(1, 3))).toEqual({ index: 1, scatter: 0, slide: 0, nextScatter: 1, nextSlide: 1 });
   });
 
-  it("follows the scroll both ways: the same position always gives the same mix", () => {
-    // Scrolling back through a hand-over reverses it step by step: the next portrait scatters again.
-    const back = [.7, .65, .6, .55, .5, .45, .4].map((position) => mixAt(position, 3).nextScatter);
-    expect(back).toEqual([...back].sort((a, b) => a - b));
-    expect(back[0]).toBe(0);
-    expect(back.at(-1)).toBe(1);
-    // Scatter grows monotonically through a hand-over.
-    const scatters = [.3, .35, .4, .45, .5, .55, .6].map((position) => mixAt(position, 3).scatter);
-    expect(scatters).toEqual([...scatters].sort((a, b) => a - b));
+  it("moves continuously with the scroll, so there is no sudden jump or light-up", () => {
+    for (let position = 0; position < 1.99; position += .01) {
+      const [now, next] = [mixAt(position, 3), mixAt(position + .01, 3)];
+      if (now.index !== next.index) continue;
+      for (const key of ["scatter", "slide", "nextScatter", "nextSlide"] as const) expect(Math.abs(next[key] - now[key]), `${key} at ${position}`).toBeLessThan(.05);
+    }
+  });
+
+  it("never leaves only dust: through a hand-over one portrait is always mostly whole", () => {
+    for (let position = 0; position <= 1; position += .01) {
+      const mix = mixAt(position, 3);
+      expect(Math.min(mix.scatter, mix.nextScatter), `at ${position}`).toBeLessThan(.5);
+    }
   });
 
   it("ends on the last member whole and clamps outside the range", () => {
-    expect(round(mixAt(2, 3))).toEqual({ index: 1, scatter: 1, nextScatter: 0 });
-    expect(round(mixAt(9, 3))).toEqual({ index: 1, scatter: 1, nextScatter: 0 });
-    expect(round(mixAt(-1, 3))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
-    expect(round(mixAt(0, 1))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
+    expect(round(mixAt(2, 3))).toEqual({ index: 1, scatter: 1, slide: 1, nextScatter: 0, nextSlide: 0 });
+    expect(round(mixAt(9, 3))).toEqual(round(mixAt(2, 3)));
+    expect(round(mixAt(-1, 3))).toEqual(round(mixAt(0, 3)));
+    expect(round(mixAt(0, 1))).toEqual({ index: 0, scatter: 0, slide: 0, nextScatter: 1, nextSlide: 1 });
   });
 });

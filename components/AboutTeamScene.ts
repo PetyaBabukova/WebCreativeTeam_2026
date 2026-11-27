@@ -25,6 +25,8 @@ export type PortraitSource = { color: string; depth: string; eyeLine: number };
 type Options = {
   canvas: HTMLCanvasElement; compact: boolean; smooth: boolean; glyphFonts: GlyphFonts; portraits: PortraitSource[]; referenceEyeLine: number;
   onContextLost: () => void; onMix?: (mix: string, eyes: number | null) => void;
+  // Height of the header over the canvas top, in CSS pixels; the outgoing portrait fades before it.
+  topInset?: () => number;
 };
 // aspect: width / height of the portrait, which is 2 units tall.
 export type PortraitPoints = { positions: Float32Array; colors: Float32Array; seeds: Float32Array; count: number; spacing: number; aspect: number };
@@ -52,29 +54,44 @@ const dotSize = { min: .26, max: .62 };
 // The portrait's breathing settles within five seconds of a member appearing; the rain and the base keep
 // moving while the section is on screen (owner decision) and stop with the page-wide pause and off screen.
 export const timing = { life: 5000, settle: 1000 };
-// Owner, 27 Nov 2026: the change follows the scroll. Between member k and k+1 (f = 0..1): k holds until holdEnd,
-// scatters by scatterEnd; k+1 assembles from assembleStart to assembleEnd. The shown position eases after the
-// scroll over smoothingMilliseconds; a jump of more than one member is applied at once.
-export const scrub = { holdEnd: .3, scatterEnd: .6, assembleStart: .4, assembleEnd: .7, smoothingMilliseconds: 140 };
+// Owner, 27 Nov 2026: the change follows the scroll. Between member k and k+1 (f = 0..1) member k slides up and
+// dusts away while k+1 rises from the relief into place. The shown position eases after the scroll over
+// smoothingMilliseconds; a jump of more than one member is applied at once.
+// Owner, 27 Nov 2026 (stage 4d): the portraits slide with the scroll like frames on a strip instead of turning to dust
+// and lighting up. Zones are [start, end] shares of f; distance is the slide in portrait units (reducedDistance with
+// reduced motion, where the change is mostly a cross-fade).
+export const scrub = {
+  slideOut: [.15, .75], scatterOut: [.35, .75], slideIn: [.25, .85], scatterIn: [.25, .65],
+  distance: 1.1, reducedDistance: .2, smoothingMilliseconds: 220,
+} as const;
+const zone = (f: number, [start, end]: readonly [number, number]) => (f - start) / (end - start);
 const ease = (value: number) => { const step = Math.min(1, Math.max(0, value)); return step * step * (3 - 2 * step); };
 
 // The two portraits drawn at a scroll position: index k and its scatter, and k+1's scatter (1 = fully scattered).
 export function mixAt(position: number, count: number) {
-  if (count < 2) return { index: 0, scatter: 0, nextScatter: 1 };
+  if (count < 2) return { index: 0, scatter: 0, slide: 0, nextScatter: 1, nextSlide: 1 };
   const last = count - 1;
   const clamped = Math.min(last, Math.max(0, position));
   const index = Math.min(Math.floor(clamped), last - 1);
   const f = clamped - index;
+  // slide: the outgoing portrait's share of the way up; nextSlide: the incoming one's share of the way still below.
   return {
     index,
-    scatter: ease((f - scrub.holdEnd) / (scrub.scatterEnd - scrub.holdEnd)),
-    nextScatter: 1 - ease((f - scrub.assembleStart) / (scrub.assembleEnd - scrub.assembleStart)),
+    scatter: ease(zone(f, scrub.scatterOut)),
+    slide: ease(zone(f, scrub.slideOut)),
+    nextScatter: 1 - ease(zone(f, scrub.scatterIn)),
+    nextSlide: 1 - ease(zone(f, scrub.slideIn)),
   };
 }
-export const formatMix = ({ index, scatter, nextScatter }: ReturnType<typeof mixAt>) => `${index}:${scatter.toFixed(2)}|${index + 1}:${nextScatter.toFixed(2)}`;
+export const formatMix = ({ index, scatter, slide, nextScatter, nextSlide }: ReturnType<typeof mixAt>) =>
+  `${index}:${scatter.toFixed(2)}:${slide.toFixed(2)}|${index + 1}:${nextScatter.toFixed(2)}:${nextSlide.toFixed(2)}`;
 // Sand: each point starts after a delay of up to stagger (a share of the change), in a sweep across the portrait
 // with some noise; it drifts drift units outwards plus a little wind to the side and down.
-const sand = { stagger: .45, drift: [.8, 2.4], wind: [.45, -.3] };
+// Stage 4d: only a light dusting at the edges while the portrait slides (it was a whole cloud).
+const sand = { stagger: .45, drift: [.08, .3], wind: [.1, -.06], swirl: .02 };
+// Band (portrait units) over which the incoming portrait fades in above the relief, and the share of the screen
+// height over which the outgoing one fades before the header.
+const fadeBand = { base: .2, top: .15 };
 // Portrait placement as shares of the visible height (wide screens: centre slightly right; narrow: near the top),
 // matched by the photo stand-in in AboutPage.css.
 // wideWidth / narrowWidth cap a wide portrait's width as a share of the visible width.
@@ -152,6 +169,12 @@ const portraitVertex = /* glsl */ `
   uniform float uLife;
   uniform float uSize;
   uniform float uViewport;
+  // uClipY: in this portrait's own units, the level under which it fades into the relief; uClip: how much (0..1).
+  // uTopNdc: the screen height (-1..1) under the header above which the portrait fades out; uTop: how much (0..1).
+  uniform float uClipY;
+  uniform float uClip;
+  uniform float uTopNdc;
+  uniform float uTop;
   attribute vec3 aColor;
   attribute vec4 aSeed;
   varying vec3 vColor;
@@ -168,14 +191,17 @@ const portraitVertex = /* glsl */ `
     float s = local * local * local * (local * (local * 6.0 - 15.0) + 10.0);
     vec3 direction = normalize(aSeed.xyz - 0.5 + vec3(0.0, 0.0, 0.001));
     p += direction * s * (${sand.drift[0].toFixed(2)} + aSeed.w * ${(sand.drift[1] - sand.drift[0]).toFixed(2)});
-    p += vec3(${sand.wind[0].toFixed(2)}, ${sand.wind[1].toFixed(2)}, 0.0) * s * s + vec3(sin(aSeed.y * 6.2831 + s * 3.0), cos(aSeed.z * 6.2831 + s * 2.0), 0.0) * 0.08 * s;
+    p += vec3(${sand.wind[0].toFixed(2)}, ${sand.wind[1].toFixed(2)}, 0.0) * s * s + vec3(sin(aSeed.y * 6.2831 + s * 3.0), cos(aSeed.z * 6.2831 + s * 2.0), 0.0) * ${sand.swirl.toFixed(2)} * s;
     vec4 view = modelViewMatrix * vec4(p, 1.0);
     // Halftone: brighter dots are larger.
     float tone = clamp(aColor.g / ${dotTint[1].toFixed(2)}, 0.0, 1.0);
     gl_PointSize = max(1.5, uSize * mix(${dotSize.min.toFixed(2)}, ${dotSize.max.toFixed(2)}, tone) * projectionMatrix[1][1] * uViewport * 0.5 / -view.z);
     vColor = aColor;
-    vAlpha = 1.0 - s;
     gl_Position = projectionMatrix * view;
+    // Rising out of the relief, and fading before the header instead of being cut.
+    float relief = mix(1.0, smoothstep(uClipY, uClipY + ${fadeBand.base.toFixed(2)}, position.y), uClip);
+    float top = 1.0 - uTop * smoothstep(uTopNdc - ${(fadeBand.top * 2).toFixed(2)}, uTopNdc, gl_Position.y / gl_Position.w);
+    vAlpha = (1.0 - s) * relief * top;
   }
 `;
 
@@ -422,6 +448,16 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
   let shown = 0;
   let settledMember = -1;
   let lastMix = "";
+  // A clip level far below any portrait (no fade into the relief), and the header line as a screen height.
+  const noClip = -1e3;
+  let topNdc = 1;
+  // The relief and header fades reach full strength over the first sixth of a slide.
+  const edgeEase = 6;
+  // The header's bottom edge (plus a margin) as a screen height in -1..1; read again as the canvas moves.
+  const measureTop = () => {
+    const height = canvas.clientHeight;
+    if (height) topNdc = 1 - 2 * Math.min(height, (options.topInset?.() ?? 0) + 20) / height;
+  };
   // Time the current member has had its automatic motion, counted only while running.
   let lifeElapsed = timing.life;
   let reductions = 0;
@@ -438,7 +474,7 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     geometry.setAttribute("aSeed", new THREE.BufferAttribute(data.seeds, 4));
     const material = new THREE.ShaderMaterial({
       vertexShader: portraitVertex, fragmentShader: portraitFragment, transparent: true, depthWrite: false,
-      uniforms: { uTime: { value: clock }, uScatter: { value: 1 }, uLife: { value: life() }, uSize: { value: data.spacing }, uViewport: { value: canvas.height || 1 } },
+      uniforms: { uTime: { value: clock }, uScatter: { value: 1 }, uLife: { value: life() }, uSize: { value: data.spacing }, uViewport: { value: canvas.height || 1 }, uClipY: { value: noClip }, uClip: { value: 0 }, uTopNdc: { value: topNdc }, uTop: { value: 0 } },
     });
     const points = new THREE.Points(geometry, material);
     points.frustumCulled = false;
@@ -476,10 +512,23 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     else shown += (target - shown) * (1 - Math.exp(-delta / scrub.smoothingMilliseconds));
     if (Math.abs(target - shown) < .0005) shown = target;
     const mix = mixAt(shown, count);
+    const distance = options.smooth ? scrub.distance : scrub.reducedDistance;
+    // The relief level in group units (the middle of its rise), turned into each incoming portrait's own units.
+    const clipLevel = base.top + base.maxRise / 2;
     for (const [index, portrait] of members) {
-      const scatter = index === mix.index ? mix.scatter : index === mix.index + 1 ? mix.nextScatter : 1;
-      portrait.material.uniforms.uScatter.value = scatter;
-      portrait.points.visible = scatter < .999;
+      const outgoing = index === mix.index;
+      const incoming = index === mix.index + 1;
+      const scatter = outgoing ? mix.scatter : incoming ? mix.nextScatter : 1;
+      const { points, material } = portrait;
+      points.position.y = points.userData.eyeOffset + (outgoing ? mix.slide * distance : incoming ? -mix.nextSlide * distance : 0);
+      material.uniforms.uScatter.value = scatter;
+      // Only while moving: the incoming portrait rises out of the relief, the outgoing one fades before the header.
+      // Both effects ease in and out with the slide, so a portrait at rest is never cut.
+      material.uniforms.uClipY.value = incoming ? (clipLevel - points.position.y) / points.scale.y : noClip;
+      material.uniforms.uClip.value = incoming ? Math.min(1, mix.nextSlide * edgeEase) : 0;
+      material.uniforms.uTop.value = outgoing ? Math.min(1, mix.slide * edgeEase) : 0;
+      material.uniforms.uTopNdc.value = topNdc;
+      points.visible = scatter < .999;
     }
     // The breathing starts again for each member that settles.
     const settled = Math.round(shown);
@@ -508,7 +557,9 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
   function fitPortrait(points: THREE.Points) {
     const fit = Math.min(1, widthLimit / (2 * points.userData.aspect));
     points.scale.setScalar(fit);
-    points.position.y = (1 - 2 * options.referenceEyeLine) - fit * (1 - 2 * points.userData.eyeLine);
+    // The slide is added on top of this offset in applyMix.
+    points.userData.eyeOffset = (1 - 2 * options.referenceEyeLine) - fit * (1 - 2 * points.userData.eyeLine);
+    points.position.y = points.userData.eyeOffset;
   }
 
   function resize() {
@@ -532,6 +583,7 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     for (let index = 0; index < rainData.columnX.length; index++) columns.setX(index, rainData.columnX[index] * visibleWidth);
     columns.needsUpdate = true;
     widthLimit = (narrow ? placement.narrowWidth : placement.wideWidth) * visibleWidth / scale;
+    measureTop();
     for (const portrait of members.values()) { portrait.material.uniforms.uViewport.value = canvas.height; fitPortrait(portrait.points); }
     lastMix = "";
     if (!running) draw();
@@ -613,6 +665,8 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
   return {
     setProgress(position) {
       if (disposed) return;
+      // The canvas reaches its sticky place by scrolling, so the header line is measured with the scroll.
+      measureTop();
       const next = Math.min(portraits.length - 1, Math.max(0, position));
       // The first position is shown as it is, without easing in from the first member.
       if (target === null) shown = next;

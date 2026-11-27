@@ -903,6 +903,76 @@ test("the portraits follow the scroll: midway both are partly scattered and the 
   await expect(team(page)).toHaveAttribute("data-about-team-mix", formatMix(mixAt(await exactPosition(page), count)));
 });
 
+test("midway through a change the portraits are seen, not a dark frame, and scrolling back restores the first", async ({ page }) => {
+  const count = teamCopy("bg").members.length;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+  // The portrait area of the canvas (the portrait sits centre right on wide screens).
+  const portraitArea = async () => {
+    const { channels } = await sharp(await page.screenshot({ clip: { x: 560, y: 150, width: 520, height: 560 } })).stats();
+    return (channels[0].mean + channels[1].mean + channels[2].mean) / 3;
+  };
+  const settleAt = async (position: number) => {
+    await scrollTeam(page, position);
+    await expect(team(page)).toHaveAttribute("data-about-team-mix", formatMix(mixAt(await exactPosition(page), count)));
+    await page.waitForTimeout(300);
+  };
+  await settleAt(0);
+  const whole = await portraitArea();
+  await settleAt(.5);
+  expect(await portraitArea()).toBeGreaterThan(whole * .4);
+  // Both portraits are seen: the outgoing one in the upper half of the area and the incoming one in the lower half,
+  // each clearly brighter than the rain beside them.
+  const area = async (x: number, y: number) => {
+    const { channels } = await sharp(await page.screenshot({ clip: { x, y, width: 260, height: 250 } })).stats();
+    return (channels[0].mean + channels[1].mean + channels[2].mean) / 3;
+  };
+  const rainOnly = Math.max(await area(150, 200), await area(150, 450));
+  expect(await area(690, 170)).toBeGreaterThan(rainOnly * 1.3);
+  expect(await area(690, 450)).toBeGreaterThan(rainOnly * 1.3);
+  // Entering by scrolling from above (wheel), the first member arrives whole and at rest.
+  await scrollTeam(page, 0);
+  await page.evaluate(() => scrollBy({ top: -600, behavior: "instant" }));
+  await page.mouse.move(700, 450);
+  for (let step = 0; step < 5; step++) { await page.mouse.wheel(0, 120); await page.waitForTimeout(60); }
+  await expect(team(page)).toHaveAttribute("data-about-team-mix", /^0:0\.00:0\.00\|/);
+  // Back to .3: the first portrait is almost whole again.
+  await settleAt(.3);
+  expect((await team(page).getAttribute("data-about-team-mix"))!.startsWith("0:0.00")).toBe(true);
+  // A resize midway recomputes the place of the portraits.
+  await settleAt(.5);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(team(page)).toHaveAttribute("data-about-team-mix", formatMix(mixAt(await exactPosition(page), count)));
+});
+
+test("with reduced motion the portraits barely slide and the change is a cross-fade", async ({ page }) => {
+  const count = teamCopy("bg").members.length;
+  const eyesShift = async () => {
+    // A fresh load, so the scene reads the motion preference again (the same URL would only move to the fragment).
+    await page.goto("about:blank");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(teamUrl());
+    await expect(team(page)).toHaveAttribute("data-about-team", "live");
+    await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+    // Whole at the second member, then midway into it: the reported eyes belong to the second member in both.
+    await scrollTeam(page, 1);
+    await expect(team(page)).toHaveAttribute("data-about-team-mix", /(^|\|)1:0\.00:0\.00/);
+    const rest = Number(await team(page).getAttribute("data-about-team-eyes"));
+    await scrollTeam(page, .55);
+    await expect(team(page)).toHaveAttribute("data-about-team-mix", formatMix(mixAt(await exactPosition(page), count)));
+    return Number(await team(page).getAttribute("data-about-team-eyes")) - rest;
+  };
+  const full = await eyesShift();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const reduced = await eyesShift();
+  // The incoming portrait is lower midway; with reduced motion only about a fifth as much.
+  expect(full).toBeGreaterThan(900 * .1);
+  expect(reduced).toBeGreaterThan(0);
+  expect(reduced).toBeLessThan(full * .3);
+});
+
 test("every portrait's eyes sit at the same height", async ({ page }) => {
   for (const [width, height] of [[1440, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });

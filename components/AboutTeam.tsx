@@ -123,6 +123,7 @@ export default function AboutTeam({ copy }: { copy: TeamCopy }) {
           canvas, compact: matchMedia("(width <= 47.5rem)").matches, smooth: !matchMedia("(prefers-reduced-motion: reduce)").matches, glyphFonts,
           portraits: copy.members.map((member) => ({ color: asset(member.id, "color"), depth: asset(member.id, "depth"), eyeLine: eyeLineOf(member.id) })),
           referenceEyeLine: eyeLine.reference,
+          topInset: () => Math.max(0, (document.querySelector(".site-header")?.getBoundingClientRect().bottom ?? 0) - canvas.getBoundingClientRect().top),
           onContextLost: fail,
           // Exposed for checks: the drawn mix of two portraits and where the eyes sit.
           onMix: (mix, eyes) => { section!.dataset.aboutTeamMix = mix; if (eyes === null) delete section!.dataset.aboutTeamEyes; else section!.dataset.aboutTeamEyes = eyes.toFixed(1); },
