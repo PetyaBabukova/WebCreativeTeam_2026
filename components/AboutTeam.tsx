@@ -31,8 +31,8 @@ const fontWaitMilliseconds = 1500;
 const compactScreen = "(height <= 23rem)";
 const scriptingQuery = "(scripting: enabled)";
 // A member shows while the scroll position is within this distance of it; between two members the earlier
-// choice stays (0.4..0.6), so stopping on a boundary does not flicker.
-const memberReach = .4;
+// choice stays (0.45..0.55, the middle of the portraits' hand-over), so stopping on a boundary does not flicker.
+const memberReach = .45;
 // A member reached by scrolling is announced once the scroll has rested this long.
 const announceDelayMilliseconds = 400;
 // A button or key target older than this no longer counts as the base for the next press.
@@ -72,6 +72,10 @@ export default function AboutTeam({ copy }: { copy: TeamCopy }) {
   const [canvasKey, setCanvasKey] = useState(0);
   const total = copy.members.length;
   const asset = (id: string, kind: "color" | "depth" | "portrait") => `${appConfig.aboutTeam.assetPath}/${id}-${kind}.webp`;
+  const { eyeLine } = appConfig.aboutTeam;
+  const eyeLineOf = (id: string) => eyeLine.members[id] ?? eyeLine.reference;
+  // The latest scroll position across the members, for a scene created after the scroll was read.
+  const positionRef = useRef(0);
   const describe = (position: number) => {
     const member = copy.members[position];
     return `${member.name}, ${member.role}, ${fill(copy.position, { current: position + 1, total })}`;
@@ -116,12 +120,17 @@ export default function AboutTeam({ copy }: { copy: TeamCopy }) {
         const canvas = canvasRef.current;
         if (!alive || !canvas) return;
         sceneRef.current = createTeamScene({
-          canvas, compact: matchMedia("(width <= 47.5rem)").matches, glyphFonts,
-          portraits: copy.members.map((member) => ({ color: asset(member.id, "color"), depth: asset(member.id, "depth") })),
+          canvas, compact: matchMedia("(width <= 47.5rem)").matches, smooth: !matchMedia("(prefers-reduced-motion: reduce)").matches, glyphFonts,
+          portraits: copy.members.map((member) => ({ color: asset(member.id, "color"), depth: asset(member.id, "depth"), eyeLine: eyeLineOf(member.id) })),
+          referenceEyeLine: eyeLine.reference,
           onContextLost: fail,
+          // Exposed for checks: the drawn mix of two portraits and where the eyes sit.
+          onMix: (mix, eyes) => { section!.dataset.aboutTeamMix = mix; if (eyes === null) delete section!.dataset.aboutTeamEyes; else section!.dataset.aboutTeamEyes = eyes.toFixed(1); },
         });
         // The screen may have turned very short while the scene was being prepared.
         if (compactQuery.matches) { release(); return; }
+        // The scene starts where the scroll already is (a direct link, a reload, history).
+        sceneRef.current.setProgress(positionRef.current);
         setMode("live");
         sync();
       } catch {
@@ -171,6 +180,9 @@ export default function AboutTeam({ copy }: { copy: TeamCopy }) {
       frame = 0;
       const box = section.getBoundingClientRect();
       const position = teamProgress(scrollY, box.top + scrollY, box.height, innerHeight) * (total - 1);
+      positionRef.current = position;
+      // The portraits follow the scroll itself; the text and the counter switch at the middle of the hand-over.
+      sceneRef.current?.setProgress(position);
       const target = pendingRef.current;
       // A new target (a second press) starts its own measure.
       if (target !== measured) { measured = target; pendingDistance = Infinity; }
@@ -215,18 +227,40 @@ export default function AboutTeam({ copy }: { copy: TeamCopy }) {
     // The copy is fixed for a page view.
   }, [staged, total]);
 
-  // Shows the current member in the scene; the photo appears only if the member's cloud fails.
+  // Marks each member whose cloud is ready; the photo appears only for a member whose cloud fails. The current
+  // member is asked again after a failure, so a member that failed once is retried when it comes back.
   const live = mode === "live";
   useEffect(() => {
     const scene = sceneRef.current;
     if (!live || !scene) return;
     let current = true;
-    scene.show(index).then(
-      () => { if (current) { setClouds((shown) => shown.includes(index) ? shown : [...shown, index]); setFallbacks((failed) => failed.filter((entry) => entry !== index)); } },
-      () => { if (current) { setClouds((shown) => shown.filter((entry) => entry !== index)); setFallbacks((failed) => failed.includes(index) ? failed : [...failed, index]); } },
+    const ask = (position: number) => scene.ready(position).then(
+      () => { if (current) { setClouds((shown) => shown.includes(position) ? shown : [...shown, position]); setFallbacks((failed) => failed.filter((entry) => entry !== position)); } },
+      () => { if (current) { setClouds((shown) => shown.filter((entry) => entry !== position)); setFallbacks((failed) => failed.includes(position) ? failed : [...failed, position]); } },
     );
+    if (fallbacks.includes(index)) void ask(index);
+    else copy.members.forEach((_, position) => { void ask(position); });
     return () => { current = false; };
+    // A retry only follows a change of member; the failure list itself does not ask again.
   }, [index, live]);
+
+  // A fallback photo moves so its eyes sit where the reference portrait's would (its rendered height, not the frame's).
+  useLayoutEffect(() => {
+    const figure = sectionRef.current?.querySelector<HTMLElement>(".about-team__member[data-active] .about-team__figure[data-fallback]");
+    const image = figure?.querySelector("img");
+    if (!figure || !image) return;
+    const place = () => {
+      const box = figure.getBoundingClientRect();
+      const rendered = image.naturalWidth ? Math.min(box.height, box.width * image.naturalHeight / image.naturalWidth) : box.height;
+      figure.style.setProperty("--about-team-lift", `${-(eyeLineOf(copy.members[index].id) - eyeLine.reference) * rendered}px`);
+    };
+    place();
+    image.addEventListener("load", place);
+    // A rotation or resize changes the rendered height, so the lift is measured again.
+    const resized = new ResizeObserver(place);
+    resized.observe(figure);
+    return () => { image.removeEventListener("load", place); resized.disconnect(); };
+  }, [fallbacks, index]);
 
   // Scrolls to the next or previous member. Past either end it jumps at once, without running through everyone.
   function go(step: 1 | -1) {

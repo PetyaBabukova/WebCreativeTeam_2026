@@ -104,16 +104,16 @@ html[data-about-boot] .about-preloader, .site-page--about:is([data-about-intro="
 .about-team__role { margin: .35rem 0 .75rem; color: var(--brand-logo-web); font-style: italic; }
 .about-team__bio { max-inline-size: 32ch; margin: 0; color: #ffffffd9; font-size: 1.1rem; line-height: 1.45; }
 /* With scripting on (from the first paint, then preparing and live): a sticky stage over a scroll range of about
-   0.9 screen per member. The scroll decides the member; the cloud sits in the middle, the text low on the left,
+   1.5 screens per member; the portraits change with the scroll itself. The scroll decides the member; the cloud sits in the middle, the text low on the left,
    the button low on the right. "cards" (an error, or a browser without the scripting feature) keeps the list. */
 @media screen and (scripting: enabled) and (height > 23rem) {
-  .about-team:not([data-about-team="cards"]) { height: calc(100svh + var(--about-team-steps, 0) * 90svh); padding: 0; }
+  .about-team:not([data-about-team="cards"]) { height: calc(100svh + var(--about-team-steps, 0) * 150svh); padding: 0; }
   .about-team:not([data-about-team="cards"]) .about-team__stage { position: sticky; top: 0; height: 100svh; overflow: clip; touch-action: pan-y; }
   .about-team:not([data-about-team="cards"]) .about-team__canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
   .about-team:not([data-about-team="cards"]) .about-team__heading { position: absolute; top: calc(var(--site-header-compact-height) + 1.5rem); right: var(--gutter); margin: 0; }
   .about-team:not([data-about-team="cards"]) .about-team__counter { position: absolute; top: calc(var(--site-header-compact-height) + 1.75rem); left: var(--gutter); display: block; margin: 0; font-family: var(--font-about-counter), monospace; font-size: clamp(1rem, 1.6vw, 1.5rem); }
   /* No photo with the scene: it appears only for the current member whose cloud failed. */
-  .about-team:not([data-about-team="cards"]) .about-team__figure { position: absolute; top: 23%; left: 58%; height: 66%; max-width: 44%; margin: 0; opacity: 0; translate: -50% 0; pointer-events: none; }
+  .about-team:not([data-about-team="cards"]) .about-team__figure { position: absolute; top: 23%; left: 58%; height: 66%; max-width: 44%; margin: 0; opacity: 0; translate: -50% var(--about-team-lift, 0px); pointer-events: none; }
   .about-team[data-about-team="live"] .about-team__member[data-active] .about-team__figure[data-fallback] { opacity: 1; transition: opacity .6s var(--ease-out); }
   /* Every member's text stays in the accessibility tree and in find-in-page; only the current one is seen.
      The leaving text fades and rises; the arriving one rises into place a moment later. */

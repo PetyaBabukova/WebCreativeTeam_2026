@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AboutTeam, { memberAt, teamProgress, type TeamCopy } from "@/components/AboutTeam";
-import { samplePortrait } from "@/components/AboutTeamScene";
+import { mixAt, samplePortrait } from "@/components/AboutTeamScene";
 
 // A width × height RGBA image filled by a per-pixel function.
 function image(width: number, height: number, pixel: (x: number, y: number) => [number, number, number, number]) {
@@ -123,11 +123,11 @@ describe("team scroll mapping", () => {
   it("switches members only well past the middle, so stopping on a boundary does not flicker", () => {
     expect(memberAt(.39, 0, 3)).toBe(0);
     expect(memberAt(.45, 0, 3)).toBe(0);
-    expect(memberAt(.55, 0, 3)).toBe(0);
-    expect(memberAt(.61, 0, 3)).toBe(1);
+    expect(memberAt(.54, 0, 3)).toBe(0);
+    expect(memberAt(.56, 0, 3)).toBe(1);
     // Coming back up, the later member holds the same band.
-    expect(memberAt(.55, 1, 3)).toBe(1);
-    expect(memberAt(.39, 1, 3)).toBe(0);
+    expect(memberAt(.46, 1, 3)).toBe(1);
+    expect(memberAt(.44, 1, 3)).toBe(0);
   });
 
   it("lands on the nearest member after a jump, without stepping through the ones in between", () => {
@@ -135,5 +135,41 @@ describe("team scroll mapping", () => {
     expect(memberAt(1.5, 0, 3)).toBe(2);
     expect(memberAt(2, 0, 3)).toBe(2);
     expect(memberAt(0, 2, 3)).toBe(0);
+  });
+});
+
+describe("portrait mix along the scroll", () => {
+  const round = (mix: ReturnType<typeof mixAt>) => ({ index: mix.index, scatter: Number(mix.scatter.toFixed(2)), nextScatter: Number(mix.nextScatter.toFixed(2)) });
+
+  it("holds a member whole, then scatters it while the next one assembles, and holds the next one whole", () => {
+    expect(round(mixAt(0, 3))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
+    expect(round(mixAt(.3, 3))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
+    // The hand-over: both portraits partly scattered, like sand pouring from one into the other.
+    const middle = mixAt(.5, 3);
+    expect(middle.scatter).toBeGreaterThan(.5);
+    expect(middle.scatter).toBeLessThan(1);
+    expect(middle.nextScatter).toBeGreaterThan(.5);
+    expect(middle.nextScatter).toBeLessThan(1);
+    expect(round(mixAt(.6, 3)).scatter).toBe(1);
+    expect(round(mixAt(.7, 3))).toEqual({ index: 0, scatter: 1, nextScatter: 0 });
+    expect(round(mixAt(1, 3))).toEqual({ index: 1, scatter: 0, nextScatter: 1 });
+  });
+
+  it("follows the scroll both ways: the same position always gives the same mix", () => {
+    // Scrolling back through a hand-over reverses it step by step: the next portrait scatters again.
+    const back = [.7, .65, .6, .55, .5, .45, .4].map((position) => mixAt(position, 3).nextScatter);
+    expect(back).toEqual([...back].sort((a, b) => a - b));
+    expect(back[0]).toBe(0);
+    expect(back.at(-1)).toBe(1);
+    // Scatter grows monotonically through a hand-over.
+    const scatters = [.3, .35, .4, .45, .5, .55, .6].map((position) => mixAt(position, 3).scatter);
+    expect(scatters).toEqual([...scatters].sort((a, b) => a - b));
+  });
+
+  it("ends on the last member whole and clamps outside the range", () => {
+    expect(round(mixAt(2, 3))).toEqual({ index: 1, scatter: 1, nextScatter: 0 });
+    expect(round(mixAt(9, 3))).toEqual({ index: 1, scatter: 1, nextScatter: 0 });
+    expect(round(mixAt(-1, 3))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
+    expect(round(mixAt(0, 1))).toEqual({ index: 0, scatter: 0, nextScatter: 1 });
   });
 });

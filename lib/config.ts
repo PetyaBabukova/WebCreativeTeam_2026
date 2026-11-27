@@ -47,7 +47,9 @@ export const appConfig = {
   // One deadline for the early boot script and the About client: past it the hero is shown statically.
   aboutIntro: { deadlineMilliseconds: 6000, counterMinimumMilliseconds: 2000 },
   // Prepared team portraits (scripts/about-team-assets.mjs): <id>-color.webp, <id>-depth.webp, <id>-portrait.webp.
-  aboutTeam: { assetPath: "/images/about/team" },
+  // eyeLine: eye height as a share of each prepared portrait from the top (measured on the -color images); the team
+  // scene aligns every portrait on the reference. A member without an entry is taken to be at the reference.
+  aboutTeam: { assetPath: "/images/about/team", eyeLine: { reference: .34, members: { petya: .51, poli: .25 } as Record<string, number> } },
   socialProfiles: {
     linkedin: "https://www.linkedin.com/company/webcreativeteam",
     facebook: "https://www.facebook.com/webcreativeteam",

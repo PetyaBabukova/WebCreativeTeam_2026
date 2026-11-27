@@ -3,6 +3,7 @@ import sharp from "sharp";
 import { appConfig } from "@/lib/config";
 import { readFileSync } from "node:fs";
 import { pageUrl } from "@/lib/routing";
+import { formatMix, mixAt } from "@/components/AboutTeamScene";
 
 const about = pageUrl("about", "bg");
 // The copy is read from the locale files directly: Playwright cannot import JSON through lib/messages.
@@ -789,6 +790,13 @@ async function scrollTeam(page: Page, position: number) {
     scrollTo({ top: box.top + scrollY + target / (count - 1) * (box.height - innerHeight), behavior: "instant" });
   }, position);
 }
+// The exact scroll position across the members (whole pixels make it differ slightly from the one asked for).
+const exactPosition = (page: Page) => page.evaluate(() => {
+  const section = document.querySelector<HTMLElement>(".about-team")!;
+  const box = section.getBoundingClientRect();
+  const count = section.querySelectorAll(".about-team__member").length;
+  return Math.min(1, Math.max(0, -box.top / (box.height - innerHeight))) * (count - 1);
+});
 // Which member the scroll position stands at (rounded), read from the page.
 const scrollPosition = (page: Page) => page.evaluate(() => {
   const section = document.querySelector<HTMLElement>(".about-team")!;
@@ -815,9 +823,9 @@ test("scrolling through the team shows the members in turn and back, without fli
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(teamUrl());
   await expect(team(page)).toHaveAttribute("data-about-team", "live");
-  // About 0.9 screen of scroll per member after the first screen; the stage stays on screen.
+  // About 1.5 screens of scroll per member after the first screen; the stage stays on screen.
   const height = await team(page).evaluate((node) => node.getBoundingClientRect().height);
-  expect(Math.abs(height - 900 * (1 + .9 * (copy.members.length - 1)))).toBeLessThan(2);
+  expect(Math.abs(height - 900 * (1 + 1.5 * (copy.members.length - 1)))).toBeLessThan(2);
   for (let index = 0; index < copy.members.length; index++) {
     await scrollTeam(page, index);
     await expect(activeName(page)).toHaveText(copy.members[index].name);
@@ -843,6 +851,75 @@ test("scrolling through the team shows the members in turn and back, without fli
   await expect.poll(async () => Math.abs(Number(await page.locator(".about-team__progress span").nth(1).evaluate((node) => getComputedStyle(node).getPropertyValue("--about-team-fill"))) - .5)).toBeLessThan(.02);
 });
 
+test("the mouse wheel alone changes the members, each staying for several wheel steps", async ({ page }) => {
+  const copy = teamCopy("bg");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  // Start half a screen before the section, as a visitor arriving from the messages.
+  await page.evaluate(() => scrollBy({ top: -450, behavior: "instant" }));
+  await page.mouse.move(700, 450);
+  const steps: string[] = [];
+  for (let step = 0; step < 45; step++) {
+    const state = await page.evaluate(() => {
+      const section = document.querySelector(".about-team")!;
+      const box = section.getBoundingClientRect();
+      // Counted while the stage fills at least half of the screen.
+      // Counted only while the stage is held on screen (the section's own scroll range).
+      return { inside: box.top <= 0 && box.bottom >= innerHeight, name: section.querySelector("[data-active] .about-team__name")!.textContent! };
+    });
+    if (state.inside) steps.push(state.name);
+    await page.mouse.wheel(0, 120);
+    await page.waitForTimeout(40);
+  }
+  // Every member appears, in order: the middle ones for at least 8 wheel steps, the first and the last (which
+  // also show while the stage scrolls in and out) for at least 5 within the range.
+  const runs = steps.reduce<{ name: string; count: number }[]>((all, name) => (all.at(-1)?.name === name ? all.at(-1)!.count++ : all.push({ name, count: 1 }), all), []);
+  expect(runs.map((run) => run.name)).toEqual(copy.members.map((member) => member.name));
+  runs.forEach((run, index) => expect(run.count, run.name).toBeGreaterThanOrEqual(index === 0 || index === runs.length - 1 ? 5 : 8));
+});
+
+test("the portraits follow the scroll: midway both are partly scattered and the picture holds there", async ({ page }) => {
+  const count = teamCopy("bg").members.length;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+  for (const position of [.5, .35, 1.55, .65, 0]) {
+    await scrollTeam(page, position);
+    await expect(team(page)).toHaveAttribute("data-about-team-mix", formatMix(mixAt(await exactPosition(page), count)));
+  }
+  // Stopped midway, the mix stays put.
+  await scrollTeam(page, .5);
+  const midway = formatMix(mixAt(await exactPosition(page), count));
+  await expect(team(page)).toHaveAttribute("data-about-team-mix", midway);
+  await page.waitForTimeout(1000);
+  await expect(team(page)).toHaveAttribute("data-about-team-mix", midway);
+  // Paused, the scroll still changes the picture (one frame per change).
+  await page.locator(".about-scene__toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(root(page)).toHaveAttribute("data-about-paused", "");
+  await scrollTeam(page, 1.5);
+  await expect(team(page)).toHaveAttribute("data-about-team-mix", formatMix(mixAt(await exactPosition(page), count)));
+});
+
+test("every portrait's eyes sit at the same height", async ({ page }) => {
+  for (const [width, height] of [[1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(teamUrl());
+    await expect(team(page)).toHaveAttribute("data-about-team", "live");
+    const eyes: number[] = [];
+    for (let index = 0; index < teamCopy("bg").members.length; index++) {
+      await scrollTeam(page, index);
+      // The member stands whole: its scatter is 0.
+      await expect(team(page)).toHaveAttribute("data-about-team-mix", new RegExp(`(^|\\|)${index}:0\\.00`));
+      await expect(team(page)).toHaveAttribute("data-about-team-eyes", /\d/);
+      eyes.push(Number(await team(page).getAttribute("data-about-team-eyes")));
+    }
+    expect(Math.max(...eyes) - Math.min(...eyes), `${width}x${height}: ${eyes.join(", ")}`).toBeLessThan(height * .02);
+  }
+});
+
 test("a fast scroll shows and announces only the member it stops at", async ({ page }) => {
   const copy = teamCopy("bg");
   const last = copy.members.length - 1;
@@ -858,8 +935,14 @@ test("a fast scroll shows and announces only the member it stops at", async ({ p
   // (Without a fragment: the page holds a fragment target until the visitor scrolls by hand.)
   await page.goto(about);
   await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  // The first mix the scene reports must already be the one for this position (no easing in from the first member).
+  await page.evaluate(() => {
+    const section = document.querySelector<HTMLElement>(".about-team")!;
+    new MutationObserver((_, observer) => { if (section.dataset.aboutTeamMix) { section.dataset.firstMix = section.dataset.aboutTeamMix; observer.disconnect(); } }).observe(section, { attributes: true, attributeFilter: ["data-about-team-mix"] });
+  });
   await page.evaluate(() => { const box = document.querySelector(".about-team")!.getBoundingClientRect(); scrollTo({ top: box.top + scrollY + (box.height - innerHeight) / 2 + 10, behavior: "instant" }); });
   await expect(activeName(page)).toHaveText(copy.members[Math.round(last / 2)].name);
+  await expect(team(page)).toHaveAttribute("data-first-mix", formatMix(mixAt(await exactPosition(page), copy.members.length)));
 });
 
 test("the button, arrow keys and swipes scroll to the next member, and the last one leads back to the first", async ({ page }) => {
@@ -870,12 +953,21 @@ test("the button, arrow keys and swipes scroll to the next member, and the last 
   await expect(team(page)).toHaveAttribute("data-about-team", "live");
   const next = page.locator(".about-team__next");
   await expect(next).toHaveAccessibleName(copy.next.replace("{name}", copy.members[1].name));
+  // During the button's smooth scroll the hand-over is seen: some frame mixes two partly scattered portraits.
+  await page.evaluate(() => {
+    const section = document.querySelector<HTMLElement>(".about-team")!;
+    const mixes: string[] = [];
+    (window as unknown as { teamMixes: string[] }).teamMixes = mixes;
+    new MutationObserver(() => mixes.push(section.dataset.aboutTeamMix ?? "")).observe(section, { attributes: true, attributeFilter: ["data-about-team-mix"] });
+  });
   await next.click();
   // The button announces at once and scrolls; the member follows the scroll.
   await expect(page.locator(".about-team [aria-live]")).toHaveText(announced(copy, 1));
   await expect(activeName(page)).toHaveText(copy.members[1].name);
   await expect.poll(() => scrollPosition(page)).toBe(1);
   await expect(next).toBeFocused();
+  const mixes = await page.evaluate(() => (window as unknown as { teamMixes: string[] }).teamMixes);
+  expect(mixes.some((mix) => mix.split("|").every((part) => { const value = Number(part.split(":")[1]); return value > 0 && value < 1; }))).toBe(true);
   // Arrow keys from the button, up to the last member.
   for (let index = 2; index <= last; index++) await page.keyboard.press("ArrowRight");
   await expect(activeName(page)).toHaveText(copy.members[last].name);

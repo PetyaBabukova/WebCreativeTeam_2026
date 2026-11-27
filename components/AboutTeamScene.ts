@@ -8,40 +8,70 @@ export { resolveGlyphFonts } from "./aboutGl";
 // It owns the WebGL renderer and every GPU resource; AboutTeam owns when it runs and which member shows.
 
 export type TeamScene = {
-  // Shows a member; resolves when the portrait has started to assemble (rejects if its images fail to load).
-  show(index: number): Promise<void>;
+  // Scroll position across the members, 0..count-1; the scene shows the matching mix of two portraits.
+  setProgress(position: number): void;
+  // Resolves when the member's points are ready; rejects when its images fail (the photo then stands in).
+  ready(index: number): Promise<void>;
   setPaused(paused: boolean): void;
   // Pointer position in -1..1 on both axes; the portrait turns towards it.
   setPointer(x: number, y: number): void;
   dispose(): void;
 };
-export type PortraitSource = { color: string; depth: string };
-type Options = { canvas: HTMLCanvasElement; compact: boolean; glyphFonts: GlyphFonts; portraits: PortraitSource[]; onContextLost: () => void };
+// eyeLine: height of the eyes as a share of the portrait from the top; portraits are aligned on it.
+export type PortraitSource = { color: string; depth: string; eyeLine: number };
+// smooth: ease the shown position after the scroll (off with reduced motion).
+// onMix: called when the drawn mix changes, with "k:scatter|k+1:scatter" and the eye line's distance from the
+// canvas top in CSS pixels (null before the member's points are ready).
+type Options = {
+  canvas: HTMLCanvasElement; compact: boolean; smooth: boolean; glyphFonts: GlyphFonts; portraits: PortraitSource[]; referenceEyeLine: number;
+  onContextLost: () => void; onMix?: (mix: string, eyes: number | null) => void;
+};
 // aspect: width / height of the portrait, which is 2 units tall.
 export type PortraitPoints = { positions: Float32Array; colors: Float32Array; seeds: Float32Array; count: number; spacing: number; aspect: number };
 
 // Owner decision, 26 Nov 2026: monochrome, small dots with visible gaps (an even halftone grid), as in the reference.
-// rows: grid rows over the portrait height (owner, 26 Nov 2026: finer, about 3.5px apart on a desktop screen).
-const budget = { desktop: 50000, compact: 22000, desktopRows: 180, compactRows: 130, slowFrameMilliseconds: 25, maxReductions: 2 };
+// Owner, 27 Nov 2026: the stage 4b look, a touch sparser and with slightly smaller dots.
+const budget = { desktop: 40000, compact: 18000, desktopRows: 155, compactRows: 112, slowFrameMilliseconds: 25, maxReductions: 2 };
 // Owner, 26 Nov 2026: the rain keeps moving while the section is on screen, bright and glowing, with sparkles.
 // glow: a soft round halo drawn under each glyph; sparkle: share of glyphs flashing at a time;
 // behindFace: brightness of the rain right behind the portrait, so the face stays readable.
-const rain = { desktopColumns: 64, compactColumns: 26, perColumn: 16, palette: ["#ffffff", "#dceaff", "#b8d2ff"], glowScale: 2.2, glowStrength: .22, sparkle: .012, swapRate: 5, behindFace: .25 };
+const rain = { desktopColumns: 64, compactColumns: 26, perColumn: 16, palette: ["#ffffff", "#dceaff", "#b8d2ff"], glowScale: 2.2, glowStrength: .05, strength: .45, sparkle: .003, swapRate: 5, behindFace: .12 };
+// Owner, 27 Nov 2026: the rain is a quiet background (strength: brightness of the glyphs; a faint glow, rare sparkles).
 // The relief base under the bust: ridge lines across a gently moving terrain.
 // Narrow screens draw fewer, dimmer lines: the small portrait would pack them into one bright band.
 // Owner, 27 Nov 2026: the base sits lower so it never covers a chin. top is the flat level, swell the lift under
 // the shoulders and maxRise the cap on terrain plus swell, so the highest ridge stays at or below top + maxRise.
 const base = { lines: 40, compactLines: 22, segments: 200, width: 4.6, depth: 2.2, top: -1.12, swell: .12, maxRise: .3, compactStrength: .55 };
 // Cool white of the dots; a dot's size and brightness follow the photo's lightness.
-// Slightly above 1 so the brightest dots hold their own against the glowing rain.
+// Above 1 so the brightest dots hold their own against the glowing rain; raised with the smaller dots (27 Nov 2026)
+// so the faces stay readable. tone lifts the mid-tones (lightness ** tone).
 const dotTint = [1.08, 1.12, 1.2];
+const tone = .85;
 // Dot diameter as a share of the grid step: the smallest and the largest dot.
-const dotSize = { min: .3, max: .78 };
+const dotSize = { min: .26, max: .62 };
 // The portrait's breathing settles within five seconds of a member appearing; the rain and the base keep
 // moving while the section is on screen (owner decision) and stop with the page-wide pause and off screen.
-// Owner, 27 Nov 2026: smoother, sand-like changes. The new portrait starts assembling assembleDelay after the
-// old one starts scattering (or once its data is ready, if later), so the two overlap.
-export const timing = { scatter: 1000, assemble: 1400, assembleDelay: 250, life: 5000, settle: 1000 };
+export const timing = { life: 5000, settle: 1000 };
+// Owner, 27 Nov 2026: the change follows the scroll. Between member k and k+1 (f = 0..1): k holds until holdEnd,
+// scatters by scatterEnd; k+1 assembles from assembleStart to assembleEnd. The shown position eases after the
+// scroll over smoothingMilliseconds; a jump of more than one member is applied at once.
+export const scrub = { holdEnd: .3, scatterEnd: .6, assembleStart: .4, assembleEnd: .7, smoothingMilliseconds: 140 };
+const ease = (value: number) => { const step = Math.min(1, Math.max(0, value)); return step * step * (3 - 2 * step); };
+
+// The two portraits drawn at a scroll position: index k and its scatter, and k+1's scatter (1 = fully scattered).
+export function mixAt(position: number, count: number) {
+  if (count < 2) return { index: 0, scatter: 0, nextScatter: 1 };
+  const last = count - 1;
+  const clamped = Math.min(last, Math.max(0, position));
+  const index = Math.min(Math.floor(clamped), last - 1);
+  const f = clamped - index;
+  return {
+    index,
+    scatter: ease((f - scrub.holdEnd) / (scrub.scatterEnd - scrub.holdEnd)),
+    nextScatter: 1 - ease((f - scrub.assembleStart) / (scrub.assembleEnd - scrub.assembleStart)),
+  };
+}
+export const formatMix = ({ index, scatter, nextScatter }: ReturnType<typeof mixAt>) => `${index}:${scatter.toFixed(2)}|${index + 1}:${nextScatter.toFixed(2)}`;
 // Sand: each point starts after a delay of up to stagger (a share of the change), in a sweep across the portrait
 // with some noise; it drifts drift units outwards plus a little wind to the side and down.
 const sand = { stagger: .45, drift: [.8, 2.4], wind: [.45, -.3] };
@@ -95,7 +125,7 @@ export function samplePortrait(color: ImageData, depth: ImageData, maxPoints: nu
     // Monochrome: stretched lightness; farther points are darker, which reads as volume.
     // The lower part fades out instead of ending at a hard edge.
     const fade = 1 - THREE.MathUtils.smoothstep(py / height, .7, 1);
-    const lightness = Math.min(1, Math.max(0, (luma(pixel) - dark) / range)) ** .85 * (.45 + .55 * near) * fade;
+    const lightness = Math.min(1, Math.max(0, (luma(pixel) - dark) / range)) ** tone * (.45 + .55 * near) * fade;
     for (let channel = 0; channel < 3; channel++) colors[index * 3 + channel] = lightness * dotTint[channel];
     for (let part = 0; part < 4; part++) seeds[index * 4 + part] = random();
   }
@@ -199,7 +229,7 @@ const rainVertex = /* glsl */ `
     vColor = aColor;
     // A bright head with a fading trail; now and then a glyph flashes.
     float trail = pow(1.0 - aDrop.w / ${rain.perColumn.toFixed(1)}, 1.6);
-    float headBoost = aDrop.w < 0.5 ? 1.8 : 1.0;
+    float headBoost = aDrop.w < 0.5 ? 1.3 : 1.0;
     float sparkle = hash(vec2(aGlyph + aDrop.x * 97.0, floor(uTime * 9.0) + aDrop.w)) < ${rain.sparkle.toFixed(3)} ? 3.0 : 1.0;
     float edge = 1.0 - smoothstep(0.38, 0.5, abs(p.y) / uHeight);
     float face = mix(${rain.behindFace.toFixed(2)}, 1.0, smoothstep(0.6, 1.1, abs(aDrop.x - uFace.x) / uFace.y));
@@ -331,9 +361,10 @@ export function createTeamScene(options: Options): TeamScene {
   }
 }
 
-type Portrait = { points: THREE.Points; material: THREE.ShaderMaterial; from: number; to: number; start: number; duration: number; leaving: boolean };
+type Portrait = { points: THREE.Points; material: THREE.ShaderMaterial };
 
-function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<typeof createRenderer>, { canvas, compact, glyphFonts, portraits, onContextLost }: Options): TeamScene {
+function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<typeof createRenderer>, options: Options): TeamScene {
+  const { canvas, compact, glyphFonts, portraits, onContextLost } = options;
   let pixelRatio = initialRatio;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, .1, 30);
@@ -347,7 +378,7 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
   const glowing = { transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending };
   const rainUniforms = { uTime: { value: 0 }, uHeight: { value: 4 }, uCells: { value: atlas.cells }, uSize: { value: .1 }, uGlyphs: { value: allCount }, uAtlas: { value: texture }, uFace: { value: new THREE.Vector2(0, 1) } };
   const rainGlowMaterial = new THREE.ShaderMaterial({ vertexShader: rainVertex, fragmentShader: rainFragment, ...glowing, uniforms: { ...rainUniforms, uScale: { value: rain.glowScale }, uStrength: { value: rain.glowStrength }, uHalo: { value: 1 } } });
-  const rainMaterial = new THREE.ShaderMaterial({ vertexShader: rainVertex, fragmentShader: rainFragment, ...glowing, uniforms: { ...rainUniforms, uScale: { value: 1 }, uStrength: { value: 1 }, uHalo: { value: 0 } } });
+  const rainMaterial = new THREE.ShaderMaterial({ vertexShader: rainVertex, fragmentShader: rainFragment, ...glowing, uniforms: { ...rainUniforms, uScale: { value: 1 }, uStrength: { value: rain.strength }, uHalo: { value: 0 } } });
   const rainMeshes = [new THREE.Mesh(rainData.geometry, rainGlowMaterial), new THREE.Mesh(rainData.geometry, rainMaterial)];
   for (const mesh of rainMeshes) { mesh.frustumCulled = false; mesh.renderOrder = -2; scene.add(mesh); }
   const baseMaterial = new THREE.ShaderMaterial({ vertexShader: baseVertex, fragmentShader: baseFragment, ...glowing, uniforms: { uTime: { value: 0 }, uStrength: { value: compact ? base.compactStrength : 1 } } });
@@ -358,28 +389,39 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
 
   const maxPoints = compact ? budget.compact : budget.desktop;
   const rows = compact ? budget.compactRows : budget.desktopRows;
-  const pointCache = new Map<number, Promise<PortraitPoints>>();
+  // One portrait per member, created when its points are ready and kept until dispose; only the mixed two draw.
+  const members = new Map<number, Portrait>();
+  const loads = new Map<number, Promise<void>>();
   const load = (index: number) => {
-    let entry = pointCache.get(index);
+    let entry = loads.get(index);
     if (!entry) {
       const source = portraits[index];
-      entry = Promise.all([readPixels(source.color), readPixels(source.depth)]).then(([color, depth]) => samplePortrait(color, depth, maxPoints, rows));
-      // A failed load may be retried on the next visit to this member.
-      entry.catch(() => pointCache.delete(index));
-      pointCache.set(index, entry);
+      entry = Promise.all([readPixels(source.color), readPixels(source.depth)]).then(([color, depth]) => {
+        if (disposed) return;
+        members.set(index, createPortrait(samplePortrait(color, depth, maxPoints, rows), index));
+        // Paused or not, the arriving member shows at once in its place in the scroll.
+        lastMix = "";
+        if (running) return;
+        draw();
+      });
+      // A failed load may be retried on the next ready() call.
+      entry.catch(() => loads.delete(index));
+      loads.set(index, entry);
     }
     return entry;
   };
 
-  const live: Portrait[] = [];
-  let shownIndex = -1;
-  let token = 0;
   let raf = 0;
   let running = false;
   let paused = false;
   let disposed = false;
   let lastFrame = 0;
   let clock = 0;
+  // Scroll position asked for (target) and drawn (shown); null until the first setProgress.
+  let target: number | null = null;
+  let shown = 0;
+  let settledMember = -1;
+  let lastMix = "";
   // Time the current member has had its automatic motion, counted only while running.
   let lifeElapsed = timing.life;
   let reductions = 0;
@@ -389,47 +431,69 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
 
   const life = () => 1 - THREE.MathUtils.smoothstep(lifeElapsed, timing.life - timing.settle, timing.life);
 
-  function createPortrait(data: PortraitPoints, from: number) {
+  function createPortrait(data: PortraitPoints, index: number): Portrait {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
     geometry.setAttribute("aColor", new THREE.BufferAttribute(data.colors, 3));
     geometry.setAttribute("aSeed", new THREE.BufferAttribute(data.seeds, 4));
     const material = new THREE.ShaderMaterial({
       vertexShader: portraitVertex, fragmentShader: portraitFragment, transparent: true, depthWrite: false,
-      uniforms: { uTime: { value: clock }, uScatter: { value: from }, uLife: { value: life() }, uSize: { value: data.spacing }, uViewport: { value: canvas.height || 1 } },
+      uniforms: { uTime: { value: clock }, uScatter: { value: 1 }, uLife: { value: life() }, uSize: { value: data.spacing }, uViewport: { value: canvas.height || 1 } },
     });
     const points = new THREE.Points(geometry, material);
     points.frustumCulled = false;
+    points.visible = false;
     points.userData.aspect = data.aspect;
+    points.userData.eyeLine = portraits[index]?.eyeLine ?? options.referenceEyeLine;
     fitPortrait(points);
     group.add(points);
     return { points, material };
   }
 
-  function removePortrait(portrait: Pick<Portrait, "points" | "material">) {
+  function removePortrait(portrait: Portrait) {
     group.remove(portrait.points);
     portrait.points.geometry.dispose();
     portrait.material.dispose();
-    const index = live.findIndex((entry) => entry.points === portrait.points);
-    if (index >= 0) live.splice(index, 1);
   }
 
-  function animate(portrait: Portrait, now: number) {
-    // Paused, a change shows its end state and stays finished when the motion resumes.
-    if (paused) portrait.start = now - portrait.duration;
-    // start may lie ahead: an arriving portrait waits, fully scattered, for its moment.
-    const t = Math.min(1, Math.max(0, (now - portrait.start) / portrait.duration));
-    portrait.material.uniforms.uScatter.value = portrait.from + (portrait.to - portrait.from) * t;
-    return t >= 1;
+  // The eye line as a distance from the canvas top in CSS pixels, for the member drawn assembled (or null).
+  const eyePoint = new THREE.Vector3();
+  function eyesOnScreen(index: number) {
+    const portrait = members.get(index);
+    if (!portrait) return null;
+    const { points } = portrait;
+    eyePoint.set(0, 1 - 2 * points.userData.eyeLine, 0);
+    group.updateMatrixWorld();
+    points.localToWorld(eyePoint).project(camera);
+    return (1 - eyePoint.y) / 2 * canvas.clientHeight;
   }
 
-  function updateUniforms(now: number) {
+  function applyMix(delta: number) {
+    if (target === null) return;
+    const count = portraits.length;
+    // Ease after the scroll; a jump of more than one member, a pause and reduced motion apply at once.
+    if (!options.smooth || paused || Math.abs(target - shown) > 1) shown = target;
+    else shown += (target - shown) * (1 - Math.exp(-delta / scrub.smoothingMilliseconds));
+    if (Math.abs(target - shown) < .0005) shown = target;
+    const mix = mixAt(shown, count);
+    for (const [index, portrait] of members) {
+      const scatter = index === mix.index ? mix.scatter : index === mix.index + 1 ? mix.nextScatter : 1;
+      portrait.material.uniforms.uScatter.value = scatter;
+      portrait.points.visible = scatter < .999;
+    }
+    // The breathing starts again for each member that settles.
+    const settled = Math.round(shown);
+    if (settled !== settledMember) { settledMember = settled; lifeElapsed = 0; }
+    const text = formatMix(mix);
+    if (text !== lastMix) { lastMix = text; options.onMix?.(text, eyesOnScreen(settled)); }
+  }
+
+  function updateUniforms(delta: number) {
+    applyMix(delta);
     const lifeValue = life();
-    for (const portrait of [...live]) {
-      const done = animate(portrait, now);
+    for (const portrait of members.values()) {
       portrait.material.uniforms.uTime.value = clock;
       portrait.material.uniforms.uLife.value = lifeValue;
-      if (done && portrait.leaving) removePortrait(portrait);
     }
     rainUniforms.uTime.value = clock;
     baseMaterial.uniforms.uTime.value = clock;
@@ -438,10 +502,13 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     group.rotation.set(turn.y * maxTurn * .5, turn.x * maxTurn, 0);
   }
 
-  // A wide portrait shrinks (around its centre) until it fits the allowed width.
+  // A wide portrait shrinks until it fits the allowed width. Then it moves so its eyes sit on the reference eye
+  // line in group units (after the fit, so a shrunken portrait still lines up).
   let widthLimit = Infinity;
   function fitPortrait(points: THREE.Points) {
-    points.scale.setScalar(Math.min(1, widthLimit / (2 * points.userData.aspect)));
+    const fit = Math.min(1, widthLimit / (2 * points.userData.aspect));
+    points.scale.setScalar(fit);
+    points.position.y = (1 - 2 * options.referenceEyeLine) - fit * (1 - 2 * points.userData.eyeLine);
   }
 
   function resize() {
@@ -465,12 +532,13 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     for (let index = 0; index < rainData.columnX.length; index++) columns.setX(index, rainData.columnX[index] * visibleWidth);
     columns.needsUpdate = true;
     widthLimit = (narrow ? placement.narrowWidth : placement.wideWidth) * visibleWidth / scale;
-    for (const portrait of live) { portrait.material.uniforms.uViewport.value = canvas.height; fitPortrait(portrait.points); }
-    if (!running) draw(performance.now());
+    for (const portrait of members.values()) { portrait.material.uniforms.uViewport.value = canvas.height; fitPortrait(portrait.points); }
+    lastMix = "";
+    if (!running) draw();
   }
 
-  function draw(now: number) {
-    updateUniforms(now);
+  function draw(delta = 0) {
+    updateUniforms(delta);
     renderer.render(scene, camera);
   }
 
@@ -494,7 +562,7 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     lastFrame = now;
     clock += delta / 1000;
     lifeElapsed = Math.min(timing.life, lifeElapsed + delta);
-    draw(now);
+    draw(delta);
     adapt(delta);
     // The rain keeps moving, so the loop runs until the section leaves the screen or the page is paused.
     raf = requestAnimationFrame(frame);
@@ -502,7 +570,7 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
 
   function wake() {
     if (disposed) return;
-    if (paused) { draw(performance.now()); return; }
+    if (paused) { draw(); return; }
     if (running) return;
     running = true;
     lastFrame = 0;
@@ -514,7 +582,8 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
   function release() {
     observer.disconnect();
     canvas.removeEventListener("webglcontextlost", onLost);
-    for (const portrait of [...live]) removePortrait(portrait);
+    for (const portrait of members.values()) removePortrait(portrait);
+    members.clear();
     rainData.geometry.dispose();
     rainMaterial.dispose();
     rainGlowMaterial.dispose();
@@ -528,7 +597,8 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     observer.observe(canvas);
     resize();
     // Compile the portrait program too, with a one-point stand-in, so a shader failure shows now.
-    const probe = createPortrait({ positions: new Float32Array(3), colors: new Float32Array(3), seeds: new Float32Array(4), count: 1, spacing: .01, aspect: 1 }, 1);
+    const probe = createPortrait({ positions: new Float32Array(3), colors: new Float32Array(3), seeds: new Float32Array(4), count: 1, spacing: .01, aspect: 1 }, -1);
+    probe.points.visible = true;
     renderer.compile(scene, camera);
     renderer.render(scene, camera);
     removePortrait(probe);
@@ -537,30 +607,25 @@ function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<t
     release();
     throw error;
   }
-  // Every member's data loads now, so a change rarely waits for the network. A failure is retried on show.
+  // Every member's data loads now, so a change rarely waits for the network.
   portraits.forEach((_, index) => { load(index).catch(() => undefined); });
 
   return {
-    async show(index) {
-      if (disposed || index === shownIndex) return;
-      const ticket = ++token;
-      shownIndex = index;
-      const now = performance.now();
-      // At most one portrait leaves at a time: an earlier leaver is dropped, the current one scatters.
-      for (const portrait of live.filter((entry) => entry.leaving)) removePortrait(portrait);
-      for (const portrait of live) Object.assign(portrait, { from: portrait.material.uniforms.uScatter.value, to: 1, start: now, duration: timing.scatter, leaving: true });
+    setProgress(position) {
+      if (disposed) return;
+      const next = Math.min(portraits.length - 1, Math.max(0, position));
+      // The first position is shown as it is, without easing in from the first member.
+      if (target === null) shown = next;
+      target = next;
       wake();
-      const data = await load(index);
-      if (disposed || ticket !== token) return;
-      const { points, material } = createPortrait(data, 1);
-      live.push({ points, material, from: 1, to: 0, start: Math.max(performance.now(), now + timing.assembleDelay), duration: timing.assemble, leaving: false });
-      lifeElapsed = 0;
-      wake();
+    },
+    ready(index) {
+      return disposed ? Promise.resolve() : load(index);
     },
     setPaused(next) {
       if (paused === next) return;
       paused = next;
-      if (paused) { running = false; cancelAnimationFrame(raf); if (!disposed) draw(performance.now()); }
+      if (paused) { running = false; cancelAnimationFrame(raf); if (!disposed) draw(); }
       else wake();
     },
     // Paused, the portrait does not turn either.
