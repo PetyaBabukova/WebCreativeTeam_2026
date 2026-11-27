@@ -334,7 +334,7 @@ test("reduced motion keeps the moving hero particles and the keyboard pause cont
   await expect(page.locator(".about-scene__toggle")).toHaveAccessibleName("Пауза на фона");
 });
 
-test("the menu pauses the hero particles and the footer removes the pause control", async ({ page }) => {
+test("the menu pauses the hero particles and the pause control stays only while something can move", async ({ page }) => {
   await page.goto(about);
   await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
   const hero = page.locator(".about-particles");
@@ -347,7 +347,16 @@ test("the menu pauses the hero particles and the footer removes the pause contro
   expect((await hero.screenshot()).equals(paused)).toBe(true);
   await page.locator(".site-menu > summary").click();
   await expect.poll(async () => (await hero.screenshot()).equals(paused)).toBe(false);
+  // At the end of the page the team rain is still on screen above the footer, so the pause stays.
+  await page.locator(".about-team").scrollIntoViewIfNeeded();
+  await expect(page.locator(".about-team")).toHaveAttribute("data-about-team", "live");
   await toggle.focus();
+  await page.locator(".site-footer").scrollIntoViewIfNeeded();
+  await expect(page.locator(".about-team")).toBeInViewport();
+  await expect(toggle).toHaveJSProperty("hidden", false);
+  await expect(toggle).toBeFocused();
+  // Without the team section on screen, the footer removes the control and moves focus off it.
+  await page.locator(".about-team").evaluate((node) => { (node as HTMLElement).style.display = "none"; });
   await page.locator(".site-footer").scrollIntoViewIfNeeded();
   await expect(toggle).toBeHidden();
   await expect(page.locator("#about-footer")).toBeFocused();
@@ -542,7 +551,8 @@ test("the strip carries the paired messages right to left without an empty frame
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${about}#about-title`);
   await settle(page);
-  const end = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight);
+  // The strip ends where the team section reaches the top of the screen.
+  const end = await page.locator(".about-team").evaluate((node) => node.getBoundingClientRect().top + scrollY);
   const positions: number[] = [];
   let sawPair = false;
   for (let top = await page.evaluate(() => scrollY); top < end; top += 45) {
@@ -552,8 +562,9 @@ test("the strip carries the paired messages right to left without an empty frame
       const box = node.getBoundingClientRect();
       return Number(getComputedStyle(node).opacity) > .5 && box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight;
     }));
-    const footerTop = await page.locator(".site-footer").evaluate((node) => node.getBoundingClientRect().top);
-    if (footerTop > 900) expect(visible, `scroll ${top}`).toBe(true);
+    // The strip ends where the team section comes in.
+    const teamTop = await page.locator(".about-team").evaluate((node) => node.getBoundingClientRect().top);
+    if (teamTop > 900) expect(visible, `scroll ${top}`).toBe(true);
     positions.push(await page.locator("#about-message-1").evaluate((node) => node.getBoundingClientRect().left));
     const pair = await page.evaluate(() => [1, 2].every((index) => Array.from(document.querySelectorAll(`#about-message-${index} .about-word`)).every((node) => Number(getComputedStyle(node).opacity) === 1)));
     sawPair ||= pair;
@@ -760,4 +771,363 @@ test("accented phrases are coloured exactly as written in both languages, in sen
       for (const colour of block.colours) expect(["rgb(239, 127, 26)", "rgb(116, 151, 40)"]).toContain(colour);
     });
   }
+});
+
+// Stage 4: the team section.
+const teamUrl = (locale: "bg" | "en" = "bg") => `${pageUrl("about", locale)}#about-team`;
+const team = (page: Page) => page.locator(".about-team");
+const activeName = (page: Page) => page.locator(".about-team__member[data-active] .about-team__name");
+const teamCopy = (locale: "bg" | "en") => JSON.parse(readFileSync(`messages/${locale}.json`, "utf8")).about.team as { next: string; first: string; position: string; members: { id: string; name: string; role: string }[] };
+const activeFigure = (page: Page) => page.locator(".about-team__member[data-active] .about-team__figure");
+const announced = (copy: ReturnType<typeof teamCopy>, index: number) => `${copy.members[index].name}, ${copy.members[index].role}, ${copy.position.replace("{current}", String(index + 1)).replace("{total}", String(copy.members.length))}`;
+// Scrolls at once to a position in the team section: 0 is the first member, members - 1 the last.
+async function scrollTeam(page: Page, position: number) {
+  await page.evaluate((target) => {
+    const section = document.querySelector<HTMLElement>(".about-team")!;
+    const box = section.getBoundingClientRect();
+    const count = section.querySelectorAll(".about-team__member").length;
+    scrollTo({ top: box.top + scrollY + target / (count - 1) * (box.height - innerHeight), behavior: "instant" });
+  }, position);
+}
+// Which member the scroll position stands at (rounded), read from the page.
+const scrollPosition = (page: Page) => page.evaluate(() => {
+  const section = document.querySelector<HTMLElement>(".about-team")!;
+  const box = section.getBoundingClientRect();
+  const count = section.querySelectorAll(".about-team__member").length;
+  return Math.round(-box.top / (box.height - innerHeight) * (count - 1) * 100) / 100;
+});
+async function swipeTeam(page: Page, dx: number, dy: number) {
+  await page.locator(".about-team__stage").evaluate((stage, [x, y]) => {
+    const box = stage.getBoundingClientRect();
+    const from = { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+    stage.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", ...from }));
+    stage.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", clientX: from.clientX + x, clientY: from.clientY + y }));
+  }, [dx, dy]);
+}
+// Mean brightness (0..255) of an element's pixels as they appear on screen.
+async function brightness(page: Page, selector: string) {
+  const { channels } = await sharp(await page.locator(selector).screenshot()).stats();
+  return (channels[0].mean + channels[1].mean + channels[2].mean) / 3;
+}
+
+test("scrolling through the team shows the members in turn and back, without flicker on a boundary", async ({ page }) => {
+  const copy = teamCopy("bg");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  // About 0.9 screen of scroll per member after the first screen; the stage stays on screen.
+  const height = await team(page).evaluate((node) => node.getBoundingClientRect().height);
+  expect(Math.abs(height - 900 * (1 + .9 * (copy.members.length - 1)))).toBeLessThan(2);
+  for (let index = 0; index < copy.members.length; index++) {
+    await scrollTeam(page, index);
+    await expect(activeName(page)).toHaveText(copy.members[index].name);
+    await expect(page.locator(".about-team__counter")).toHaveText(`${String(index + 1).padStart(2, "0")} / ${String(copy.members.length).padStart(2, "0")}`);
+    await expect(page.locator(".about-team__stage")).toBeInViewport({ ratio: .99 });
+  }
+  // Only the current member's text is seen; the others stay readable to assistive technology.
+  await expect(page.locator(".about-team__member:not([data-active]) .about-team__text").first()).toHaveCSS("opacity", "0");
+  await expect(page.getByRole("heading", { level: 3, name: copy.members[0].name })).toBeAttached();
+  // Back up, and resting on the boundary keeps the member it came from.
+  await scrollTeam(page, 1.5);
+  await page.waitForTimeout(300);
+  await expect(activeName(page)).toHaveText(copy.members[2].name);
+  await scrollTeam(page, 1);
+  await expect(activeName(page)).toHaveText(copy.members[1].name);
+  await scrollTeam(page, .5);
+  await page.waitForTimeout(300);
+  await expect(activeName(page)).toHaveText(copy.members[1].name);
+  await scrollTeam(page, .3);
+  await expect(activeName(page)).toHaveText(copy.members[0].name);
+  // The progress line fills with the scroll: half of the second segment at the boundary.
+  await scrollTeam(page, .5);
+  await expect.poll(async () => Math.abs(Number(await page.locator(".about-team__progress span").nth(1).evaluate((node) => getComputedStyle(node).getPropertyValue("--about-team-fill"))) - .5)).toBeLessThan(.02);
+});
+
+test("a fast scroll shows and announces only the member it stops at", async ({ page }) => {
+  const copy = teamCopy("bg");
+  const last = copy.members.length - 1;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+  for (let step = 1; step <= 10; step++) { await scrollTeam(page, last * step / 10); await page.waitForTimeout(20); }
+  await expect(activeName(page)).toHaveText(copy.members[last].name);
+  await expect(page.locator(".about-team [aria-live]")).toHaveText(announced(copy, last));
+  await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+  // Landing in the middle of the section with one jump picks the member there.
+  // (Without a fragment: the page holds a fragment target until the visitor scrolls by hand.)
+  await page.goto(about);
+  await expect(root(page)).toHaveAttribute("data-about-intro", "live", { timeout: liveTimeout });
+  await page.evaluate(() => { const box = document.querySelector(".about-team")!.getBoundingClientRect(); scrollTo({ top: box.top + scrollY + (box.height - innerHeight) / 2 + 10, behavior: "instant" }); });
+  await expect(activeName(page)).toHaveText(copy.members[Math.round(last / 2)].name);
+});
+
+test("the button, arrow keys and swipes scroll to the next member, and the last one leads back to the first", async ({ page }) => {
+  const copy = teamCopy("bg");
+  const last = copy.members.length - 1;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  const next = page.locator(".about-team__next");
+  await expect(next).toHaveAccessibleName(copy.next.replace("{name}", copy.members[1].name));
+  await next.click();
+  // The button announces at once and scrolls; the member follows the scroll.
+  await expect(page.locator(".about-team [aria-live]")).toHaveText(announced(copy, 1));
+  await expect(activeName(page)).toHaveText(copy.members[1].name);
+  await expect.poll(() => scrollPosition(page)).toBe(1);
+  await expect(next).toBeFocused();
+  // Arrow keys from the button, up to the last member.
+  for (let index = 2; index <= last; index++) await page.keyboard.press("ArrowRight");
+  await expect(activeName(page)).toHaveText(copy.members[last].name);
+  await expect.poll(() => scrollPosition(page)).toBe(last);
+  await expect(next).toHaveAccessibleName(copy.first.replace("{name}", copy.members[0].name));
+  // Past the last member: straight back to the first, without running through everyone in between.
+  const seen = new Set<string>();
+  await page.exposeFunction("recordMember", (name: string) => { seen.add(name); });
+  await page.evaluate(() => {
+    const record = () => { (window as unknown as { recordMember: (name: string) => void }).recordMember(document.querySelector(".about-team__member[data-active] .about-team__name")!.textContent!); requestAnimationFrame(record); };
+    record();
+  });
+  await next.click();
+  await expect(activeName(page)).toHaveText(copy.members[0].name);
+  await expect.poll(() => scrollPosition(page)).toBe(0);
+  for (let index = 1; index < last; index++) expect(seen.has(copy.members[index].name)).toBe(false);
+  // A visitor who takes over the scroll cancels the button's target: the next press starts from the member shown.
+  // Both with wheel input and without any input event (a scrollbar drag moves the page away from the target).
+  for (const wheel of [true, false]) {
+    await next.click();
+    if (wheel) await page.mouse.wheel(0, -10);
+    await page.waitForTimeout(wheel ? 0 : 150);
+    await scrollTeam(page, 0);
+    await page.waitForTimeout(300);
+    await expect(activeName(page)).toHaveText(copy.members[0].name);
+    await next.click();
+    await expect(activeName(page)).toHaveText(copy.members[1].name);
+    await expect.poll(() => scrollPosition(page)).toBe(1);
+    await scrollTeam(page, 0);
+    await expect(activeName(page)).toHaveText(copy.members[0].name);
+  }
+  // Left arrow from the first member jumps to the last.
+  await page.keyboard.press("ArrowLeft");
+  await expect(activeName(page)).toHaveText(copy.members[last].name);
+  // A left swipe goes forward; a mostly vertical drag is a scroll, not a swipe.
+  await swipeTeam(page, -120, 10);
+  await expect(activeName(page)).toHaveText(copy.members[0].name);
+  await swipeTeam(page, -60, 140);
+  await page.waitForTimeout(400);
+  await expect(activeName(page)).toHaveText(copy.members[0].name);
+  await swipeTeam(page, -120, 0);
+  await expect(activeName(page)).toHaveText(copy.members[1].name);
+  await swipeTeam(page, 120, 0);
+  await expect(activeName(page)).toHaveText(copy.members[0].name);
+});
+
+test("each member's point cloud appears without the photo ever showing, also after quick presses", async ({ page }) => {
+  const copy = teamCopy("bg");
+  // From the first frame, record whether any team photo is ever painted visibly.
+  await page.addInitScript(() => {
+    const state = { photoSeen: "", autoCards: false };
+    (window as unknown as { teamPhoto: typeof state }).teamPhoto = state;
+    const check = () => {
+      // Before hydration ("auto") the section must already be the sticky stage, not the card list.
+      const section = document.querySelector(".about-team");
+      if (section?.getAttribute("data-about-team") === "auto") {
+        if (getComputedStyle(section.querySelector(".about-team__stage")!).position !== "sticky") state.autoCards = true;
+      }
+      for (const image of document.querySelectorAll<HTMLImageElement>(".about-team__portrait")) {
+        const figure = image.closest<HTMLElement>(".about-team__figure")!;
+        const style = getComputedStyle(figure);
+        const box = image.getBoundingClientRect();
+        if (image.complete && image.naturalWidth && style.visibility !== "hidden" && Number(style.opacity) > .05 && box.bottom > 0 && box.top < innerHeight && box.width > 0) state.photoSeen ||= image.alt;
+      }
+      requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+  // Rapid presses: the member that ends up active still gets its cloud.
+  for (let index = 0; index < copy.members.length + 1; index++) await page.locator(".about-team__next").click();
+  await expect(activeName(page)).toHaveText(copy.members[1 % copy.members.length].name);
+  await expect(activeFigure(page)).toHaveAttribute("data-cloud", "");
+  await page.waitForTimeout(1500);
+  expect(await brightness(page, ".about-team__canvas")).toBeGreaterThan(3);
+  const record = await page.evaluate(() => (window as unknown as { teamPhoto: { photoSeen: string; autoCards: boolean } }).teamPhoto);
+  expect(record.photoSeen).toBe("");
+  expect(record.autoCards).toBe(false);
+});
+
+test("before the scripts run, the team already is the photo-less scroll stage", async ({ page }) => {
+  // The scripts never arrive, so the page stays as the server sent it, with scripting on.
+  await page.route(/\/_next\/static\/chunks\/.*\.js(\?|$)/, (route) => route.abort());
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "auto");
+  await expect(page.locator(".about-team__stage")).toHaveCSS("position", "sticky");
+  await expect(page.locator(".about-team__figure").first()).toHaveCSS("opacity", "0");
+  await expect(page.locator(".about-team__next")).toBeHidden();
+  await expect(activeName(page)).toHaveText(teamCopy("bg").members[0].name);
+});
+
+test("a portrait whose images fail to load keeps its photo", async ({ page }) => {
+  await page.route("**/images/about/team/*-color.webp", (route) => route.abort());
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await expect(activeFigure(page)).toHaveAttribute("data-fallback", "");
+  await expect(activeFigure(page)).not.toHaveAttribute("data-cloud");
+  await expect(activeFigure(page)).toHaveCSS("opacity", "1");
+  await expect(page.locator(".about-team__member[data-active] .about-team__portrait")).toBeVisible();
+  await expect(page.locator(".about-team__member[data-active] .about-team__portrait")).toHaveJSProperty("complete", true);
+});
+
+test("the team scene and its images load only when the section comes near", async ({ page }) => {
+  const requested: string[] = [];
+  page.on("request", (request) => { if (/-(color|depth)\.webp/.test(request.url())) requested.push(request.url()); });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${about}#about-title`);
+  await expect(page.locator(".about-content")).toHaveAttribute("data-about-strip", "");
+  await page.waitForTimeout(1500);
+  expect(requested).toEqual([]);
+  await expect(team(page)).toHaveAttribute("data-about-team", "preparing");
+  await page.evaluate(() => { location.hash = "#about-team"; });
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  // Every member's data then loads ahead, so a change does not wait for the network.
+  for (const member of teamCopy("bg").members) await expect.poll(() => requested.some((url) => url.includes(`/${member.id}-color.webp`))).toBe(true);
+});
+
+test("the rain keeps moving on screen and stops with the page-wide pause", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  const canvas = page.locator(".about-team__canvas");
+  // Past the five seconds the portrait settles in, the rain still moves.
+  await page.waitForTimeout(5500);
+  const first = await canvas.screenshot();
+  await page.waitForTimeout(300);
+  expect((await canvas.screenshot()).equals(first)).toBe(false);
+  // The team sits right above the footer: the keyboard pause must still be there.
+  await page.locator(".site-footer").scrollIntoViewIfNeeded();
+  await expect(page.locator(".site-footer")).toBeInViewport();
+  await expect(team(page)).toBeInViewport();
+  await page.locator(".about-scene__toggle").focus();
+  await page.keyboard.press("Enter");
+  await expect(root(page)).toHaveAttribute("data-about-paused", "");
+  await page.waitForTimeout(200);
+  const paused = await canvas.screenshot();
+  await page.waitForTimeout(300);
+  expect((await canvas.screenshot()).equals(paused)).toBe(true);
+});
+
+test("without WebGL, without JavaScript, on very short screens and in print the team is a list of photo cards", async ({ page, browser }) => {
+  const copy = teamCopy("bg");
+  const cards = async (target: Page, state = "cards") => {
+    await expect(target.locator(".about-team")).toHaveAttribute("data-about-team", state);
+    await expect(target.locator(".about-team__stage")).not.toHaveCSS("position", "sticky");
+    for (const member of copy.members) await expect(target.locator(".about-team__name", { hasText: member.name })).toBeVisible();
+    await expect(target.locator(".about-team__next")).toBeHidden();
+    await expect(target.locator(".about-team__portrait")).toHaveCount(copy.members.length);
+  };
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+      return type.startsWith("webgl") ? null : (original as (...args: unknown[]) => unknown).call(this, type, ...rest);
+    } as typeof original;
+  });
+  await page.goto(teamUrl());
+  await page.waitForTimeout(1000);
+  await cards(page);
+  for (const image of await page.locator(".about-team__portrait").all()) await expect(image).toHaveJSProperty("complete", true);
+  // Nothing moves over the photo cards, so at the footer the pause control goes away.
+  await page.locator(".site-footer").scrollIntoViewIfNeeded();
+  await expect(page.locator(".about-scene__toggle")).toHaveJSProperty("hidden", true);
+
+  const noScript = await browser.newContext({ javaScriptEnabled: false });
+  const plain = await noScript.newPage();
+  await plain.goto(teamUrl());
+  // Without JavaScript the server's undecided state stays, and CSS shows the cards.
+  await cards(plain, "auto");
+  await noScript.close();
+
+  const short = await browser.newPage({ viewport: { width: 844, height: 340 } });
+  await short.goto(teamUrl());
+  await short.waitForTimeout(1000);
+  await cards(short);
+  await short.close();
+
+  const printed = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await printed.goto(teamUrl());
+  await expect(printed.locator(".about-team")).toHaveAttribute("data-about-team", "live");
+  await printed.emulateMedia({ media: "print" });
+  for (const member of copy.members) await expect(printed.locator(".about-team__name", { hasText: member.name })).toBeVisible();
+  await expect(printed.locator(".about-team__canvas")).toBeHidden();
+  await expect(printed.locator(".about-team__next")).toBeHidden();
+  await printed.close();
+});
+
+test("a lost WebGL context or a failing shader in the team scene falls back to the photo cards", async ({ page, browser }) => {
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await page.locator(".about-team__canvas").evaluate((canvas) => {
+    const gl = (canvas as HTMLCanvasElement).getContext("webgl2") ?? (canvas as HTMLCanvasElement).getContext("webgl");
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+  });
+  await expect(team(page)).toHaveAttribute("data-about-team", "cards");
+  await expect(page.locator(".about-team__name").first()).toBeVisible();
+
+  const failing = await browser.newPage();
+  await failing.addInitScript(() => {
+    for (const context of [WebGLRenderingContext, WebGL2RenderingContext]) {
+      const original = context.prototype.getProgramParameter;
+      context.prototype.getProgramParameter = function (this: WebGLRenderingContext, program: WebGLProgram, name: number) {
+        return name === this.LINK_STATUS ? false : original.call(this, program, name);
+      } as typeof original;
+    }
+  });
+  await failing.goto(teamUrl());
+  await failing.waitForTimeout(1500);
+  await expect(failing.locator(".about-team")).toHaveAttribute("data-about-team", "cards");
+  await failing.close();
+});
+
+test("on phones the portrait sits on top and the text, progress and button stay low without horizontal scroll", async ({ page }) => {
+  for (const [locale, width, height] of [["bg", 390, 844], ["en", 390, 844], ["en", 320, 568], ["bg", 320, 568]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto(teamUrl(locale));
+    await expect(team(page)).toHaveAttribute("data-about-team", "live");
+    // Every member's text must fit between the counter and the progress line.
+    for (let index = 0; index < teamCopy(locale).members.length; index++) {
+      await scrollTeam(page, index);
+      await expect(activeName(page)).toHaveText(teamCopy(locale).members[index].name);
+      const layout = await page.evaluate(() => {
+        const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+        return { text: rect(".about-team__member[data-active] .about-team__text"), counter: rect(".about-team__counter"), progress: rect(".about-team__progress"), next: rect(".about-team__next"), width: document.documentElement.scrollWidth };
+      });
+      expect(layout.width).toBe(width);
+      expect(layout.text.top).toBeGreaterThan(Math.max(layout.counter.bottom, height / 2 - 40));
+      expect(layout.text.bottom).toBeLessThanOrEqual(layout.progress.top);
+      expect(layout.next.bottom).toBeLessThanOrEqual(height);
+      expect(layout.next.right).toBeLessThanOrEqual(width);
+    }
+  }
+});
+
+test("a direct team link lands on the section and focuses it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toBeFocused();
+  await expect.poll(() => team(page).evaluate((node) => Math.abs(node.getBoundingClientRect().top))).toBeLessThan(1);
+});
+
+test("turning a phone to a very short landscape returns the team to cards, and back to the scene", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(teamUrl());
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
+  await page.setViewportSize({ width: 844, height: 340 });
+  await expect(team(page)).toHaveAttribute("data-about-team", "cards");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".about-team").scrollIntoViewIfNeeded();
+  await expect(team(page)).toHaveAttribute("data-about-team", "live");
 });

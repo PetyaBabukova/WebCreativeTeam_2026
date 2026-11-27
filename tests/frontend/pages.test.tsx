@@ -939,9 +939,9 @@ describe("public pages", () => {
     [BgCookies, bgCookiesMetadata, "bg", "cookies", "/cookies"],
     [EnCookies, enCookiesMetadata, "en", "cookies", "/cookies/en"],
   ] as const)("renders localized content and public metadata %#", async (Page, metadata, locale, page, url) => {
-    // jsdom has no matchMedia or font loading API; the About page queries both on mount.
+    // jsdom has no matchMedia or font loading API; the About page queries both on mount (the team section also listens for changes).
     if (page === "about") {
-      Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false }) });
+      Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({ matches: false, addEventListener: () => undefined, removeEventListener: () => undefined }) });
       if (!document.fonts) Object.defineProperty(document, "fonts", { configurable: true, value: { ready: Promise.resolve(), load: () => Promise.resolve([]) } });
     }
     render(<Page />);

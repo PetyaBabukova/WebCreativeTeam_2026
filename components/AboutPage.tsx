@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "rea
 import { IBM_Plex_Mono, Sofia_Sans_Extra_Condensed } from "next/font/google";
 import { appConfig, parseCookieChoice } from "@/lib/config";
 import type { AboutScene } from "./AboutScene";
+import AboutTeam, { type TeamCopy } from "./AboutTeam";
 import "./AboutPage.css";
 
 // The counter font is scoped to About and not preloaded on the other routes that share SitePage.
@@ -16,6 +17,7 @@ type AboutCopy = {
   backgroundPause: string; backgroundPlay: string; introLead: string[]; introTail: string[]; messageLeads: string[]; messages: string[];
   // Coloured phrases per text block, in strip order (intro lead, intro tail, messages); no text colours the whole block.
   accents: Accent[][];
+  team: TeamCopy;
 };
 // tone names an about-word--<tone> colour class: orange or green.
 type Accent = { text?: string; tone: string };
@@ -109,7 +111,8 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
     const footer = root?.querySelector<HTMLElement>(".site-footer");
     const stage = hero?.querySelector<HTMLElement>(".about-hero__stage");
     const stripStage = content?.querySelector<HTMLElement>(".about-strip__stage");
-    if (!hero || !canvas || !logo || !preloader || !status || !content || !background || !scene || !pauseButton || !title || !root || !header || !footer || !stage || !stripStage) return;
+    const team = content?.querySelector<HTMLElement>(".about-team");
+    if (!hero || !canvas || !logo || !preloader || !status || !content || !background || !scene || !pauseButton || !title || !root || !header || !footer || !stage || !stripStage || !team) return;
     const counterStrips = Array.from(preloader.querySelectorAll<HTMLElement>(".about-counter__strip"));
     const letters = Array.from(logo.querySelectorAll<HTMLElement>(".about-hero__letter"));
     const blocks = Array.from(content.querySelectorAll<HTMLElement>(".about-strip__item"));
@@ -143,6 +146,8 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
     let sceneRatio = 0;
     let sceneRunning = false;
     let sceneFooterVisible = false;
+    // While the team section is on screen its own scene draws and the hero particles stay still.
+    let teamVisible = false;
     // The owner chose one motion design for every visitor; the OS reduced-motion
     // setting is deliberately not read. Moving layers keep a manual pause.
     let sceneUserPaused = false;
@@ -329,9 +334,12 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
 
     // One pause state drives both moving layers: the background dots and the particles.
     function syncMotion() {
-      const paused = sceneUserPaused || document.hidden || sceneFooterVisible || !!document.querySelector("dialog[open]") || !!header?.querySelector(".site-menu[open]");
+      const blocked = sceneUserPaused || document.hidden || !!document.querySelector("dialog[open]") || !!header?.querySelector(".site-menu[open]");
+      const paused = blocked || sceneFooterVisible;
+      // The team scene follows the page-wide pause (the footer does not pause it: the team sits right above it).
+      root!.toggleAttribute("data-about-paused", blocked);
       // Behind the readable strip the column turns only while the visitor scrolls.
-      particles?.setPaused(paused || sceneGone || phase !== "live" || (textOnScreen && !scrolling));
+      particles?.setPaused(paused || sceneGone || teamVisible || phase !== "live" || (textOnScreen && !scrolling));
       // The background dots drift only while the visitor scrolls; the hero particles are the only endless motion.
       const shouldRun = !!backgroundContext && !paused && scrolling;
       if (shouldRun === sceneRunning) return;
@@ -483,13 +491,12 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
         await settleWithin([document.fonts.load(`1000 1em ${getComputedStyle(logo!).fontFamily}`), document.fonts.ready]);
         if (!alive || phase !== "preloading") return;
         real = .3;
-        const { createAboutScene, glyphs } = await import("./AboutScene");
+        const { createAboutScene, resolveGlyphFonts } = await import("./AboutScene");
         if (!alive || phase !== "preloading") return;
         real = .5;
         const letterFont = getComputedStyle(document.body).fontFamily;
         const symbolFont = getComputedStyle(preloader!.querySelector(".about-counter")!).fontFamily;
-        await settleWithin([document.fonts.load(`800 48px ${letterFont}`, glyphs.letters), document.fonts.load(`400 48px ${symbolFont}`, glyphs.symbols)]);
-        const glyphFonts = document.fonts.check(`800 48px ${letterFont}`, glyphs.letters) && document.fonts.check(`400 48px ${symbolFont}`, glyphs.symbols) ? { letters: letterFont, symbols: symbolFont } : null;
+        const glyphFonts = await resolveGlyphFonts(letterFont, symbolFont, fontWaitMilliseconds);
         if (!alive || phase !== "preloading") return;
         real = .7;
         if (performance.now() >= deadline) return;
@@ -527,6 +534,7 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
     // Scroll position where a target is fully readable: the intro block at the end of the hero exit,
     // a message at its resting place in the strip.
     function targetScroll(id: string) {
+      if (id === team!.id) return team!.getBoundingClientRect().top + scrollY;
       if (!stripActive) return null;
       if (id === "about-title" || id === "main") return heroTop + heroTravel;
       const message = messages.findIndex((element) => element.id === id);
@@ -595,13 +603,27 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
     document.addEventListener("visibilitychange", onVisibility);
     const modalObserver = new MutationObserver(syncMotion);
     modalObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["open"] });
+    // At the footer only the team rain can still move, so the pause stays available while the team is on screen.
+    // The team's position is read now: the footer and team observers may report in either order.
+    // Only a live team scene moves; the photo cards do not need the pause.
+    function updatePauseAvailability() {
+      const box = team!.getBoundingClientRect();
+      const teamMoving = team!.dataset.aboutTeam === "live" && box.bottom > 0 && box.top < innerHeight;
+      const hidden = sceneFooterVisible && !teamMoving;
+      if (hidden && document.activeElement === pauseButton) footer!.focus({ preventScroll: true });
+      pauseButton!.hidden = hidden;
+    }
     const footerObserver = new IntersectionObserver(([entry]) => {
       sceneFooterVisible = entry.isIntersecting;
-      if (sceneFooterVisible && document.activeElement === pauseButton) footer.focus({ preventScroll: true });
-      pauseButton.hidden = sceneFooterVisible;
+      updatePauseAvailability();
       syncMotion();
     });
     footerObserver.observe(footer);
+    const teamObserver = new IntersectionObserver(([entry]) => { teamVisible = entry.isIntersecting; updatePauseAvailability(); syncMotion(); });
+    teamObserver.observe(team);
+    // The team switches between its scene and the photo cards after this effect runs.
+    const teamModeObserver = new MutationObserver(updatePauseAvailability);
+    teamModeObserver.observe(team, { attributes: true, attributeFilter: ["data-about-team"] });
     const observer = new ResizeObserver(() => relayout());
     observer.observe(logo);
     blocks.forEach((block) => observer.observe(block));
@@ -647,6 +669,9 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
       document.removeEventListener("visibilitychange", onVisibility);
       modalObserver.disconnect();
       footerObserver.disconnect();
+      teamObserver.disconnect();
+      teamModeObserver.disconnect();
+      root.removeAttribute("data-about-paused");
       pauseButton.removeEventListener("click", onPauseClick);
       header.removeEventListener("toggle", onMenuToggle, true);
       globalSkip?.removeEventListener("click", onSkip);
@@ -684,22 +709,26 @@ export default function AboutPage({ copy }: { copy: AboutCopy }) {
       <p className="sr-only" ref={statusRef} aria-live="polite" />
     </section>
     <main id="main" className="about-content" tabIndex={-1} ref={contentRef}>
-      <div className="about-strip__stage">
-        <div className="about-strip__item about-intro about-intro--lead" data-strip-kind="intro-lead">
-          <h1 id="about-title" tabIndex={-1} ref={titleRef}>
-            <Words parts={copy.introLead.map((text, index) => ({ text, line: true, className: index === copy.introLead.length - 1 ? "about-intro__italic" : undefined }))} accents={copy.accents[0]} />
-          </h1>
+      {/* The strip keeps its own scroll height; the team section follows it in normal flow. */}
+      <div className="about-strip">
+        <div className="about-strip__stage">
+          <div className="about-strip__item about-intro about-intro--lead" data-strip-kind="intro-lead">
+            <h1 id="about-title" tabIndex={-1} ref={titleRef}>
+              <Words parts={copy.introLead.map((text, index) => ({ text, line: true, className: index === copy.introLead.length - 1 ? "about-intro__italic" : undefined }))} accents={copy.accents[0]} />
+            </h1>
+          </div>
+          <p className="about-strip__item about-intro about-intro--tail" data-strip-kind="intro-tail">
+            <Words parts={copy.introTail.map((text) => ({ text, line: true, className: "about-intro__italic" }))} accents={copy.accents[1]} />
+          </p>
+          {copy.messages.map((message, index) => {
+            const leadWords = copy.messageLeads[index] && message.startsWith(copy.messageLeads[index]) ? copy.messageLeads[index] : "";
+            return <section className={`about-strip__item about-message about-message--${index % 2 ? "lower" : "upper"}`} id={`about-message-${index + 1}`} tabIndex={-1} data-strip-kind="message" data-message={index} key={index}>
+              <p><Words parts={[{ text: leadWords, className: "about-message__lead" }, { text: message.slice(leadWords.length), glue: !/^\s/.test(message.slice(leadWords.length)) }].filter((part) => part.text.trim())} accents={copy.accents[index + 2]} /></p>
+            </section>;
+          })}
         </div>
-        <p className="about-strip__item about-intro about-intro--tail" data-strip-kind="intro-tail">
-          <Words parts={copy.introTail.map((text) => ({ text, line: true, className: "about-intro__italic" }))} accents={copy.accents[1]} />
-        </p>
-        {copy.messages.map((message, index) => {
-          const leadWords = copy.messageLeads[index] && message.startsWith(copy.messageLeads[index]) ? copy.messageLeads[index] : "";
-          return <section className={`about-strip__item about-message about-message--${index % 2 ? "lower" : "upper"}`} id={`about-message-${index + 1}`} tabIndex={-1} data-strip-kind="message" data-message={index} key={index}>
-            <p><Words parts={[{ text: leadWords, className: "about-message__lead" }, { text: message.slice(leadWords.length), glue: !/^\s/.test(message.slice(leadWords.length)) }].filter((part) => part.text.trim())} accents={copy.accents[index + 2]} /></p>
-          </section>;
-        })}
       </div>
+      <AboutTeam copy={copy.team} />
       <button className="about-scene__toggle" ref={pauseRef} type="button" aria-label={copy.backgroundPause} hidden><span aria-hidden="true">Ⅱ</span></button>
     </main>
   </>;

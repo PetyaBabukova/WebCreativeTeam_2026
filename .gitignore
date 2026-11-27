@@ -202,3 +202,6 @@ vite.config.ts.timestamp-*
 playwright-report/
 test-results/
 .tmp/
+
+# Original team photos for the About page (private; only the cut-out derivatives in public/ are committed)
+assets/about-team/

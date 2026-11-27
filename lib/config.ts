@@ -46,6 +46,8 @@ export const appConfig = {
   brandLogoPath: "/logo_2026_DARK_HORIZONTAL.svg",
   // One deadline for the early boot script and the About client: past it the hero is shown statically.
   aboutIntro: { deadlineMilliseconds: 6000, counterMinimumMilliseconds: 2000 },
+  // Prepared team portraits (scripts/about-team-assets.mjs): <id>-color.webp, <id>-depth.webp, <id>-portrait.webp.
+  aboutTeam: { assetPath: "/images/about/team" },
   socialProfiles: {
     linkedin: "https://www.linkedin.com/company/webcreativeteam",
     facebook: "https://www.facebook.com/webcreativeteam",

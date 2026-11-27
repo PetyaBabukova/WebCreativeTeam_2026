@@ -1,20 +1,20 @@
 import * as THREE from "three";
+import { atlas, createRenderer, paintAtlas, releaseRenderer, type GlyphFonts } from "./aboutGl";
+
+export { glyphs, resolveGlyphFonts, type GlyphFonts } from "./aboutGl";
 
 // The About hero's particle cloud. It owns the WebGL renderer and every GPU resource;
 // AboutPage owns when it runs. Loaded with a dynamic import so three.js stays out of other routes.
 
 // setCollapse(0..1) pulls the cloud into a narrow column as the hero scrolls away.
 export type AboutScene = { start(): void; setPaused(paused: boolean): void; setCollapse(value: number): void; dispose(): void };
-// Glyph fonts are CSS font-family strings that AboutPage has already loaded; null leaves the cloud as dots only.
-export type GlyphFonts = { letters: string; symbols: string } | null;
 type Options = { canvas: HTMLCanvasElement; compact: boolean; glyphFonts: GlyphFonts; onContextLost: () => void };
 
 const palette = ["#ef7f1a", "#ff9a42", "#ffbd65", "#ffd688", "#fff4db", "#fefefe", "#e3dc73", "#a3db64", "#68d58a", "#749728", "#59b300", "#ff6600"];
 const glowPalette = ["#ff9a42", "#a3db64", "#ffd688"];
-const budget = { desktop: 6000, compact: 1500, desktopRatio: 1.5, compactRatio: 1.25, slowFrameMilliseconds: 25, maxReductions: 2 };
-// Brand letters and web symbols share the atlas with the soft dot in cell 0.
-export const glyphs = { letters: "WEBCRATIVM", symbols: "</>{}#@+*" };
-const atlas = { size: 512, cells: 8, padding: 4, glyphShare: .3 };
+const budget = { desktop: 6000, compact: 1500, slowFrameMilliseconds: 25, maxReductions: 2 };
+// Share of the particles drawn as glyphs instead of dots.
+const glyphShare = .3;
 // Near particles never grow beyond this on screen, whatever their depth.
 const maxParticlePixels = 26;
 
@@ -93,40 +93,6 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
-// Paints the dot and every glyph white on black, one per cell, with padding so mipmaps do not bleed.
-function paintAtlas(fonts: GlyphFonts) {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = atlas.size;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Canvas 2D unavailable");
-  const cell = atlas.size / atlas.cells;
-  const inner = cell - atlas.padding * 2;
-  context.fillStyle = "#000";
-  context.fillRect(0, 0, atlas.size, atlas.size);
-  const dot = context.createRadialGradient(cell / 2, cell / 2, 0, cell / 2, cell / 2, inner / 2);
-  dot.addColorStop(0, "#fff");
-  dot.addColorStop(.45, "#fff");
-  dot.addColorStop(1, "#000");
-  context.fillStyle = dot;
-  context.fillRect(atlas.padding, atlas.padding, inner, inner);
-  const characters = fonts ? [...glyphs.letters].map((glyph) => [glyph, fonts.letters] as const).concat([...glyphs.symbols].map((glyph) => [glyph, fonts.symbols] as const)) : [];
-  context.fillStyle = "#fff";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  characters.forEach(([glyph, family], index) => {
-    const slot = index + 1;
-    const x = (slot % atlas.cells) * cell + cell / 2;
-    const y = Math.floor(slot / atlas.cells) * cell + cell / 2;
-    context.font = `800 ${Math.round(inner * .82)}px ${family}`;
-    context.fillText(glyph, x, y + inner * .04);
-  });
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.flipY = false;
-  texture.minFilter = THREE.LinearMipmapLinearFilter;
-  texture.generateMipmaps = true;
-  return { texture, glyphCount: characters.length };
-}
-
 function attributes(count: number, glyphCount: number) {
   const seeds = new Float32Array(count * 4);
   const colors = new Float32Array(count * 3);
@@ -139,7 +105,7 @@ function attributes(count: number, glyphCount: number) {
   for (let index = 0; index < count; index++) {
     for (let part = 0; part < 4; part++) seeds[index * 4 + part] = random();
     const glowing = random() < .03;
-    const glyph = glyphCount > 0 && random() < atlas.glyphShare ? 1 + Math.floor(random() * glyphCount) : 0;
+    const glyph = glyphCount > 0 && random() < glyphShare ? 1 + Math.floor(random() * glyphCount) : 0;
     color.set(glowing ? glowPalette[Math.floor(random() * glowPalette.length)] : palette[Math.floor(random() * palette.length)]);
     color.toArray(colors, index * 3);
     // World units: about 4–8px for dots and 14–24px for symbols at the desktop camera distance, capped on screen.
@@ -152,24 +118,19 @@ function attributes(count: number, glyphCount: number) {
 
 // Throws when WebGL is unavailable or a shader fails; the caller then keeps the static hero.
 export function createAboutScene(options: Options): AboutScene {
-  const renderer = new THREE.WebGLRenderer({ canvas: options.canvas, antialias: !options.compact, alpha: true, powerPreference: "high-performance" });
+  const gl = createRenderer(options.canvas, options.compact);
   // Buffers, textures and programs reach the GPU only on the first render, which buildScene guards itself;
   // any earlier failure only has to release the context.
   try {
-    return buildScene(renderer, options);
+    return buildScene(gl, options);
   } catch (error) {
-    renderer.dispose();
+    gl.renderer.dispose();
     throw error;
   }
 }
 
-function buildScene(renderer: THREE.WebGLRenderer, { canvas, compact, glyphFonts, onContextLost }: Options): AboutScene {
-  let shaderFailed = false;
-  // three.js reports shader compile/link errors here instead of throwing.
-  renderer.debug.onShaderError = () => { shaderFailed = true; };
-  let pixelRatio = Math.min(devicePixelRatio || 1, compact ? budget.compactRatio : budget.desktopRatio);
-  renderer.setPixelRatio(pixelRatio);
-  renderer.setClearColor(0x000000, 0);
+function buildScene({ renderer, pixelRatio: initialRatio, failed }: ReturnType<typeof createRenderer>, { canvas, compact, glyphFonts, onContextLost }: Options): AboutScene {
+  let pixelRatio = initialRatio;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(35, 1, .1, 60);
@@ -262,9 +223,7 @@ function buildScene(renderer: THREE.WebGLRenderer, { canvas, compact, glyphFonts
     geometry.dispose();
     material.dispose();
     texture.dispose();
-    renderer.dispose();
-    // Hand the GL context back at once instead of waiting for garbage collection.
-    renderer.forceContextLoss();
+    releaseRenderer(renderer);
   }
   try {
     canvas.addEventListener("webglcontextlost", onLost);
@@ -272,7 +231,7 @@ function buildScene(renderer: THREE.WebGLRenderer, { canvas, compact, glyphFonts
     resize();
     renderer.compile(scene, camera);
     renderer.render(scene, camera);
-    if (shaderFailed || renderer.getContext().isContextLost()) throw new Error("About scene failed to initialise");
+    if (failed()) throw new Error("About scene failed to initialise");
   } catch (error) {
     release();
     throw error;

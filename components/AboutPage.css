@@ -64,7 +64,8 @@ html[data-about-boot] .about-preloader, .site-page--about:is([data-about-intro="
 .about-message--lower { align-self: flex-end; text-align: right; }
 /* With JavaScript the main overlaps the hero; its sticky stage holds the strip, moved by --about-x. */
 /* The overlapping main lets clicks through to the hero; only visible strip blocks and the pause control take them. */
-.about-content[data-about-strip] { height: var(--about-strip-height, auto); margin-top: calc(-1 * var(--about-hero-height, 0px)); pointer-events: none; }
+.about-content[data-about-strip] { margin-top: calc(-1 * var(--about-hero-height, 0px)); pointer-events: none; }
+.about-content[data-about-strip] .about-strip { height: var(--about-strip-height, auto); }
 .about-content[data-about-strip] .about-scene__toggle { pointer-events: auto; }
 .about-content[data-about-strip] .about-strip__stage { position: sticky; top: 0; display: block; height: 100svh; padding: 0; overflow: clip; pointer-events: none; }
 .about-content[data-about-strip] .about-strip__item { position: absolute; left: 0; width: max-content; max-inline-size: min(46vw, 44rem); transform: translate3d(var(--about-x, 0px), 0, 0); pointer-events: var(--about-pointer, none); will-change: transform; }
@@ -90,4 +91,51 @@ html[data-about-boot] .about-preloader, .site-page--about:is([data-about-intro="
   .about-hero__letter { opacity: 1; transform: none; }
   .about-scene__toggle { width: 2.75rem; height: 2.75rem; bottom: .5rem; }
 }
-@media print { .site-page.site-page--about { background: #fff; } .about-hero, .about-preloader, .about-scene__toggle, .about-scene, .about-particles { display: none; } .about-content { color: #000; } .about-content[data-about-strip] { height: auto; margin-top: 0; } .about-content[data-about-strip] .about-strip__stage { position: static; display: flex; height: auto; padding: 2rem 0; } .about-content[data-about-strip] .about-strip__item { position: static; transform: none; max-inline-size: none; } .about-content[data-about-strip] .about-word { opacity: 1; } .about-word--orange, .about-word--green { color: inherit; } }
+@media print { .site-page.site-page--about { background: #fff; } .about-hero, .about-preloader, .about-scene__toggle, .about-scene, .about-particles { display: none; } .about-content { color: #000; } .about-content[data-about-strip] { margin-top: 0; } .about-content[data-about-strip] .about-strip { height: auto; } .about-content[data-about-strip] .about-strip__stage { position: static; display: flex; height: auto; padding: 2rem 0; } .about-content[data-about-strip] .about-strip__item { position: static; transform: none; max-inline-size: none; } .about-content[data-about-strip] .about-word { opacity: 1; } .about-word--orange, .about-word--green { color: inherit; } }
+
+/* Stage 4 team. Photo cards by default: without JavaScript or WebGL, on very short screens, after an error and in print. */
+.about-team { position: relative; z-index: 1; padding: clamp(4rem, 10svh, 8rem) var(--gutter); background: #000; color: #fff; outline: none; pointer-events: auto; }
+.about-team__heading { margin: 0 0 2rem; font-size: clamp(2rem, 4vw, 4rem); font-weight: 400; letter-spacing: .4em; }
+.about-team__counter, .about-team__progress, .about-team__canvas, .about-team__next[hidden] { display: none; }
+.about-team__members { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 2.5rem 2rem; margin: 0; padding: 0; list-style: none; }
+.about-team__figure { position: relative; aspect-ratio: 3 / 4; margin: 0 0 1rem; }
+.about-team__portrait { object-fit: contain; object-position: bottom; }
+.about-team__name { margin: 0; font-size: clamp(1.75rem, 3vw, 3rem); font-weight: 400; line-height: 1.1; }
+.about-team__role { margin: .35rem 0 .75rem; color: var(--brand-logo-web); font-style: italic; }
+.about-team__bio { max-inline-size: 32ch; margin: 0; color: #ffffffd9; font-size: 1.1rem; line-height: 1.45; }
+/* With scripting on (from the first paint, then preparing and live): a sticky stage over a scroll range of about
+   0.9 screen per member. The scroll decides the member; the cloud sits in the middle, the text low on the left,
+   the button low on the right. "cards" (an error, or a browser without the scripting feature) keeps the list. */
+@media screen and (scripting: enabled) and (height > 23rem) {
+  .about-team:not([data-about-team="cards"]) { height: calc(100svh + var(--about-team-steps, 0) * 90svh); padding: 0; }
+  .about-team:not([data-about-team="cards"]) .about-team__stage { position: sticky; top: 0; height: 100svh; overflow: clip; touch-action: pan-y; }
+  .about-team:not([data-about-team="cards"]) .about-team__canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+  .about-team:not([data-about-team="cards"]) .about-team__heading { position: absolute; top: calc(var(--site-header-compact-height) + 1.5rem); right: var(--gutter); margin: 0; }
+  .about-team:not([data-about-team="cards"]) .about-team__counter { position: absolute; top: calc(var(--site-header-compact-height) + 1.75rem); left: var(--gutter); display: block; margin: 0; font-family: var(--font-about-counter), monospace; font-size: clamp(1rem, 1.6vw, 1.5rem); }
+  /* No photo with the scene: it appears only for the current member whose cloud failed. */
+  .about-team:not([data-about-team="cards"]) .about-team__figure { position: absolute; top: 23%; left: 58%; height: 66%; max-width: 44%; margin: 0; opacity: 0; translate: -50% 0; pointer-events: none; }
+  .about-team[data-about-team="live"] .about-team__member[data-active] .about-team__figure[data-fallback] { opacity: 1; transition: opacity .6s var(--ease-out); }
+  /* Every member's text stays in the accessibility tree and in find-in-page; only the current one is seen.
+     The leaving text fades and rises; the arriving one rises into place a moment later. */
+  .about-team:not([data-about-team="cards"]) .about-team__text { position: absolute; bottom: calc(max(2rem, env(safe-area-inset-bottom)) + 2.5rem); left: var(--gutter); max-inline-size: min(40vw, 32rem); opacity: 0; translate: 0 .75em; pointer-events: none; transition: opacity .25s var(--ease-out), translate .25s var(--ease-out); }
+  .about-team:not([data-about-team="cards"]) .about-team__member[data-past] .about-team__text { translate: 0 -.5em; }
+  .about-team:not([data-about-team="cards"]) .about-team__member[data-active] .about-team__text { opacity: 1; translate: none; pointer-events: auto; transition-duration: .45s; transition-delay: .15s; }
+  .about-team:not([data-about-team="cards"]) .about-team__name { font-size: clamp(2.25rem, 4vw, 4.5rem); }
+  .about-team:not([data-about-team="cards"]) .about-team__progress { position: absolute; bottom: max(2rem, env(safe-area-inset-bottom)); left: var(--gutter); display: flex; gap: .375rem; inline-size: min(40vw, 20rem); }
+  /* Each segment fills with the scroll (--about-team-fill, 0..1). */
+  .about-team__progress span { position: relative; flex: 1; block-size: 2px; overflow: hidden; background: #ffffff40; }
+  .about-team__progress span::after { position: absolute; inset: 0; background: var(--brand-logo-web); content: ""; transform: scaleX(var(--about-team-fill, 0)); transform-origin: left; }
+  .about-team:not([data-about-team="cards"]) .about-team__next:not([hidden]) { position: absolute; right: var(--gutter); bottom: max(2rem, env(safe-area-inset-bottom)); display: grid; place-items: center; inline-size: clamp(4rem, 6vw, 6rem); block-size: clamp(4rem, 6vw, 6rem); padding: 0; border: 1px solid #ffffff73; border-radius: 50%; background: #0009; color: #fff; cursor: pointer; transition: border-color .3s, color .3s; }
+  .about-team__next svg { inline-size: 40%; block-size: auto; }
+  .about-team__next:hover { border-color: var(--brand-logo-web); color: var(--brand-logo-web); }
+  .about-team__next:focus-visible { outline: 2px solid var(--brand-logo-web); outline-offset: 4px; }
+}
+@media screen and (prefers-reduced-motion: reduce) { .about-team__text { transition: none !important; } }
+/* Tall, narrow screens: the cloud near the top (as the scene places it), the text low under it. */
+@media screen and (scripting: enabled) and (height > 23rem) and (max-aspect-ratio: 9 / 10) {
+  .about-team:not([data-about-team="cards"]) .about-team__figure { top: 15%; left: 50%; height: 42%; }
+  .about-team:not([data-about-team="cards"]) .about-team__text { bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + 5rem); max-inline-size: calc(100% - 2 * var(--gutter)); }
+  .about-team:not([data-about-team="cards"]) .about-team__progress { bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + 1.9rem); inline-size: calc(100% - 2 * var(--gutter) - 5.5rem); }
+  .about-team:not([data-about-team="cards"]) .about-team__next { bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+}
+@media print { .about-team { padding: 2rem 0; background: #fff; color: #000; } .about-team__next { display: none; } .about-team__role { color: inherit; } .about-team__bio { color: inherit; } }

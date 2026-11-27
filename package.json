@@ -22,7 +22,8 @@
     "auth:operator:dev": "tsx server/auth/operator.ts",
     "blog:migrate:dev": "tsx server/blog/migrate.ts",
     "blog:images:dev": "tsx server/blog/reconcile.ts",
-    "blog:images": "node dist/server/blog/reconcile.js"
+    "blog:images": "node dist/server/blog/reconcile.js",
+    "about:team-assets": "tsx scripts/about-team-assets.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "8.4.0",
@@ -61,6 +62,7 @@
     "@vitest/coverage-v8": "5.0.2",
     "eslint": "10.11.0",
     "jsdom": "29.1.1",
+    "onnxruntime-node": "1.18.0",
     "supertest": "7.3.0",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
